@@ -8,7 +8,7 @@ export function BaseDiamond({ bases }: { bases: number }) {
       <path d="M16 3 28 14 16 25 4 14Z" fill="none" className="stroke-muted-foreground/50" strokeWidth="1" />
       {[[28, 14], [16, 3], [4, 14]].map(([cx, cy], i) => (
         <circle key={i} cx={cx} cy={cy} r="2.5" strokeWidth="1.25"
-          className={bases & (1 << i) ? "fill-positive stroke-positive" : "fill-background stroke-muted-foreground"} />
+          className={bases & (1 << i) ? "fill-primary stroke-primary" : "fill-background stroke-muted-foreground"} />
       ))}
     </svg>
   );

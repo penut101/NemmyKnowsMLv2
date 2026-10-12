@@ -79,7 +79,7 @@ function TeamRow({
       <TableCell className="whitespace-normal">
         <div className="flex items-center gap-2">
           <TeamLogo team={team} name={name} className="h-4 w-4 shrink-0" />
-          <span className={cn("font-semibold tracking-wide", picked && "text-positive")}>
+          <span className={cn("font-semibold tracking-wide", picked && "text-primary")}>
             {name}
           </span>
           <span aria-live="polite" className="contents">
@@ -124,7 +124,7 @@ function TeamRow({
       <TableCell className="text-center">
         {picked && moneyline ? (
           <>
-            <span className="font-semibold text-positive">ML {formatOdds(moneyline.price)}</span>
+            <span className="font-semibold text-primary">ML {formatOdds(moneyline.price)}</span>
             <span className="block text-[10px] leading-3 text-muted-foreground">
               Kelly {formatPct(moneyline.kelly_fraction)}
             </span>
@@ -183,7 +183,7 @@ export function NhlGamesTable({ matchups }: { matchups: NhlMatchup[] }) {
                 <>
                   <span className={cn(
                     "text-[10px] uppercase tracking-wider",
-                    live.state === "in" ? "text-positive" : "text-muted-foreground",
+                    live.state === "in" ? "text-primary" : "text-muted-foreground",
                   )}>
                     {live.detail}
                   </span>

@@ -5,7 +5,7 @@ import { useId, useState, type ReactNode } from "react";
 interface Props {
   date: string;
   title: string;
-  accent?: "emerald" | "default";
+  accent?: "brand" | "default";
   children: ReactNode;
 }
 
@@ -14,7 +14,7 @@ export function ChangelogEntry({ date, title, accent = "default", children }: Pr
   const contentId = useId();
 
   const borderClass =
-    accent === "emerald" ? "border-emerald-500/50" : "border-border";
+    accent === "brand" ? "border-primary/50" : "border-border";
 
   return (
     <div className={`border-l-2 ${borderClass} pl-4`}>

@@ -27,7 +27,7 @@ function SourceToggle({ source, page }: { source: "live" | "backtest"; page: str
           className={cn(
             "border-b-2 px-3 py-2",
             source === key
-              ? "border-foreground text-foreground"
+              ? "border-primary text-primary"
               : "border-transparent text-muted-foreground hover:text-foreground",
           )}
         >

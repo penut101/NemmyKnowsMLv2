@@ -125,8 +125,8 @@ function PickDetailsContent({
           </dl>
           <div className="space-y-3">
             {[
-              { label: "Model win probability", value: pick.win_probability, color: "bg-positive" },
-              { label: "Needed to break even", value: breakEven, color: "bg-accent-amber" },
+              { label: "Model win probability", value: pick.win_probability, color: "bg-primary" },
+              { label: "Needed to break even", value: breakEven, color: "bg-accent-blue" },
             ].map(({ label, value, color }) => (
               <div key={label}>
                 <div className="mb-1.5 flex items-baseline justify-between gap-3">

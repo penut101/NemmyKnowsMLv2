@@ -158,7 +158,7 @@ export default async function SchedulePage() {
                       <TableCell className={`${num} text-muted-foreground`}>
                         {total ? formatNumber(total.total_line, 1) : "–"}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap font-mono text-xs text-positive">
+                      <TableCell className="whitespace-nowrap font-mono text-xs text-primary">
                         {play?.join(" · ") ?? ""}
                       </TableCell>
                     </TableRow>

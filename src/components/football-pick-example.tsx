@@ -294,7 +294,7 @@ function ShrinkLine({
   const marks = [
     { v: pure, label: "pure model", color: theme["chart-2"], y: 18 },
     { v: market, label: "market", color: theme["muted-foreground"], y: 18 },
-    { v: pricing, label: `priced (${Math.round((1 - weight) * 100)}/${Math.round(weight * 100)})`, color: theme.positive, y: 58 },
+    { v: pricing, label: `priced (${Math.round((1 - weight) * 100)}/${Math.round(weight * 100)})`, color: theme.primary, y: 58 },
   ];
   return (
     <svg

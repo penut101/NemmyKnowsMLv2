@@ -108,7 +108,7 @@ export function PickFilters({
               if (event.currentTarget.form)
                 navigate(event.currentTarget.form, value);
             }}
-            className={`h-9 rounded-md border px-3 text-sm disabled:opacity-50 ${period === value ? "border-foreground bg-foreground text-background" : "border-input hover:bg-muted"}`}
+            className={`h-9 rounded-md border px-3 text-sm disabled:opacity-50 ${period === value ? "border-primary bg-primary text-primary-foreground" : "border-input hover:bg-muted"}`}
           >
             {value === "all" ? "All time" : `${value}D`}
           </button>

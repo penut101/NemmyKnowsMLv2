@@ -149,16 +149,16 @@ export function fieldSvg(game: LiveGame): string | null {
     `<rect x="10" y="0.5" width="100" height="9" fill="none" stroke="currentColor" stroke-opacity="0.5"/>` +
     ticks +
     lineToGain +
-    `<line x1="${x - field.direction * 7}" y1="5" x2="${x}" y2="5" stroke="var(--positive)" stroke-width="2.4"/>` +
-    `<polygon points="${x},1 ${x},9 ${x + field.direction * 5},5" fill="var(--positive)"/>` +
+    `<line x1="${x - field.direction * 7}" y1="5" x2="${x}" y2="5" stroke="var(--primary)" stroke-width="2.4"/>` +
+    `<polygon points="${x},1 ${x},9 ${x + field.direction * 5},5" fill="var(--primary)"/>` +
     `</svg>`
   );
 }
 
-// A small football in the positive color, drawn next to the side that has
+// A small football in the brand color, drawn next to the side that has
 // the ball. Laces are cut in the page background so it reads at 18 px.
 export const FOOTBALL_SVG =
   `<svg viewBox="0 0 16 16" aria-hidden="true"><g transform="rotate(-35 8 8)">` +
-  `<ellipse cx="8" cy="8" rx="7.4" ry="4.4" fill="var(--positive)"/>` +
+  `<ellipse cx="8" cy="8" rx="7.4" ry="4.4" fill="var(--primary)"/>` +
   `<path d="M4.5 8h7M6 6.5v3M8 6.5v3M10 6.5v3" stroke="var(--background)" stroke-width="1.4" fill="none"/>` +
   `</g></svg>`;

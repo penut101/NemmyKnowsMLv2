@@ -96,7 +96,7 @@ export default function Filters() {
             onClick={() => updateParam("period", p)}
             className={`h-8 px-2.5 border transition-colors ${
               period === p
-                ? "border-foreground bg-foreground text-background"
+                ? "border-primary bg-primary text-primary-foreground"
                 : "border-input bg-transparent text-muted-foreground hover:text-foreground"
             }`}
           >

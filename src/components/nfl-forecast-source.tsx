@@ -18,7 +18,7 @@ export function NflForecastSource({
           className={cn(
             "border-b-2 pb-2",
             source === value
-              ? "border-foreground text-foreground"
+              ? "border-primary text-primary"
               : "border-transparent text-muted-foreground hover:text-foreground",
           )}
         >

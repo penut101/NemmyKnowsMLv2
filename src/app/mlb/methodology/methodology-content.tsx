@@ -68,8 +68,8 @@ function FormulaBlock({ children }: { children: ReactNode }) {
 const flowNodes = [
   {
     group: "Inputs",
-    color: "border-blue-500/40 bg-blue-500/5",
-    labelColor: "text-blue-400",
+    color: "border-accent-blue/40 bg-accent-blue/5",
+    labelColor: "text-accent-blue",
     items: [
       { label: "Statcast pitch data", sub: "~480k PAs, 2024+25+26-YTD" },
       { label: "MLB Stats API", sub: "Schedule, lineups, rosters, boxscores, weather" },
@@ -79,8 +79,8 @@ const flowNodes = [
   },
   {
     group: "Bayesian Skill Layer",
-    color: "border-amber-500/40 bg-amber-500/5",
-    labelColor: "text-amber-400",
+    color: "border-chart-3/40 bg-chart-3/5",
+    labelColor: "text-chart-3",
     items: [
       { label: "Batter model", sub: "~870 batters × 2 platoon cells" },
       { label: "Pitcher model", sub: "~1,140 pitchers × 2 roles (SP/RP)" },
@@ -90,8 +90,8 @@ const flowNodes = [
   },
   {
     group: "Monte Carlo Simulator",
-    color: "border-emerald-500/40 bg-emerald-500/5",
-    labelColor: "text-emerald-400",
+    color: "border-primary/40 bg-primary/5",
+    labelColor: "text-primary",
     items: [
       { label: "Per-PA outcome sampler", sub: "Vectorized over 8 categories" },
       { label: "Empirical advancement", sub: "P(state', runs | state, outs, outcome)" },
@@ -101,8 +101,8 @@ const flowNodes = [
   },
   {
     group: "Markets & EV",
-    color: "border-purple-500/40 bg-purple-500/5",
-    labelColor: "text-purple-400",
+    color: "border-chart-4/40 bg-chart-4/5",
+    labelColor: "text-chart-4",
     items: [
       { label: "Win probability", sub: "Sim logit anchored to de-vigged market consensus" },
       { label: "Totals & RL distributions", sub: "Pure sim quantiles" },
@@ -261,7 +261,7 @@ export function MethodologyContent({
           <ChangelogEntry
             date="May 12, 2026"
             title="v2 cutover: hierarchical Bayesian skill model + per-PA Monte Carlo simulator"
-            accent="emerald"
+            accent="brand"
           >
             Replaced the v1 XGBoost regressor. Backtest over 542 games (Mar 26 to May 9,
             2026): Brier −6.9%, log-loss −7.3%, max calibration gap from 41.9% down to
@@ -659,7 +659,7 @@ export function MethodologyContent({
                   <TableCell className="text-right font-mono text-xs">{row.delta}</TableCell>
                   <TableCell className="text-right">
                     {row.pass === true ? (
-                      <Badge variant="outline" className="text-emerald-400 border-emerald-500/40">PASS</Badge>
+                      <Badge variant="outline" className="text-primary border-primary/40">PASS</Badge>
                     ) : (
                       <span className="text-xs text-muted-foreground">–</span>
                     )}
@@ -688,7 +688,7 @@ export function MethodologyContent({
       <SectionCard
         id="legacy-v1"
         title="Legacy: v1 XGBoost Model (pre-2026-05-12)"
-        subtitle="Predictions on the History and Performance tabs before the green cutover line come from this model"
+        subtitle="Predictions on the History and Performance tabs before the dashed v2 cutover line come from this model"
       >
         <div className="space-y-4 text-sm leading-relaxed">
           <p>
@@ -704,7 +704,7 @@ export function MethodologyContent({
             invisible to it; it reported no parameter uncertainty; and its calibration
             degraded in the tails. The v1 code was deleted on September 1, 2026. Its
             predictions before May 12, 2026 are kept in archive tables so the historical
-            record is unchanged, and a green vertical line on every time-series chart
+            record is unchanged, and a dashed vertical line on every time-series chart
             marks the cutover.
           </p>
         </div>

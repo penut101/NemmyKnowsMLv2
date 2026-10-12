@@ -33,7 +33,7 @@ export default async function AwardsPage({ searchParams }: {
     </div>{meta && <LastUpdated timestamp={meta.as_of} schedule="Updates after completed weekly games" />}</PageHeader>
     <nav aria-label="NFL awards" className="flex flex-wrap border-b border-rule-strong font-mono text-xs uppercase tracking-wider">
       {(Object.keys(AWARDS) as AwardKey[]).map((key) => <NavigationLink prefetch={true} scroll={false} key={key} href={query(key, season, week)} aria-current={award === key ? "page" : undefined}
-        className={`border-b-2 px-2 py-2 transition-colors sm:px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${award === key ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{key}</NavigationLink>)}
+        className={`border-b-2 px-2 py-2 transition-colors sm:px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${award === key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{key}</NavigationLink>)}
     </nav>
     <div><h2 className="font-heading text-lg">{AWARDS[award]}</h2>{meta && <p className="mt-1 font-mono text-xs text-muted-foreground">{meta.season} season · Through week {meta.week}</p>}</div>
     {unavailable ? <p role="status" className="rounded-lg border p-5 text-sm text-muted-foreground">Awards data is temporarily unavailable. Please try again later.</p>

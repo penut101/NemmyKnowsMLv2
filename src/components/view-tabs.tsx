@@ -41,7 +41,7 @@ export function ViewTabs<K extends string>({
               // set here rather than inherited from the list.
               "border-b-2 border-transparent px-3 py-2 uppercase text-muted-foreground transition-colors",
               "hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              "data-active:border-foreground data-active:text-foreground"
+              "data-active:border-primary data-active:text-primary"
             )}
           >
             {option.label}

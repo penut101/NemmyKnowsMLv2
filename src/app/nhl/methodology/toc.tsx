@@ -44,7 +44,7 @@ export function TableOfContents() {
               aria-current={activeId === id ? "location" : undefined}
               className={
                 activeId === id
-                  ? "text-foreground"
+                  ? "text-primary"
                   : "text-muted-foreground hover:text-foreground"
               }
             >

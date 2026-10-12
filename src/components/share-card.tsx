@@ -39,7 +39,7 @@ export async function renderShareCard({ eyebrow, title, subtitle, chips }: Share
             <path
               d="M 1 14 C 6 14, 9 13, 11 9 C 13 3, 15 1, 16 1 C 17 1, 19 3, 21 9 C 23 13, 26 14, 31 14"
               fill="none"
-              stroke="#22c55e"
+              stroke="#d4b66a"
               strokeWidth="1.2"
               strokeLinecap="round"
             />
@@ -48,7 +48,7 @@ export async function renderShareCard({ eyebrow, title, subtitle, chips }: Share
             <div
               style={{
                 fontSize: 26,
-                color: "#22c55e",
+                color: "#d4b66a",
                 letterSpacing: 4,
                 textTransform: "uppercase",
               }}
@@ -84,7 +84,7 @@ export async function renderShareCard({ eyebrow, title, subtitle, chips }: Share
               </div>
             ))}
           </div>
-          <div style={{ fontSize: 24, color: "#22c55e", letterSpacing: 2 }}>renenunez.dev</div>
+          <div style={{ fontSize: 24, color: "#d4b66a", letterSpacing: 2 }}>renenunez.dev</div>
         </div>
       </div>
     ),

@@ -55,8 +55,8 @@ function FormulaBlock({ children }: { children: ReactNode }) {
 const flowNodes = [
   {
     group: "Inputs",
-    color: "border-blue-500/40 bg-blue-500/5",
-    labelColor: "text-blue-400",
+    color: "border-accent-blue/40 bg-accent-blue/5",
+    labelColor: "text-accent-blue",
     items: [
       { label: "CFBD play-by-play", sub: "Every D1 game, 2019+" },
       { label: "CFBD API", sub: "Games, lines, talent, portal, returning" },
@@ -66,8 +66,8 @@ const flowNodes = [
   },
   {
     group: "Rating Engine",
-    color: "border-amber-500/40 bg-amber-500/5",
-    labelColor: "text-amber-400",
+    color: "border-chart-3/40 bg-chart-3/5",
+    labelColor: "text-chart-3",
     items: [
       { label: "Possession construction", sub: "Scrimmage runs, garbage-time aware" },
       { label: "Ridge over off/def PPP", sub: "Two numbers per team + fitted HFA" },
@@ -77,8 +77,8 @@ const flowNodes = [
   },
   {
     group: "Projections",
-    color: "border-emerald-500/40 bg-emerald-500/5",
-    labelColor: "text-emerald-400",
+    color: "border-primary/40 bg-primary/5",
+    labelColor: "text-primary",
     items: [
       { label: "Margin and total", sub: "Bivariate Student-t per game" },
       { label: "Calibrated intervals", sub: "50/80/95% checked on holdout" },
@@ -88,8 +88,8 @@ const flowNodes = [
   },
   {
     group: "In-Game",
-    color: "border-purple-500/40 bg-purple-500/5",
-    labelColor: "text-purple-400",
+    color: "border-chart-4/40 bg-chart-4/5",
+    labelColor: "text-chart-4",
     items: [
       { label: "Play-boundary states", sub: "Strictly pre-snap information" },
       { label: "3-parameter WP model", sub: "Gaussian on the final margin" },

@@ -59,7 +59,7 @@ export function TableOfContents() {
               aria-current={activeId === id ? "true" : undefined}
               className={`border-l-2 py-1 pl-3 font-mono text-xs uppercase tracking-wider transition-colors ${
                 activeId === id
-                  ? "border-foreground text-foreground"
+                  ? "border-primary text-primary"
                   : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -79,7 +79,7 @@ export function TableOfContents() {
               aria-current={activeId === id ? "true" : undefined}
               className={`border-b-2 px-3 py-1.5 font-mono text-xs uppercase tracking-wider whitespace-nowrap transition-colors ${
                 activeId === id
-                  ? "border-foreground text-foreground"
+                  ? "border-primary text-primary"
                   : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >

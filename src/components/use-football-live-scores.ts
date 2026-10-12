@@ -193,7 +193,7 @@ export function useLiveScoreRows(
       const part = (name: keyof typeof PARTS) =>
         block.querySelector<HTMLElement>(`[data-live-part="${name}"]`)!;
       part("detail").textContent = game.detail ?? "";
-      part("detail").classList.toggle("text-positive", game.state === "in");
+      part("detail").classList.toggle("text-primary", game.state === "in");
       // The strip shows the spot, so the text keeps only the down and distance.
       const downDistance =
         game.state === "in" ? (game.situation?.replace(/ at .*$/, "") ?? null) : null;

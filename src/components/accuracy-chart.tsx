@@ -175,7 +175,7 @@ export function AccuracyChart({ data }: AccuracyChartProps) {
               className={cn(
                 "px-2 py-1 font-mono text-xs uppercase tracking-wider transition-colors",
                 windowDays === option
-                  ? "text-foreground underline underline-offset-4"
+                  ? "text-primary underline underline-offset-4"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >

@@ -47,7 +47,7 @@ export function Nav({
                 aria-current={isActive ? "page" : undefined}
                 className={`shrink-0 whitespace-nowrap px-3 py-3 font-mono text-xs uppercase tracking-wider transition-colors ${
                   isActive
-                    ? "border-b-2 border-foreground text-foreground"
+                    ? "border-b-2 border-primary text-primary"
                     : "border-b-2 border-transparent text-muted-foreground hover:text-foreground"
                 }`}
               >

@@ -35,7 +35,7 @@ function TeamRow({
             name={prediction.team}
             className="h-4 w-4 shrink-0"
           />
-          <span className={cn("font-semibold tracking-wide", hasEvPlay && "text-positive")}>
+          <span className={cn("font-semibold tracking-wide", hasEvPlay && "text-primary")}>
             {prediction.team}
           </span>
           <span aria-live="polite" className="contents">
@@ -101,7 +101,7 @@ export function GamesTable({ matchups }: { matchups: GameMatchup[] }) {
                   )}
                   {status.isLive && (
                     <span className="inline-flex items-center gap-1.5">
-                      <span className="text-[10px] uppercase tracking-wider text-positive">{status.liveLabel}</span>
+                      <span className="text-[10px] uppercase tracking-wider text-primary">{status.liveLabel}</span>
                       <MlbBaseOutState bases={matchup.bases} outs={matchup.outs} />
                     </span>
                   )}

@@ -239,7 +239,7 @@ function StatusBadge({ live }: { live: boolean | null }) {
   return (
     <span className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-muted-foreground">
       <span
-        className={`h-1.5 w-1.5 rounded-full ${live ? "bg-emerald-500" : "bg-amber-500"}`}
+        className={`h-1.5 w-1.5 rounded-full ${live ? "bg-primary" : "bg-muted-foreground"}`}
       />
       {live ? "Live" : "Preseason"}
     </span>
@@ -281,7 +281,7 @@ function ModelEntry({
           </span>
           <StatusBadge live={live} />
         </span>
-        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground transition-colors group-hover/link:text-foreground">
+        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground transition-colors group-hover/link:text-primary">
           {cta} &rarr;
         </span>
       </Link>

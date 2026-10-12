@@ -78,7 +78,7 @@ export function GameMatchupHeader({
         {/* Keep the matchup visible while numeric columns scroll on mobile. */}
         <div className="sticky left-0 flex w-[calc(100vw-2.5rem)] max-w-full flex-wrap items-baseline justify-between gap-x-3 gap-y-1 md:w-full">
           <div className="flex flex-wrap items-center gap-2">
-            <span className={cn("text-sm font-semibold", hasPlay && "text-positive")}>
+            <span className={cn("text-sm font-semibold", hasPlay && "text-primary")}>
               {away} @ {home}
             </span>
             <span aria-live="polite" className="contents">{status}</span>

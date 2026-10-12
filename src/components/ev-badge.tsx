@@ -31,7 +31,7 @@ export function EvBadge({ prediction }: EvBadgeProps) {
     <div className="flex items-center gap-1 font-mono text-xs font-medium whitespace-nowrap">
       {/* Slot 1: ML Kelly % */}
       <div className="w-10 text-center">
-        <div className="tabular-nums">{mlValue ? <span className="text-positive">{mlValue}</span> : <span className="invisible">-</span>}</div>
+        <div className="tabular-nums">{mlValue ? <span className="text-primary">{mlValue}</span> : <span className="invisible">-</span>}</div>
         <div className="text-[10px] font-normal text-muted-foreground">{mlValue ? "Kelly" : <span className="invisible">-</span>}</div>
       </div>
 

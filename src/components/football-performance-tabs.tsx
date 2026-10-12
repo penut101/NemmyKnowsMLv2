@@ -39,7 +39,7 @@ export function FootballPerformanceTabs({
             className={cn(
               "border-b-2 px-4 py-2 text-sm",
               active === view.key
-                ? "border-foreground"
+                ? "border-primary text-primary"
                 : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >

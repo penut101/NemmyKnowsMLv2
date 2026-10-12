@@ -151,7 +151,7 @@ export function SeasonLinks({
           className={cn(
             "border-b-2 px-3 py-2 transition-colors",
             o.key === activeKey
-              ? "border-foreground text-foreground"
+              ? "border-primary text-primary"
               : "border-transparent text-muted-foreground hover:text-foreground",
           )}
         >
@@ -215,7 +215,7 @@ export function HistoryPager({
             aria-current={value === page ? "page" : undefined}
             className={cn(
               linkClass,
-              value === page && "bg-foreground text-background",
+              value === page && "bg-primary text-primary-foreground",
             )}
           >
             {value}

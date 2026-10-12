@@ -74,7 +74,7 @@ export function HomePlayoffBracket({ forecast }: { forecast: PlayoffForecast }) 
         <h4 className="font-heading text-base">World Series</h4>
         <ProjectedSeries series={final} teams={teams} fullNames />
         <div className="flex items-center gap-content py-heading">
-          <Trophy className="h-5 w-5 shrink-0 text-positive" aria-hidden="true" />
+          <Trophy className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
           <div>
             <p className="text-sm">{champion.name}</p>
             <p className="text-xs text-muted-foreground">Projected champion{titleChance != null && ` · ${formatPct(titleChance)} title chance`}</p>

@@ -290,7 +290,7 @@ function GamePredictions({
               <span
                 className={cn(
                   "font-mono text-[11px] uppercase tracking-wider",
-                  live.state === "in" && "text-positive",
+                  live.state === "in" && "text-primary",
                 )}
               >
                 {live.detail}

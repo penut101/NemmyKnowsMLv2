@@ -29,7 +29,7 @@ export default async function PlayoffsPage() {
           </PageDescription>
         </div>
         <Trophy
-          className="hidden size-12 shrink-0 text-amber-500 sm:block"
+          className="hidden size-12 shrink-0 text-primary sm:block"
           aria-hidden="true"
         />
       </PageHeader>
