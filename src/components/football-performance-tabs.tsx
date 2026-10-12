@@ -22,14 +22,14 @@ export function FootballPerformanceTabs({
       >
         {[
           {
-            key: "picks",
-            label: "Recommendations",
+            key: "accuracy",
+            label: "Forecast accuracy",
             href: `/${sport}/performance?${query}`,
           },
           {
-            key: "accuracy",
-            label: "Forecast accuracy",
-            href: `/${sport}/performance?${query}&view=accuracy`,
+            key: "picks",
+            label: "Recommendations",
+            href: `/${sport}/performance?${query}&view=picks`,
           },
         ].map((view) => (
           <Link

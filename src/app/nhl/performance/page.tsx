@@ -22,7 +22,7 @@ export const revalidate = 3600;
 export const metadata: Metadata = {
   title: "NHL Model Performance",
   description:
-    "Record, ROI, and frozen-price results for the NHL model's moneyline and total picks, plus win-probability calibration on the live season and the backtest.",
+    "Win-probability accuracy and calibration of the NHL model on the live season and the backtest, plus the record, ROI, and frozen-price results of its moneyline and total picks.",
 };
 
 export default async function PerformancePage({
@@ -39,7 +39,7 @@ export default async function PerformancePage({
   const params = await searchParams;
   const filters = pickFilters(params);
   const query = pickQuery(filters).toString();
-  if (params.view === "accuracy" || params.source) {
+  if (params.view !== "picks") {
     const source = params.source === "backtest" ? "backtest" : "live";
     return (
       <PageShell>
@@ -66,7 +66,7 @@ export default async function PerformancePage({
             and graded results.
           </PageDescription>
         </div>
-        <Link href={`/nhl/history?${query}`} className="text-sm underline underline-offset-4">
+        <Link href={`/nhl/history?${query}&view=picks`} className="text-sm underline underline-offset-4">
           View pick history
         </Link>
       </PageHeader>
@@ -78,6 +78,7 @@ export default async function PerformancePage({
             latestSeason={summary.latestSeason}
             market={market}
             period={filters.period}
+            view="picks"
           />
           <PickKpis metric={metric} unavailable={summary.unavailable} />
           {summary.unavailable ? (

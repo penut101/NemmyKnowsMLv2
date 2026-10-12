@@ -151,10 +151,10 @@ export default async function ForecastHistory({
       </p>
 
       <Link
-        href="/cfb/history"
+        href="/cfb/history?view=picks"
         className="text-sm underline underline-offset-4"
       >
-        Back to pick history
+        Pick history
       </Link>
 
       <SeasonLinks

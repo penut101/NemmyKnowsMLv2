@@ -22,7 +22,7 @@ export const revalidate = 3600;
 export const metadata: Metadata = {
   title: "NFL Model Performance",
   description:
-    "Record, ROI, and frozen-price results for the NFL model's recommended moneyline, spread and total picks, plus forecast accuracy against the market.",
+    "Forecast accuracy of the NFL model against the market, plus the record, ROI, and frozen-price results of its recommended moneyline, spread and total picks.",
 };
 
 export default async function PerformancePage({
@@ -39,7 +39,7 @@ export default async function PerformancePage({
   const params = await searchParams;
   const filters = pickFilters(params);
   const query = pickQuery(filters).toString();
-  if (params.view === "accuracy" || params.source) {
+  if (params.view !== "picks") {
     return (
       <PageShell>
         <PageTitle>
@@ -56,7 +56,7 @@ export default async function PerformancePage({
   const metric = selectedPickMetric(summary.metrics, market);
   const settled =
     (metric?.wins ?? 0) + (metric?.losses ?? 0) + (metric?.pushes ?? 0);
-  const historyUrl = `/nfl/history?${query}`;
+  const historyUrl = `/nfl/history?${query}&view=picks`;
 
   return (
     <PageShell>
@@ -86,6 +86,7 @@ export default async function PerformancePage({
             latestSeason={summary.latestSeason}
             market={market}
             period={filters.period}
+            view="picks"
           />
           <PickKpis metric={metric} unavailable={summary.unavailable} />
           {summary.unavailable ? (

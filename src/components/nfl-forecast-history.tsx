@@ -1,4 +1,5 @@
 import { PageHeader, PageShell, PageTitle } from "@/components/page-layout";
+import Link from "next/link";
 import { NflForecastSource } from "@/components/nfl-forecast-source";
 import { supabaseNfl } from "@/lib/supabase";
 import type { NflBacktestPrediction } from "@/lib/types";
@@ -97,6 +98,13 @@ export default async function NflForecastHistory({
           : "Every graded prediction from the historical walk-forward backtest, next to the closing spread and final margin."}{" "}
         Lines are quoted for the home team.
       </p>
+
+      <Link
+        href="/nfl/history?view=picks"
+        className="text-sm underline underline-offset-4"
+      >
+        Pick history
+      </Link>
 
       <SeasonLinks
         options={[

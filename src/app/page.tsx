@@ -6,12 +6,17 @@ import { SiteHeader } from "@/components/site-header";
 import { ContactLine } from "@/components/site-footer";
 import { fetchBettingHeadline } from "@/lib/bet-ledger";
 import { mlbHeadline } from "@/lib/mlb-headline";
-import { supabaseCfb, supabaseNfl } from "@/lib/supabase";
-import { formatPct } from "@/lib/utils";
+import { supabase, supabaseCfb, supabaseNfl } from "@/lib/supabase";
+import { cn, formatNumber, formatPct, formatSigned } from "@/lib/utils";
+import { fetchLivePerformance } from "@/lib/cfb";
+import { fetchForecastAccuracy as fetchNflAccuracy } from "@/lib/nfl";
 import { fetchCfbPickSummary } from "@/lib/cfb-picks";
 import { fetchNflPickSummary } from "@/lib/nfl-picks";
 import { fetchNhlPickSummary } from "@/lib/nhl-picks";
-import { fetchLatestRatings as fetchNhlRatings } from "@/lib/nhl";
+import {
+  fetchForecastAccuracy as fetchNhlAccuracy,
+  fetchLatestRatings as fetchNhlRatings,
+} from "@/lib/nhl";
 import { marketRecords, type MarketRecord } from "@/lib/football-picks";
 import { SITE_TIME_ZONE, siteDate } from "@/lib/daily-picks";
 import { fetchDailyPicks } from "@/lib/daily-picks-fetch";
@@ -32,6 +37,49 @@ async function getMlbHeadline(): Promise<MarketRecord[] | null> {
   }
 }
 
+// Forecast error is scored on every graded game, so it leads each card; the
+// per-market record covers only the games that drew a pick.
+type Forecast = {
+  stats: { label: string; value: string }[];
+  sample: string;
+};
+
+function marginForecast(
+  modelMae: number | null,
+  marketMae: number | null,
+  gap: number | null,
+  games: number,
+): Forecast {
+  return {
+    stats: [
+      { label: "Margin MAE", value: formatNumber(modelMae, 2) },
+      { label: "Market MAE", value: formatNumber(marketMae, 2) },
+      { label: "Gap to market", value: formatSigned(gap, 2) },
+    ],
+    sample: `${games} games graded`,
+  };
+}
+
+async function getMlbForecast(): Promise<Forecast | null> {
+  const { data } = await supabase
+    .from("model_evaluation")
+    .select("brier_score, mae, total_predictions")
+    .eq("eval_window", "season")
+    .not("brier_score", "is", null)
+    .order("date", { ascending: false })
+    .limit(1);
+  const latest = data?.[0];
+  if (!latest) return null;
+  return {
+    stats: [
+      { label: "Brier", value: formatNumber(latest.brier_score, 3) },
+      { label: "Coin flip", value: "0.250" },
+      { label: "Runs MAE", value: formatNumber(latest.mae, 2) },
+    ],
+    sample: `${latest.total_predictions ?? 0} games graded`,
+  };
+}
+
 type FootballHeadline = {
   season: number | null;
   week: number | null;
@@ -39,6 +87,7 @@ type FootballHeadline = {
   // has published, the card reads as live.
   live: boolean;
   markets: MarketRecord[];
+  forecast: Forecast | null;
   // A daily model labels its period itself instead of a week number.
   period?: string;
 };
@@ -55,15 +104,32 @@ async function getCfbHeadline(): Promise<FootballHeadline | null> {
       .limit(1);
     const latest = latestRes.data?.[0];
     if (!latest) return null;
-    const summary = await fetchCfbPickSummary({
-      ...SEASON_TO_DATE,
-      season: latest.season,
-    });
+    const [summary, performance] = await Promise.all([
+      fetchCfbPickSummary({ ...SEASON_TO_DATE, season: latest.season }),
+      fetchLivePerformance(),
+    ]);
+    const overall = new Map(
+      performance.season === latest.season
+        ? performance.metrics
+            .filter((m) => m.segment_kind === "overall")
+            .map((m) => [m.prediction_source, m])
+        : [],
+    );
+    // Grade the published market-informed forecast, as the performance page does.
+    const published = overall.get("market_informed") ?? overall.get("pure_model");
     return {
       season: latest.season,
       week: latest.week,
       live: !String(latest.model_version ?? "").startsWith("preseason"),
       markets: marketRecords(summary.metrics),
+      forecast: published?.games
+        ? marginForecast(
+            published.margin_mae,
+            overall.get("closing_market")?.margin_mae ?? null,
+            published.model_minus_market_mae,
+            published.games,
+          )
+        : null,
     };
   } catch {
     // Home should never 500 because Supabase is unreachable; the CFB card
@@ -82,15 +148,26 @@ async function getNflHeadline(): Promise<FootballHeadline | null> {
       .limit(1);
     const latest = latestRes.data?.[0];
     if (!latest) return null;
-    const summary = await fetchNflPickSummary({
-      ...SEASON_TO_DATE,
-      season: latest.season,
-    });
+    const [summary, accuracy] = await Promise.all([
+      fetchNflPickSummary({ ...SEASON_TO_DATE, season: latest.season }),
+      fetchNflAccuracy("live").catch(() => null),
+    ]);
+    const graded = accuracy?.bySeason.find(
+      (slice) => slice.label === String(latest.season),
+    );
     return {
       season: latest.season,
       week: latest.week,
       live: true,
       markets: marketRecords(summary.metrics),
+      forecast: graded
+        ? marginForecast(
+            graded.modelMae,
+            graded.marketMae,
+            graded.modelMae - graded.marketMae,
+            graded.games,
+          )
+        : null,
     };
   } catch {
     // Home should never 500 because Supabase is unreachable; the NFL card
@@ -108,13 +185,28 @@ async function getNhlHeadline(): Promise<FootballHeadline | null> {
     const year = Number(asOf.slice(0, 4));
     const month = Number(asOf.slice(5, 7));
     const season = month >= 9 ? year : year - 1;
-    const summary = await fetchNhlPickSummary({ ...SEASON_TO_DATE, season });
+    const [summary, accuracy] = await Promise.all([
+      fetchNhlPickSummary({ ...SEASON_TO_DATE, season }),
+      fetchNhlAccuracy("live").catch(() => null),
+    ]);
+    const graded = accuracy?.by_season.find((slice) => slice.season === season);
     const overall = summary.metrics.find((m) => m.segment_kind === "overall");
     return {
       season,
       week: null,
       live: (overall?.picks ?? 0) + (overall?.no_plays ?? 0) > 0,
       markets: marketRecords(summary.metrics).filter((m) => m.market !== "spreads"),
+      // No closing lines are published for the NHL, so a coin flip is the bar.
+      forecast: graded
+        ? {
+            stats: [
+              { label: "Log loss", value: formatNumber(graded.log_loss, 3) },
+              { label: "Coin flip", value: "0.693" },
+              { label: "Total MAE", value: formatNumber(graded.total_mae, 2) },
+            ],
+            sample: `${graded.n} games graded`,
+          }
+        : null,
       period: `${season}-${String(season + 1).slice(2)} season`,
     };
   } catch {
@@ -207,30 +299,45 @@ const MARKET_HEADINGS = {
   totals: "Totals",
 } as const;
 
-function MarketStats({ markets, period, spreadLabel = "Spreads" }: {
+function ModelStats({ forecast, markets, period, spreadLabel = "Spreads" }: {
+  forecast: Forecast | null;
   markets: MarketRecord[];
   period: string;
   spreadLabel?: string;
 }) {
   return (
-    <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-t border-border pt-4">
-      {markets.map((record) => (
-        <div key={record.market}>
-          <p className="text-xs text-muted-foreground">
-            {record.market === "spreads" ? spreadLabel : MARKET_HEADINGS[record.market]}
-          </p>
-          <p className="mt-0.5 font-mono text-sm tabular-nums">
-            {record.wins}&ndash;{record.losses}&ndash;{record.pushes}
-          </p>
-          <p className="mt-0.5 font-mono text-xs text-muted-foreground tabular-nums">
-            ROI {formatPct(record.roi)}
-            {record.pending ? ` · ${record.pending} pending` : ""}
+    <div className="mt-4 border-t border-border pt-4">
+      {forecast && (
+        <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
+          {forecast.stats.map((stat) => (
+            <div key={stat.label}>
+              <p className="text-xs text-muted-foreground">{stat.label}</p>
+              <p className="mt-0.5 font-mono text-base font-bold tabular-nums">
+                {stat.value}
+              </p>
+            </div>
+          ))}
+          <p className="ml-auto font-mono text-xs text-muted-foreground">
+            {forecast.sample}
           </p>
         </div>
-      ))}
-      <p className="ml-auto self-end font-mono text-xs text-muted-foreground">
-        {period}
-      </p>
+      )}
+      <div
+        className={cn(
+          "flex flex-wrap gap-x-5 gap-y-1 font-mono text-xs text-muted-foreground tabular-nums",
+          forecast && "mt-3",
+        )}
+      >
+        {markets.map((record) => (
+          <span key={record.market}>
+            {record.market === "spreads" ? spreadLabel : MARKET_HEADINGS[record.market]}{" "}
+            {record.wins}&ndash;{record.losses}&ndash;{record.pushes} · ROI{" "}
+            {formatPct(record.roi)}
+            {record.pending ? ` · ${record.pending} pending` : ""}
+          </span>
+        ))}
+        <span className="ml-auto">{period}</span>
+      </div>
     </div>
   );
 }
@@ -239,13 +346,20 @@ function FootballStats({ headline }: { headline: FootballHeadline }) {
   const period = headline.period ?? (headline.live
     ? `${headline.season} week ${headline.week ?? "–"}`
     : `${headline.season} preseason`);
-  return <MarketStats markets={headline.markets} period={period} />;
+  return (
+    <ModelStats
+      forecast={headline.forecast}
+      markets={headline.markets}
+      period={period}
+    />
+  );
 }
 
 export default async function Home() {
   const today = siteDate();
-  const [mlb, cfb, nfl, nhl, daily, feature] = await Promise.all([
+  const [mlb, mlbForecast, cfb, nfl, nhl, daily, feature] = await Promise.all([
     getMlbHeadline(),
+    getMlbForecast(),
     getCfbHeadline(),
     getNflHeadline(),
     getNhlHeadline(),
@@ -309,7 +423,14 @@ export default async function Home() {
                 cta="View today's slate"
                 description="Hierarchical Bayesian model simulating every game one plate appearance at a time."
               >
-                {mlb && <MarketStats markets={mlb} period="Updated nightly" spreadLabel="Run lines" />}
+                {mlb && (
+                  <ModelStats
+                    forecast={mlbForecast}
+                    markets={mlb}
+                    period="Updated nightly"
+                    spreadLabel="Run lines"
+                  />
+                )}
               </ModelEntry>
 
               <ModelEntry

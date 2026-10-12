@@ -1,4 +1,4 @@
-import { PageDescription, PageHeader, PageSection, PageShell, PageTitle } from "@/components/page-layout";
+import { PageDescription, PageHeader, PageShell, PageTitle } from "@/components/page-layout";
 import type { Metadata } from "next";
 import { Notice } from "@/components/notice";
 import Link from "next/link";
@@ -14,14 +14,12 @@ import { PickBreakdown, PickKpis, PickPolicy } from "@/components/cfb-picks";
 import { PickFilters } from "@/components/cfb-pick-filters";
 import { CfbPerformanceTabs } from "@/components/cfb-performance-tabs";
 import ForecastPerformance from "@/components/cfb-forecast-performance";
-import { KpiCard } from "@/components/kpi-card";
-import { formatNumber, formatPct, formatSigned } from "@/lib/utils";
 
 export const revalidate = 3600;
 export const metadata: Metadata = {
   title: "College Football Model Performance",
   description:
-    "Record, ROI, and closing-line results for the college football model's recommended moneyline, spread and total picks, plus forecast accuracy against the market.",
+    "Forecast accuracy of the college football model against the market, plus the record, ROI, and closing-line results of its recommended moneyline, spread and total picks.",
 };
 
 export default async function PerformancePage({
@@ -37,7 +35,7 @@ export default async function PerformancePage({
   const params = await searchParams;
   const filters = pickFilters(params);
   const query = pickQuery(filters).toString();
-  if (params.view === "accuracy") {
+  if (params.view !== "picks") {
     const live = await fetchLivePerformance();
     return (
       <PageShell>
@@ -50,25 +48,12 @@ export default async function PerformancePage({
       </PageShell>
     );
   }
-  const [summary, live] = await Promise.all([
-    fetchCfbPickSummary(filters),
-    fetchLivePerformance(),
-  ]);
+  const summary = await fetchCfbPickSummary(filters);
   const market = filters.market;
   const metric = selectedPickMetric(summary.metrics, market);
-  // Grade the published market-informed forecast; seasons recorded before it
-  // existed fall back to the pure model.
-  const overall =
-    filters.season === null || live.season === filters.season
-      ? live.metrics.filter((m) => m.segment_kind === "overall")
-      : [];
-  const published =
-    overall.find((m) => m.prediction_source === "market_informed") ??
-    overall.find((m) => m.prediction_source === "pure_model") ??
-    null;
   const settled =
     (metric?.wins ?? 0) + (metric?.losses ?? 0) + (metric?.pushes ?? 0);
-  const historyUrl = `/cfb/history?${query}`;
+  const historyUrl = `/cfb/history?${query}&view=picks`;
 
   return (
     <PageShell>
@@ -97,6 +82,7 @@ export default async function PerformancePage({
             latestSeason={summary.latestSeason}
             market={market}
             period={filters.period}
+            view="picks"
           />
           <PickKpis metric={metric} unavailable={summary.unavailable} />
           {summary.unavailable ? (
@@ -180,44 +166,6 @@ export default async function PerformancePage({
                 )}
             />
           </>
-          {published && (
-            <PageSection>
-              <h2 className="font-heading text-lg">
-                Forecast accuracy at a glance
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                All {published.games} published forecasts graded in {live.season}, including
-                games without a recommendation. Full comparisons and historical
-                backtests are in the Forecast accuracy tab.
-              </p>
-              <div className="grid grid-cols-2 gap-4 border-y border-rule-strong py-4 sm:grid-cols-4">
-                <KpiCard
-                  label="Margin MAE"
-                  value={formatNumber(published.margin_mae, 2)}
-                  sub="points"
-                />
-                <KpiCard
-                  label="Gap to market"
-                  value={formatSigned(published.model_minus_market_mae, 2)}
-                  sub="MAE difference; lower is better"
-                />
-                <KpiCard
-                  label="Total MAE"
-                  value={
-                    published.total_games
-                      ? formatNumber(published.total_mae, 2)
-                      : "–"
-                  }
-                  sub={`points, ${published.total_games ?? 0} games`}
-                />
-                <KpiCard
-                  label="80% coverage"
-                  value={formatPct(published.coverage_80)}
-                  sub="target 80%"
-                />
-              </div>
-            </PageSection>
-          )}
           <PickPolicy firstDecision={metric?.first_decision_at} />
         </div>
       </CfbPerformanceTabs>

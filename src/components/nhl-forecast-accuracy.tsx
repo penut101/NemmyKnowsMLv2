@@ -75,8 +75,9 @@ export async function NhlForecastAccuracy({
           : "Walk-forward replay of the 2022-23 through 2025-26 regular seasons with the same windows and goal map, kept separate from live forecasts."}{" "}
         Log loss and Brier score judge the home win probability (a coin flip
         scores 0.693 and 0.250); total MAE and bias judge the model total in
-        goals. No free closing-line archive exists for the NHL, so these are
-        model-only benchmarks.
+        goals. Closing lines are not published to the site for the NHL, so
+        these are model-only benchmarks; the methodology page reports the
+        backtest against historical lines.
       </p>
       {!accuracy ? (
         <Notice role="status">Accuracy data is temporarily unavailable.</Notice>

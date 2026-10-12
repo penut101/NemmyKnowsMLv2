@@ -11,6 +11,7 @@ export function PickFilters({
   period,
   seasonOptions,
   dateBasis = "decision",
+  view,
 }: {
   season: number | null;
   latestSeason: number;
@@ -18,6 +19,8 @@ export function PickFilters({
   period: PickPeriod;
   seasonOptions?: number[];
   dateBasis?: "decision" | "kickoff";
+  // Kept in the URL so a filter change stays on a non-default tab.
+  view?: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -35,6 +38,7 @@ export function PickFilters({
       season: String(data.get("season")),
       market: String(data.get("market")),
       period: nextPeriod,
+      ...(view ? { view } : {}),
     });
     startTransition(() =>
       router.push(`${pathname}?${query}`, { scroll: false }),

@@ -74,7 +74,7 @@ export default async function PredictionsPage() {
           </PageDescription>
         </div>
         <div className="space-y-2 text-sm sm:text-right">
-          <Link href="/nfl/history" className="underline underline-offset-4">
+          <Link href="/nfl/history?view=picks" className="underline underline-offset-4">
             Full history &rarr;
           </Link>
           {updated && (
@@ -106,7 +106,7 @@ export default async function PredictionsPage() {
           recorded selections, not live prices. Each prediction is tracked at 1
           unit.
         </p>
-        <Link href="/nfl/history" className="underline underline-offset-4">
+        <Link href="/nfl/history?view=picks" className="underline underline-offset-4">
           Results and No Play decisions
         </Link>
       </div>

@@ -110,21 +110,6 @@ export function PerformanceTabs({
       <TabsContent value="overview" className="space-y-8">
         <div className="grid grid-cols-3 sm:flex sm:flex-wrap items-baseline gap-x-4 gap-y-3 font-mono text-sm">
           <KpiCard
-            label="ROI"
-            value={formatPct(liveKpis?.roi)}
-            tooltip="Profit per dollar risked. ROI = total P&L ÷ total stakes. 13% ROI means 13¢ profit per $1 staked, on average - not 13% of your bankroll."
-          />
-          <KpiCard
-            label="Sharpe"
-            value={formatNumber(liveKpis?.sharpe, 2)}
-            tooltip="Risk-adjusted return: mean daily P&L ÷ std dev of daily P&L. >1 is good, >2 excellent."
-          />
-          <KpiCard
-            label="Max DD"
-            value={liveKpis?.max_drawdown != null ? `${formatSigned(liveKpis.max_drawdown, 2)}u` : EMPTY}
-            tooltip="Worst peak-to-trough decline of cumulative P&L, in units. With flat 1u stake sizing (no compounding), drawdown is reported in absolute units rather than as a % of equity - a Kelly-style % would misrepresent a non-compounding strategy."
-          />
-          <KpiCard
             label="Brier"
             value={formatNumber(latest?.brier_score, 3)}
             tooltip="Mean squared error of probabilistic predictions vs binary outcomes. Lower is better; 0.25 is the coin-flip baseline."
@@ -138,6 +123,21 @@ export function PerformanceTabs({
             label="Pick Acc"
             value={formatPct(latest?.total_accuracy)}
             sub={`model picks winner (${latest?.total_correct ?? 0}/${latest?.total_predictions ?? 0})`}
+          />
+          <KpiCard
+            label="ROI"
+            value={formatPct(liveKpis?.roi)}
+            tooltip="Profit per dollar risked. ROI = total P&L ÷ total stakes. 13% ROI means 13¢ profit per $1 staked, on average - not 13% of your bankroll."
+          />
+          <KpiCard
+            label="Sharpe"
+            value={formatNumber(liveKpis?.sharpe, 2)}
+            tooltip="Risk-adjusted return: mean daily P&L ÷ std dev of daily P&L. >1 is good, >2 excellent."
+          />
+          <KpiCard
+            label="Max DD"
+            value={liveKpis?.max_drawdown != null ? `${formatSigned(liveKpis.max_drawdown, 2)}u` : EMPTY}
+            tooltip="Worst peak-to-trough decline of cumulative P&L, in units. With flat 1u stake sizing (no compounding), drawdown is reported in absolute units rather than as a % of equity - a Kelly-style % would misrepresent a non-compounding strategy."
           />
         </div>
 

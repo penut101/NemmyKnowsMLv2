@@ -24,9 +24,9 @@ import { pageNumber } from "@/lib/utils";
 
 export const revalidate = 3600;
 export const metadata: Metadata = {
-  title: "NFL Pick History",
+  title: "NFL Forecast and Pick History",
   description:
-    "Every NFL moneyline, spread and total pick with the side, line, and odds recorded before kickoff and how it graded, plus forecast and backtest history.",
+    "Every graded NFL forecast and backtest game against the closing line, plus each moneyline, spread and total pick with the side, line, and odds recorded before kickoff.",
 };
 
 type Params = {
@@ -45,11 +45,7 @@ export default async function HistoryPage({
   searchParams: Promise<Params>;
 }) {
   const params = await searchParams;
-  if (
-    params.view === "accuracy" ||
-    params.source ||
-    (Number(params.season) >= 2016 && Number(params.season) < 2026)
-  )
+  if (params.view !== "picks")
     return <ForecastHistory searchParams={searchParams} />;
   const filters = historyFilters(params);
   const market = filters.market;
@@ -61,6 +57,7 @@ export default async function HistoryPage({
   function pageUrl(value: number) {
     const query = pickQuery(filters);
     query.set("page", String(value));
+    query.set("view", "picks");
     return `/nfl/history?${query}`;
   }
   if (!history.unavailable && page > totalPages) redirect(pageUrl(totalPages));
@@ -94,6 +91,7 @@ export default async function HistoryPage({
         market={market}
         period={filters.period}
         dateBasis="kickoff"
+        view="picks"
       />
       <PickKpis metric={metric} unavailable={history.unavailable} />
       {history.unavailable ? (

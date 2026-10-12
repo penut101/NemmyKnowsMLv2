@@ -25,9 +25,9 @@ import { pageNumber } from "@/lib/utils";
 
 export const revalidate = 3600;
 export const metadata: Metadata = {
-  title: "NHL Pick History",
+  title: "NHL Forecast and Pick History",
   description:
-    "Every NHL moneyline and total pick with the side, line and price recorded before puck drop and how it graded, plus graded forecast history.",
+    "Every graded NHL forecast with its accuracy and calibration, plus each moneyline and total pick with the side, line and price recorded before puck drop.",
 };
 
 type Params = {
@@ -45,7 +45,7 @@ export default async function HistoryPage({
   searchParams: Promise<Params>;
 }) {
   const params = await searchParams;
-  if (params.view === "accuracy" || params.source) {
+  if (params.view !== "picks") {
     const source = params.source === "backtest" ? "backtest" : "live";
     return (
       <PageShell>
@@ -56,7 +56,7 @@ export default async function HistoryPage({
               Graded games with the pregame forecast each was judged by.
             </PageDescription>
           </div>
-          <Link href="/nhl/history" className="text-sm underline underline-offset-4">
+          <Link href="/nhl/history?view=picks" className="text-sm underline underline-offset-4">
             Pick history
           </Link>
         </PageHeader>
@@ -75,6 +75,7 @@ export default async function HistoryPage({
   function pageUrl(value: number) {
     const query = pickQuery(filters);
     query.set("page", String(value));
+    query.set("view", "picks");
     return `/nhl/history?${query}`;
   }
   if (!history.unavailable && page > totalPages) redirect(pageUrl(totalPages));
@@ -98,6 +99,7 @@ export default async function HistoryPage({
         latestSeason={new Date().getUTCFullYear()}
         market={market}
         period={filters.period}
+        view="picks"
       />
       <PickKpis metric={metric} unavailable={history.unavailable} />
       {history.unavailable ? (
