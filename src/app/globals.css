@@ -71,7 +71,7 @@
   --popover: oklch(0.995 0.003 85);
   --popover-foreground: oklch(0.20 0.008 60);
   /* Brand gold signals selection and availability; green is reserved for performance. */
-  --primary: #8a681f;
+  --primary: #73510d;
   --primary-foreground: oklch(0.985 0.005 85);
   --secondary: oklch(0.955 0.006 85);
   --secondary-foreground: oklch(0.20 0.008 60);
