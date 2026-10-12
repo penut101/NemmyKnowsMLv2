@@ -22,7 +22,7 @@ function ProjectedSeries({ series, teams, fullNames = false }: {
             <span className="w-2 shrink-0 font-mono text-muted-foreground">{team.seed}</span>
             <TeamLogo team={mlbTeamIdentity(code)} name={team.name} className="h-4 w-4" />
             <span className="min-w-0 flex-1" title={team.name}>{fullNames ? team.name : code}</span>
-            <span className={cn("font-mono tabular-nums", code === series.winner && "text-positive")}>{series.outcome.wins[index]}</span>
+            <span className={cn("font-mono tabular-nums", code === series.winner && "text-primary")}>{series.outcome.wins[index]}</span>
           </div>
         );
       })}

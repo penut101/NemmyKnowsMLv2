@@ -82,7 +82,7 @@ export function ResidualsChart({ residuals }: ResidualsChartProps) {
           />
           {/* Zero bias: where an unbiased model centers. */}
           <ReferenceLine x="0" stroke={theme.foreground} strokeWidth={1} />
-          <Bar dataKey="count" fill={theme["chart-2"]} />
+          <Bar dataKey="count" fill={theme["chart-1"]} />
         </BarChart>
       </ResponsiveContainer>
       </div>

@@ -51,7 +51,7 @@ export function ComparisonGaps({ title, description, rows, negativeLabel, positi
                 <div className="relative h-6" aria-hidden="true">
                   <div className="absolute inset-x-0 top-1/2 border-t border-border" />
                   <div className="absolute inset-y-0 left-1/2 border-l border-muted-foreground" />
-                  <div className={`absolute top-2 h-2 ${row.difference < 0 ? "bg-accent-blue" : "bg-accent-amber"}`}
+                  <div className="absolute top-2 h-2 bg-primary"
                     style={{ left: `${row.difference < 0 ? 50 - Math.abs(row.difference) / extent * 38 : 50}%`, width: `${Math.abs(row.difference) / extent * 38}%` }} />
                   <span className={`absolute top-1 hidden font-mono text-xs tabular-nums sm:block ${row.difference < 0 ? "left-0" : "right-0"}`}>{signed(row.difference)}</span>
                 </div>

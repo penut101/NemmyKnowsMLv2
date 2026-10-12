@@ -133,15 +133,15 @@ export function SeasonWinsTable({
           <p>{visible.length} teams · Sort by wins or difference.</p>
           <p className="hidden items-center gap-3 sm:flex" aria-hidden="true">
             <span className="inline-flex items-center gap-1">
-              <span className="h-1.5 w-5 rounded-full bg-foreground/20" />
+              <span className="h-1.5 w-5 rounded-full bg-primary/25" />
               80% range
             </span>
             <span className="inline-flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-foreground" />
+              <span className="h-2 w-2 rounded-full bg-primary" />
               Model mean
             </span>
             <span className="inline-flex items-center gap-1">
-              <span className="h-3 w-0.5 bg-accent-amber" />
+              <span className="h-3 w-0.5 bg-accent-blue" />
               Book
             </span>
           </p>
@@ -224,7 +224,7 @@ export function SeasonWinsTable({
                   >
                     <div className="absolute top-1.5 h-px w-full bg-border" />
                     <div
-                      className="absolute top-1 h-1.5 rounded-full bg-foreground/20"
+                      className="absolute top-1 h-1.5 rounded-full bg-primary/25"
                       style={{
                         left: `${(row.wins_p10 / 17) * 100}%`,
                         width: `${((row.wins_p90 - row.wins_p10) / 17) * 100}%`,
@@ -232,14 +232,14 @@ export function SeasonWinsTable({
                     />
                     {row.sportsbook_win_total != null && (
                       <div
-                        className="absolute top-0.5 h-3 w-0.5 -translate-x-1/2 bg-accent-amber"
+                        className="absolute top-0.5 h-3 w-0.5 -translate-x-1/2 bg-accent-blue"
                         style={{
                           left: `${(row.sportsbook_win_total / 17) * 100}%`,
                         }}
                       />
                     )}
                     <div
-                      className="absolute top-1 h-2 w-2 -translate-x-1/2 rounded-full bg-foreground"
+                      className="absolute top-1 h-2 w-2 -translate-x-1/2 rounded-full bg-primary"
                       style={{ left: `${(row.projected_wins / 17) * 100}%` }}
                     />
                   </div>

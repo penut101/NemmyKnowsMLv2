@@ -406,17 +406,17 @@
   background: color-mix(in srgb, var(--muted) 65%, transparent);
   border-radius: 2px;
 }
-.blueBar {
+.impactBar {
   position: absolute;
   height: 100%;
   border-radius: 2px;
 }
-.blueBar,
-.blueKey {
-  background: var(--chart-2);
+.impactBar,
+.playerKey {
+  background: var(--primary);
 }
-.amberKey {
-  background: var(--chart-3);
+.medianKey {
+  background: var(--muted-foreground);
 }
 .zeroLine {
   position: absolute;
@@ -460,20 +460,20 @@
   height: auto;
 }
 .distributionBin {
-  fill: var(--chart-2);
+  fill: var(--primary);
   opacity: 0.4;
 }
 .medianMarker {
-  stroke: var(--chart-2);
+  stroke: var(--muted-foreground);
   stroke-width: 2;
   stroke-dasharray: 4 3;
 }
 .playerMarker {
-  stroke: var(--chart-3);
+  stroke: var(--primary);
   stroke-width: 2;
 }
 .playerDot {
-  fill: var(--chart-3);
+  fill: var(--primary);
 }
 .positionCode {
   color: var(--accent-blue);

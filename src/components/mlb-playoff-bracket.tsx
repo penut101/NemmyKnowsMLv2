@@ -294,13 +294,8 @@ function BracketView({
                     </span>
                     <div className="h-2 flex-1 rounded bg-muted">
                       <div
-                        className="h-full rounded"
-                        style={{
-                          width: `${o.probability * 100}%`,
-                          backgroundColor: teamColor(mlbTeamIdentity(
-                            selected.matchup.teams[o.wins[0] > o.wins[1] ? 0 : 1],
-                          )) ?? "var(--foreground)",
-                        }}
+                        className="h-full rounded bg-primary"
+                        style={{ width: `${o.probability * 100}%` }}
                       />
                     </div>
                     <span className="w-12 text-right font-mono">
@@ -492,9 +487,8 @@ export function MlbPlayoffBracket({
                           aria-hidden="true"
                         >
                           <div
-                            className="h-full rounded-full"
+                            className="h-full rounded-full bg-primary"
                             style={{
-                              backgroundColor: teamColor(mlbTeamIdentity(o.team)) ?? "var(--foreground)",
                               width: `${(o.champion / forecast.odds[0].champion) * 100}%`,
                             }}
                           />

@@ -80,7 +80,7 @@ export function DraftPlayerTable({
                           style={{ left: `${x(0)}%` }}
                         />
                         <span
-                          className={styles.blueBar}
+                          className={styles.impactBar}
                           style={{
                             left: `${x(Math.min(0, value))}%`,
                             width: `${Math.abs(x(value) - x(0))}%`,
@@ -198,11 +198,11 @@ export function DraftComparison({
       </div>
       <div className={styles.legend}>
         <span>
-          <i className={styles.amberKey} />
+          <i className={styles.playerKey} />
           Player: {player.value_above_replacement.toFixed(1)}
         </span>
         <span>
-          <i className={styles.blueKey} />
+          <i className={styles.medianKey} />
           Position median: {median.toFixed(1)}
         </span>
       </div>

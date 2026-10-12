@@ -22,8 +22,6 @@ interface MetricLineChartProps {
   data: ModelEvaluation[];
   dataKey: keyof ModelEvaluation;
   name: string;
-  /** Palette slot for the series; defaults to the primary data-ink color. */
-  token?: "chart-1" | "chart-2" | "chart-3" | "chart-4" | "chart-5";
   formatter?: (value: number) => string;
 }
 
@@ -36,7 +34,6 @@ export function MetricLineChart({
   data,
   dataKey,
   name,
-  token = "chart-1",
   formatter = (v: number) => v.toFixed(3),
 }: MetricLineChartProps) {
   const theme = useChartTheme();
@@ -75,7 +72,7 @@ export function MetricLineChart({
           type="monotone"
           dataKey={dataKey as string}
           name={name}
-          stroke={theme[token]}
+          stroke={theme["chart-1"]}
           strokeWidth={1.5}
           dot={false}
           activeDot={{ r: 3 }}
