@@ -195,18 +195,18 @@ export function MethodologyContent() {
         <p className={p}>
           A walk-forward replay of the 2022-23 through 2025-26 regular seasons
           prices every game from windows that end the day before it. Across
-          5,212 games the home win probability scores a log loss of 0.685
+          5,225 games the home win probability scores a log loss of 0.687
           against 0.693 for a coin flip and picks the winner 57 percent of the
           time; the model total misses by 1.90 goals on average and runs
-          about a sixth of a goal low. It is overconfident: games priced at 74
+          about a tenth of a goal low. It is overconfident: games priced at 74
           percent for the home side were won 67 percent of the time.
         </p>
         <p className={p}>
-          Against historical lines the market is better. Over the 3,900
+          Against historical lines the market is better. Over the 3,913
           games from 2023-24 through 2025-26 the closing moneyline scores a
           log loss of 0.665, the model alone 0.691, and the halfway blend
-          0.671. The posted total misses by 1.87 goals on average against 1.92
-          for the model. Betting the model against those lines lost money at
+          0.672. The closing total misses by 1.87 goals on average against
+          1.92 for the model. Betting the model against those lines lost money at
           every threshold tried: the spreadsheet&apos;s 13-point moneyline
           rule lost between 8 and 15 percent per unit depending on the season
           and whether the opening or closing price was used. The backtest
