@@ -1,4 +1,5 @@
-// Generated from sql/005_recommendation_markets_and_filters.sql using local PostgreSQL column metadata.
+// Generated CFB recommendation projection from disposable PostgreSQL column metadata after policy v11 migration.
+import type { Json } from "@/lib/database.types";
 export type CfbPicksDatabase = {
   cfb: {
     Tables: {
@@ -49,6 +50,7 @@ export type CfbPicksDatabase = {
           market_total: number | null;
           edge_points: number | null;
           settlement_reason: string | null;
+          pricing_context: Json | null;
         };
         Insert: Partial<
           CfbPicksDatabase["cfb"]["Tables"]["recommendations"]["Row"]

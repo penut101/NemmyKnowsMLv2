@@ -18,6 +18,9 @@ import {
 import {
   MARKET_LABELS,
   pickLabel,
+  usesPairedMoneylineBlend,
+  usesKeyNumberSpread,
+  pickQualification,
   type PickMarket,
   type WeeklyGame,
 } from "@/lib/football-picks";
@@ -87,6 +90,7 @@ export function WeeklyFootballPredictions({
     )
     .map((game) => ({
       ...game,
+      gamePickCount: game.rows.filter((pick) => pick.status === "recommended").length,
       rows: game.rows.filter(
         (pick) => market === "all" || pick.market === market,
       ),
@@ -141,9 +145,9 @@ export function WeeklyFootballPredictions({
         <div className="space-y-1 text-xs text-muted-foreground">
           <p>Times shown in {clock.zone()}.</p>
           <p>
-            Model probability is the model&apos;s chance that the selected side
-            wins, with pushes listed separately. It is not a confidence score or
-            a guarantee.
+            {league === "cfb"
+              ? "Win probabilities follow each pick's recorded pricing policy. Moneylines under v9/v10 retain 20% model weight; v10 spreads use a 20% model/history margin blend with football key numbers. Exploratory picks are labeled. Pushes are listed separately."
+              : "Model probability is the model's chance that the selected side wins, with pushes listed separately. It is not a confidence score or a guarantee."}
           </p>
         </div>
       </div>
@@ -212,7 +216,7 @@ function GamePredictions({
   clock,
   live,
 }: {
-  game: WeeklyGame;
+  game: WeeklyGame & { gamePickCount: number };
   league: FootballLeague;
   clock: ReturnType<typeof footballSlateClock>;
   live: LiveGame | undefined;
@@ -313,6 +317,11 @@ function GamePredictions({
           </p>
         )}
       </CardHeader>
+      {league === "cfb" && game.gamePickCount > 1 && (
+        <p className="border-t border-border bg-muted/15 px-3 py-1.5 text-[11px] text-muted-foreground">
+          {game.gamePickCount} picks · {game.gamePickCount}u · Shared-game exposure
+        </p>
+      )}
       <CardContent
         className={cn(
           "grid gap-px bg-border px-0",
@@ -328,6 +337,7 @@ function GamePredictions({
             key={pick.market}
             pick={pick}
             league={league}
+            gamePickCount={game.gamePickCount}
           >
             <span className="flex items-center justify-between gap-3">
               <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -348,6 +358,9 @@ function GamePredictions({
                 </span>
               )}
             </span>
+            <span className="w-fit rounded-sm border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+              {pickQualification(pick)}
+            </span>
             <span className="flex items-baseline justify-between gap-4">
               <span className="text-sm font-semibold leading-snug">
                 {pickLabel(pick)}
@@ -360,9 +373,9 @@ function GamePredictions({
               <span>{pick.provider}</span>
               <span
                 className="font-mono tabular-nums"
-                title="Model probability that this selection wins; pushes are separate."
+                title={usesPairedMoneylineBlend(pick) ? "Win probability from a 20% model and 80% paired-market blend in margin space." : usesKeyNumberSpread(pick) ? "Win probability from a 20% model/history and 80% market margin blend with football key-number weights." : pick.policy_version === "cfb-picks-v10" ? "Win probability from the published 50% model and 50% market total; pushes are separate." : "Model probability that this selection wins; pushes are separate."}
               >
-                Model probability{" "}
+                {usesPairedMoneylineBlend(pick) || pick.policy_version === "cfb-picks-v10" ? "Blended probability" : "Model probability"}{" "}
                 <span className="font-semibold text-foreground">
                   {formatPct(pick.win_probability)}
                 </span>

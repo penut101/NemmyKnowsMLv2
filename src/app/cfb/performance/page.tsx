@@ -117,6 +117,14 @@ export default async function PerformancePage({
               )}
             </p>
           )}
+          <PickBreakdown
+            title="Edge-qualified and exploratory"
+            rows={summary.metrics.filter((m) => m.segment_kind === "qualification")}
+          />
+          <p className="text-xs text-muted-foreground">
+            Overall results include every recorded recommendation at one unit per pick.
+            Exploratory picks fall below the standard edge threshold and contribute toward the weekly research target.
+          </p>
           {(["h2h", "spreads", "totals"] as const)
             .filter((value) => market === "all" || value === market)
             .map((value) => (

@@ -18,6 +18,7 @@ export type FootballPick = Omit<
   | "odds_api_event_id"
   | "match_score"
   | "pricing_weights"
+  | "pricing_context"
   | "model_home_margin"
 > & {
   game_id: string | number;
@@ -28,6 +29,7 @@ export type FootballPick = Omit<
   odds_api_event_id?: string | null;
   match_score?: number | null;
   pricing_weights?: Json;
+  pricing_context?: Json;
   model_home_margin?: number | null;
   home_missing_input_count?: number | null;
   away_missing_input_count?: number | null;
@@ -79,7 +81,7 @@ export type WeeklyPick = Pick<
   | "market_fetched_at"
   | "model_version"
   | "policy_version"
->;
+> & { pricing_context?: Json };
 export const WEEKLY_PICK_COLUMNS =
   "game_id,market,start_date,home_team,away_team,status,selection,point,price,provider,outcome,profit_units,win_probability,push_probability,model_home_margin,model_total,expected_value_per_unit,reason,decision_at,forecast_as_of,market_fetched_at,model_version,policy_version";
 // The identity a matchup card needs, structural so CFB rows (keyed by
@@ -244,7 +246,7 @@ export function pickLabel(
 export function pickReason(reason: string): string {
   const reasons: Record<string, string> = {
     qualifying_edge: "Qualifying edge",
-    volume_floor: "Selected to meet the weekly pick minimum",
+    volume_floor: "Exploratory: below the standard edge threshold",
     unverified_book_availability: "Bookmaker availability is not verified",
     stale_or_missing_expected_qb: "Expected QB information is missing or stale",
     below_edge_threshold: "Below the edge threshold",
@@ -264,7 +266,10 @@ export function pickReason(reason: string): string {
     insufficient_window: "A team's venue window is too short",
     no_offer: "No partner price posted",
     stale_offer: "Partner price is stale",
+    missing_spread_reference: "No frozen spread reference",
     unpaired_market: "Missing opposing price",
+    missing_moneyline_reference: "No fresh paired moneyline reference",
+    invalid_moneyline_pair: "Price is outside the valid moneyline reference",
     missing_price_timestamp: "Missing price timestamp",
     in_play_offer: "Offer was captured after kickoff",
     not_pregame: "Game has started",
@@ -300,4 +305,46 @@ export function marketRecords(metrics: FootballPickMetric[]): MarketRecord[] {
       roi: row?.roi ?? null,
     };
   });
+}
+
+export function usesPairedMoneylineBlend(pick: Pick<WeeklyPick, "market" | "policy_version">): boolean {
+  return pick.market === "h2h" && ["cfb-picks-v9", "cfb-picks-v10", "cfb-picks-v11"].includes(pick.policy_version);
+}
+
+export function usesKeyNumberSpread(pick: Pick<WeeklyPick, "market" | "policy_version">): boolean {
+  return pick.market === "spreads" && ["cfb-picks-v10", "cfb-picks-v11"].includes(pick.policy_version);
+}
+
+export const QUALIFICATION_LABELS: Record<string, string> = {
+  edge_qualified: "Edge-qualified",
+  exploratory: "Exploratory",
+  legacy: "Earlier policy",
+};
+
+export function pickQualification(pick: Pick<WeeklyPick, "status" | "reason">): string | null {
+  if (pick.status !== "recommended") return null;
+  if (pick.reason === "volume_floor") return QUALIFICATION_LABELS.exploratory;
+  if (pick.reason === "qualifying_edge") return QUALIFICATION_LABELS.edge_qualified;
+  return QUALIFICATION_LABELS.legacy;
+}
+
+// Optional context keeps earlier CFB and other-sport ledgers readable.
+export function pickResearchContext(pick: Pick<WeeklyPick, "market" | "pricing_context">) {
+  const context = pick.pricing_context;
+  if (!context || typeof context !== "object" || Array.isArray(context)) return null;
+  const raw = context.spread_edge_breakdown;
+  const keys = ["model_contribution_points", "quote_difference_points", "price_distribution_adjustment_points", "edge_points"] as const;
+  let spread: Record<(typeof keys)[number], number> | null = null;
+  if (pick.market === "spreads" && raw && typeof raw === "object" && !Array.isArray(raw)) {
+    if (raw.perspective === "selected_side" && keys.every((key) => typeof raw[key] === "number" && Number.isFinite(raw[key]))) {
+      const values = Object.fromEntries(keys.map((key) => [key, raw[key]])) as Record<(typeof keys)[number], number>;
+      if (Math.abs(values.model_contribution_points + values.quote_difference_points + values.price_distribution_adjustment_points - values.edge_points) < 1e-6) spread = values;
+    }
+  }
+  return {
+    postseason: context.is_postseason === true,
+    quoteDifference: Array.isArray(context.research_flags) && context.research_flags.includes("spread_quote_differs_from_reference"),
+    softCap: context.floor_policy === "shortlist_market_soft_cap_v1",
+    spread,
+  };
 }

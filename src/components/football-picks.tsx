@@ -24,6 +24,10 @@ import {
   SIDE_LABELS,
   pickLabel,
   pickReason,
+  pickQualification,
+  QUALIFICATION_LABELS,
+  usesPairedMoneylineBlend,
+  usesKeyNumberSpread,
   type FootballPick,
   type FootballPickMetric,
   type PickMarket,
@@ -150,6 +154,7 @@ export function PickTable({
               (pick.away_points ?? pick.away_goals) != null,
           );
           const headingId = `pick-game-${gameId}`;
+          const shownPicks = picks.filter((pick) => pick.status === "recommended").length;
           return (
             <TableBody key={gameId} aria-labelledby={headingId}>
               <TableRow className="bg-muted/30 hover:bg-muted/30">
@@ -175,6 +180,9 @@ export function PickTable({
                       <Kickoff start={game.start_date} part="time" />
                     </span>
                   </div>
+                  {game.policy_version.startsWith("cfb-") && shownPicks > 1 && (
+                    <p className="mt-1 text-xs text-muted-foreground">{shownPicks} shown picks · {shownPicks}u · Shared-game exposure</p>
+                  )}
                 </th>
               </TableRow>
               {picks.map((pick) => (
@@ -202,11 +210,20 @@ export function PickTable({
                         ? pick.provider
                         : pickReason(pick.reason)}
                     </div>
+                    {pick.status === "recommended" && (
+                      <span className="mt-1 inline-block rounded-sm border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{pickQualification(pick)}</span>
+                    )}
                     <details className="mt-1 text-xs text-muted-foreground">
                       <summary className="cursor-pointer">Recorded details</summary>
                       <div className="mt-1 max-w-64 space-y-1 break-all">
                         <p>Decision: {new Date(pick.decision_at).toISOString()}</p>
                         <p>Rule: {pick.policy_version}</p>
+                        {usesPairedMoneylineBlend(pick) && (
+                          <p>Probability: 20% model / 80% paired market · margin blend</p>
+                        )}
+                        {usesKeyNumberSpread(pick) && (
+                          <p>Probability: 20% model/history / 80% market margin with football key-number weights</p>
+                        )}
                         {pick.missing_input_count != null ? (
                           <p>
                             Missing inputs: {pick.missing_input_count}. NHL counts
@@ -349,7 +366,7 @@ export function PickBreakdown({
                 {row.segment_kind === "side"
                   ? (SIDE_LABELS[row.segment?.split(":")[1] ?? ""] ??
                     row.segment)
-                  : (MARKET_LABELS[row.segment as keyof typeof MARKET_LABELS] ??
+                  : (QUALIFICATION_LABELS[row.segment ?? ""] ?? MARKET_LABELS[row.segment as keyof typeof MARKET_LABELS] ??
                     row.segment)}
                 <span className="ml-2 text-xs text-muted-foreground">
                   {row.thin_sample ? "Small sample" : ""}
@@ -442,21 +459,26 @@ export function PickPolicy({
         </p>
       ) : (
         <p>
-          CFB picks v7 requires the priced line to sit at least 2.0 points
-          beyond the price&apos;s break-even line, plus positive EV. Spreads
-          are priced from the published market-informed margin, totals from
-          the published total, and moneylines from the market margin moved 0.2 of
-          the way toward the pure model, with fixed dispersions of 15.35
-          points for margins and 15.93 for totals. If fewer than 15 picks
-          qualify in a week, the highest-edge positive-EV offers are promoted
-          and recorded as volume-floor picks. Prices must come from the configured odds feed, have an
-          opposing price and matching kickoff, and be captured within one hour.
-          Verified game matches are required. Injury availability is unavailable
-          for every team and remains flagged; any additional missing model input
-          blocks a pick. Each pick risks 1 unit; a push returns the stake.
-          Moneylines use the frozen margin distribution’s win probability
-          without a spread; a tied final is void. Historical calibration is diagnostic and does not gate
-          recommendations; this record measures the picks as games finish.
+          CFB research picks v11 use fresh paired bookmaker moneylines, remove
+          each book&apos;s vig, and take the median market probability. Its
+          equivalent margin receives 80% weight and the pure model margin 20%;
+          the blended margin determines win probability. Moneylines need positive
+          estimated EV and at least 2.0 probability-equivalent points of edge;
+          they cannot be promoted to fill the weekly quota. Spreads blend 20%
+          model/history with 80% frozen market margin and apply development-fitted
+          football key-number weights, with 15.35-point dispersion. Totals retain
+          the published 50/50 blend and 15.93-point dispersion. The 15-pick research target
+          can promote positive-EV spreads and totals only. Each market is capped
+          at half the available exploratory slots, rounded up, after shortlisting.
+          Capped slots stay empty; qualified picks are unchanged. These exploratory picks
+          are labeled and evaluated separately from edge-qualified picks. Each pick records
+          its policy and probability source; earlier picks retain their original
+          rules and prices. Prices need a fresh opposing quote, matching
+          kickoff, and verified game identity. Incomplete inputs remain No Play.
+          Each pick uses one research unit. Multiple picks on the same game
+          have correlated outcomes and their shared exposure is flagged.
+          Pushes return the stake and moneyline ties are void. Recommendations
+          remain active for research; estimated edges are not validated profits.
         </p>
       )}
       <p>

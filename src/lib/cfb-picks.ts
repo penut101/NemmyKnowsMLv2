@@ -56,16 +56,29 @@ export async function fetchCfbWeeklyPredictions(): Promise<CfbWeeklyPredictions>
 
   const decisions: CfbWeeklyPredictions["decisions"] = [];
   const pages = (async () => {
+    let includeContext = true;
     for (let offset = 0; ; offset += PAGE) {
-      const { data, error } = await supabaseCfb
-        .from("recommendations")
-        .select(WEEKLY_PICK_COLUMNS)
-        .eq("season", latest.season)
+      const request = () => {
+        const table = supabaseCfb.from("recommendations");
+        const query = includeContext
+          ? table.select(`${WEEKLY_PICK_COLUMNS},pricing_context`)
+          : table.select(WEEKLY_PICK_COLUMNS);
+        return query.eq("season", latest.season)
         .eq("week", latest.week)
         .order("start_date", { ascending: true })
         .order("game_id", { ascending: true })
         .order("market", { ascending: true })
         .range(offset, offset + PAGE - 1);
+      };
+      let result = await request();
+      // The site can deploy before the model's additive context migration.
+      if (includeContext && result.error &&
+          ["42703", "PGRST204"].includes(result.error.code) &&
+          result.error.message.includes("pricing_context")) {
+        includeContext = false;
+        result = await request();
+      }
+      const { data, error } = result;
       if (error) throw error;
       decisions.push(...(data ?? []));
       if ((data?.length ?? 0) < PAGE) break;
