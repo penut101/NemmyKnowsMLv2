@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { closingHomeProb } from "@/lib/nhl";
 import { supabaseNhl } from "@/lib/supabase";
 import { cn, formatNumber, formatPct } from "@/lib/utils";
 
@@ -35,6 +36,11 @@ export async function NhlForecastHistory() {
         regular-season slate.
       </Notice>
     );
+  // A close exists only when a partner quote landed just before puck drop, so
+  // the columns stay out until at least one listed game has one.
+  const hasClose = rows.some(
+    (r) => r.closing_home_price != null || r.closing_total != null,
+  );
   return (
     <LocalKickoffs>
       <Table>
@@ -47,7 +53,9 @@ export async function NhlForecastHistory() {
             <TableHead className="text-right">Away xG</TableHead>
             <TableHead className="text-right">Home xG</TableHead>
             <TableHead className="text-right">Home win</TableHead>
+            {hasClose && <TableHead className="text-right">Close home win</TableHead>}
             <TableHead className="text-right">Total</TableHead>
+            {hasClose && <TableHead className="text-right">Close total</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -74,7 +82,15 @@ export async function NhlForecastHistory() {
                 <TableCell className={cn(num, r.home_win_prob != null && (hit ? "text-positive" : "text-negative"))}>
                   {formatPct(r.home_win_prob)}
                 </TableCell>
+                {hasClose && (
+                  <TableCell className={num}>
+                    {formatPct(closingHomeProb(r.closing_home_price, r.closing_away_price))}
+                  </TableCell>
+                )}
                 <TableCell className={num}>{formatNumber(r.model_total, 2)}</TableCell>
+                {hasClose && (
+                  <TableCell className={num}>{formatNumber(r.closing_total, 1)}</TableCell>
+                )}
               </TableRow>
             );
           })}

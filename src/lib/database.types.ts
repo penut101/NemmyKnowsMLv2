@@ -3981,6 +3981,10 @@ export type Database = {
           away_goals: number
           away_lambda: number
           away_team: string
+          closing_away_price: number | null
+          closing_home_price: number | null
+          closing_source: string | null
+          closing_total: number | null
           game_date: string
           game_id: string
           home_goals: number
@@ -3995,6 +3999,10 @@ export type Database = {
           away_goals: number
           away_lambda: number
           away_team: string
+          closing_away_price?: number | null
+          closing_home_price?: number | null
+          closing_source?: string | null
+          closing_total?: number | null
           game_date: string
           game_id: string
           home_goals: number
@@ -4009,6 +4017,10 @@ export type Database = {
           away_goals?: number
           away_lambda?: number
           away_team?: string
+          closing_away_price?: number | null
+          closing_home_price?: number | null
+          closing_source?: string | null
+          closing_total?: number | null
           game_date?: string
           game_id?: string
           home_goals?: number
@@ -4577,6 +4589,11 @@ export type Database = {
           away_goals: number | null
           away_lambda: number | null
           away_team: string | null
+          closing_away_price: number | null
+          closing_home_price: number | null
+          closing_observed_at: string | null
+          closing_source: string | null
+          closing_total: number | null
           forecast_as_of: string | null
           forecast_recorded_at: string | null
           game_date: string | null
@@ -4588,6 +4605,8 @@ export type Database = {
           last_period_type: string | null
           model_total: number | null
           model_version: string | null
+          pure_home_win_prob: number | null
+          pure_model_total: number | null
           season: number | null
           source: string | null
           source_fetched_at: string | null

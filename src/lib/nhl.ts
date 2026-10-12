@@ -126,6 +126,16 @@ export type NhlAccuracySlice = {
   home_win_rate: number;
   total_mae: number;
   total_bias: number;
+  // Market figures cover only the games with a recorded close, so each
+  // model figure beside them is rescored on that same subset.
+  market_n: number;
+  market_log_loss: number | null;
+  model_log_loss_on_market_games: number | null;
+  pure_model_log_loss_on_market_games: number | null;
+  market_total_n: number;
+  market_total_mae: number | null;
+  model_total_mae_on_market_games: number | null;
+  pure_model_total_mae_on_market_games: number | null;
 };
 
 export type NhlAccuracy = {
@@ -164,6 +174,17 @@ export function bestMoneyline(
 
 export function americanToImplied(price: number): number {
   return price > 0 ? 100 / (price + 100) : -price / (-price + 100);
+}
+
+// Home win probability of a two-sided close with the vig removed
+// proportionally, the same definition the accuracy RPC scores.
+export function closingHomeProb(
+  homePrice: number | null,
+  awayPrice: number | null,
+): number | null {
+  if (homePrice == null || awayPrice == null) return null;
+  const home = americanToImplied(homePrice);
+  return home / (home + americanToImplied(awayPrice));
 }
 
 export const PROVIDER_NAMES: Record<string, string> = {

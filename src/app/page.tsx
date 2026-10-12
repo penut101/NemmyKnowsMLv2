@@ -16,6 +16,7 @@ import { fetchNhlPickSummary } from "@/lib/nhl-picks";
 import {
   fetchForecastAccuracy as fetchNhlAccuracy,
   fetchLatestRatings as fetchNhlRatings,
+  type NhlAccuracySlice,
 } from "@/lib/nhl";
 import { marketRecords, type MarketRecord } from "@/lib/football-picks";
 import { SITE_TIME_ZONE, siteDate } from "@/lib/daily-picks";
@@ -57,6 +58,31 @@ function marginForecast(
       { label: "Gap to market", value: formatSigned(gap, 2) },
     ],
     sample: `${games} games graded`,
+  };
+}
+
+// The closing moneyline is the bar once enough live games carry one (30, the
+// site's thin-sample line); until then a coin flip is. Model and market are
+// scored on the same games.
+function nhlForecast(graded: NhlAccuracySlice): Forecast {
+  const model = graded.model_log_loss_on_market_games;
+  const market = graded.market_log_loss;
+  if (model == null || market == null || graded.market_n < 30)
+    return {
+      stats: [
+        { label: "Log loss", value: formatNumber(graded.log_loss, 3) },
+        { label: "Coin flip", value: "0.693" },
+        { label: "Total MAE", value: formatNumber(graded.total_mae, 2) },
+      ],
+      sample: `${graded.n} games graded`,
+    };
+  return {
+    stats: [
+      { label: "Log loss", value: formatNumber(model, 3) },
+      { label: "Market log loss", value: formatNumber(market, 3) },
+      { label: "Gap to market", value: formatSigned(model - market, 3) },
+    ],
+    sample: `${graded.market_n} games with a close`,
   };
 }
 
@@ -196,17 +222,7 @@ async function getNhlHeadline(): Promise<FootballHeadline | null> {
       week: null,
       live: (overall?.picks ?? 0) + (overall?.no_plays ?? 0) > 0,
       markets: marketRecords(summary.metrics).filter((m) => m.market !== "spreads"),
-      // No closing lines are published for the NHL, so a coin flip is the bar.
-      forecast: graded
-        ? {
-            stats: [
-              { label: "Log loss", value: formatNumber(graded.log_loss, 3) },
-              { label: "Coin flip", value: "0.693" },
-              { label: "Total MAE", value: formatNumber(graded.total_mae, 2) },
-            ],
-            sample: `${graded.n} games graded`,
-          }
-        : null,
+      forecast: graded ? nhlForecast(graded) : null,
       period: `${season}-${String(season + 1).slice(2)} season`,
     };
   } catch {

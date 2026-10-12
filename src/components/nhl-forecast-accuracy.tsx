@@ -38,6 +38,151 @@ function SourceToggle({ source, page }: { source: "live" | "backtest"; page: str
   );
 }
 
+function MarketCells({ m }: { m: NhlAccuracySlice }) {
+  const gap =
+    m.model_log_loss_on_market_games != null && m.market_log_loss != null
+      ? m.model_log_loss_on_market_games - m.market_log_loss
+      : null;
+  return (
+    <>
+      <TableCell className={num}>{m.market_n}</TableCell>
+      <TableCell className={num}>{formatNumber(m.model_log_loss_on_market_games, 4)}</TableCell>
+      <TableCell className={num}>{formatNumber(m.market_log_loss, 4)}</TableCell>
+      <TableCell className={num}>{formatSigned(gap, 4)}</TableCell>
+      <TableCell className={num}>{m.market_total_n}</TableCell>
+      <TableCell className={num}>{formatNumber(m.model_total_mae_on_market_games, 2)}</TableCell>
+      <TableCell className={num}>{formatNumber(m.market_total_mae, 2)}</TableCell>
+    </>
+  );
+}
+
+function MarketComparison({
+  accuracy,
+  overall,
+  source,
+}: {
+  accuracy: NhlAccuracy;
+  overall: NhlAccuracySlice;
+  source: "live" | "backtest";
+}) {
+  const heading = <h2 className="font-heading text-lg">Against the closing line</h2>;
+  if (overall.market_n === 0)
+    return (
+      <section className="space-y-2">
+        {heading}
+        <Notice>
+          No closing line has been recorded for these games yet. A close is
+          the last partner-book quote from the 15 minutes before puck drop.
+        </Notice>
+      </section>
+    );
+  const blended =
+    overall.pure_model_log_loss_on_market_games !==
+    overall.model_log_loss_on_market_games;
+  return (
+    <section className="space-y-4">
+      <div className="space-y-2">
+        {heading}
+        <p className="max-w-4xl text-sm leading-relaxed text-muted-foreground">
+          {source === "live"
+            ? "The close is the last partner-book quote from the 15 minutes before puck drop."
+            : "Closing moneylines and totals come from ESPN's public odds data."}{" "}
+          The moneyline is converted to a home win probability with the vig
+          removed. Model and market are scored on the same games: only those
+          with a close, so these figures differ from the full-sample ones
+          above. Lower is better.
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-4 border-y border-rule-strong py-4 sm:grid-cols-3 lg:grid-cols-6">
+        <KpiCard
+          label="Model log loss"
+          value={formatNumber(overall.model_log_loss_on_market_games, 4)}
+          sub={`${overall.market_n} games`}
+        />
+        <KpiCard
+          label="Market log loss"
+          value={formatNumber(overall.market_log_loss, 4)}
+          sub="closing moneyline"
+        />
+        <KpiCard
+          label="Gap to market"
+          value={formatSigned(
+            overall.model_log_loss_on_market_games != null && overall.market_log_loss != null
+              ? overall.model_log_loss_on_market_games - overall.market_log_loss
+              : null,
+            4,
+          )}
+          sub="lower is better"
+          tooltip="Model log loss minus market log loss. Positive means the closing moneyline predicted winners better than the model."
+        />
+        <KpiCard
+          label="Model total MAE"
+          value={formatNumber(overall.model_total_mae_on_market_games, 2)}
+          sub={`${overall.market_total_n} games`}
+        />
+        <KpiCard
+          label="Market total MAE"
+          value={formatNumber(overall.market_total_mae, 2)}
+          sub="closing total"
+        />
+        <KpiCard
+          label="Gap to market"
+          value={formatSigned(
+            overall.model_total_mae_on_market_games != null && overall.market_total_mae != null
+              ? overall.model_total_mae_on_market_games - overall.market_total_mae
+              : null,
+            2,
+          )}
+          sub="goals"
+          tooltip="Model total MAE minus the closing total's MAE. Positive means the closing total was closer to the goals scored."
+        />
+      </div>
+      {blended && (
+        <p className="text-sm text-muted-foreground">
+          Pure-model log loss:{" "}
+          <span className="font-mono text-foreground">
+            {formatNumber(overall.pure_model_log_loss_on_market_games, 4)}
+          </span>{" "}
+          on the same {overall.market_n} games. The published forecast blends
+          in the morning market price, so its error and the close&apos;s are
+          correlated.
+        </p>
+      )}
+      {accuracy.by_season.length > 1 && (
+        <Table>
+          <TableCaption className="sr-only">Model against the closing line by season</TableCaption>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Season</TableHead>
+              <TableHead className="text-right">Games</TableHead>
+              <TableHead className="text-right">Model log loss</TableHead>
+              <TableHead className="text-right">Market log loss</TableHead>
+              <TableHead className="text-right">Gap</TableHead>
+              <TableHead className="text-right">Total games</TableHead>
+              <TableHead className="text-right">Model total MAE</TableHead>
+              <TableHead className="text-right">Market total MAE</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {accuracy.by_season.map((m) => (
+              <TableRow key={m.season}>
+                <TableCell className="font-mono">
+                  {m.season}-{String((m.season ?? 0) + 1).slice(2)}
+                </TableCell>
+                <MarketCells m={m} />
+              </TableRow>
+            ))}
+            <TableRow className="font-semibold">
+              <TableCell>All</TableCell>
+              <MarketCells m={overall} />
+            </TableRow>
+          </TableBody>
+        </Table>
+      )}
+    </section>
+  );
+}
+
 function Cells({ m }: { m: NhlAccuracySlice }) {
   return (
     <>
@@ -75,9 +220,7 @@ export async function NhlForecastAccuracy({
           : "Walk-forward replay of the 2022-23 through 2025-26 regular seasons with the same windows and goal map, kept separate from live forecasts."}{" "}
         Log loss and Brier score judge the home win probability (a coin flip
         scores 0.693 and 0.250); total MAE and bias judge the model total in
-        goals. Closing lines are not published to the site for the NHL, so
-        these are model-only benchmarks; the methodology page reports the
-        backtest against historical lines.
+        goals. The comparison with the closing line follows.
       </p>
       {!accuracy ? (
         <Notice role="status">Accuracy data is temporarily unavailable.</Notice>
@@ -157,6 +300,7 @@ export async function NhlForecastAccuracy({
               </TableBody>
             </Table>
           )}
+          <MarketComparison accuracy={accuracy} overall={overall} source={source} />
           {accuracy.calibration.length > 0 && (
             <section className="space-y-2">
               <h2 className="font-heading text-lg">Calibration</h2>
