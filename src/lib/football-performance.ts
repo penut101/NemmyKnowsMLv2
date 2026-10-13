@@ -1,0 +1,28 @@
+import type { CfbPerformanceMetric, NflPerformanceMetric } from "@/lib/types";
+
+// cfb.performance_metrics and nfl.performance_metrics share one contract: a
+// row per prediction source and segment, precomputed by the model repo from
+// frozen pregame forecasts. The page formats these rows and never aggregates
+// games itself.
+export type FootballPerformanceMetric =
+  | CfbPerformanceMetric
+  | NflPerformanceMetric;
+
+export interface FootballLivePerformance {
+  season: number | null;
+  metrics: FootballPerformanceMetric[];
+  lastGradedAt: string | null;
+  latestKickoff: string | null;
+}
+
+export interface FootballPerformanceCopy {
+  // What the closing line is and where it comes from, completing the sentence
+  // "the projection published before kickoff, <closingLine>, and the final
+  // score".
+  closingLine: string;
+  cadence: string;
+  // Segment tables shown in the main section, in order.
+  segments: { kind: string; title: string }[];
+  // Segment tables folded into the diagnostics disclosure, with its note.
+  diagnostics: { note: string; segments: { kind: string; title: string }[] };
+}

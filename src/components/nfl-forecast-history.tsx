@@ -90,7 +90,7 @@ export default async function NflForecastHistory({
         </div>
       </PageHeader>
 
-      <NflForecastSource source={source} page="history" />
+      <NflForecastSource source={source} />
 
       <p className="max-w-4xl text-sm text-muted-foreground leading-relaxed">
         {source === "live"

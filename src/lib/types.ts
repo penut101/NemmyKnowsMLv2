@@ -198,6 +198,10 @@ export type NflTeamUnitRating = Tables<"nfl", "team_unit_ratings">;
 export type NflGameProjection = Tables<"nfl", "game_projections">;
 export type NflMarketComparison = Tables<"nfl", "market_comparisons">;
 export type NflBacktestPrediction = Tables<"nfl", "backtest_predictions">;
+export type NflPerformanceMetric = Narrow<
+  Tables<"nfl", "performance_metrics">,
+  { prediction_source: CfbPredictionSource }
+>;
 
 // ---------------------------------------------------------------------------
 // NHL (nhl schema)

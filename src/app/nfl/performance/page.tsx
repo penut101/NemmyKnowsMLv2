@@ -17,6 +17,7 @@ import {
 import { PickFilters } from "@/components/football-pick-filters";
 import { FootballPerformanceTabs } from "@/components/football-performance-tabs";
 import ForecastPerformance from "@/components/nfl-forecast-performance";
+import { fetchNflLivePerformance } from "@/lib/nfl";
 
 export const revalidate = 3600;
 export const metadata: Metadata = {
@@ -33,20 +34,20 @@ export default async function PerformancePage({
     market?: string;
     period?: string;
     view?: string;
-    source?: string;
   }>;
 }) {
   const params = await searchParams;
   const filters = pickFilters(params);
   const query = pickQuery(filters).toString();
   if (params.view !== "picks") {
+    const live = await fetchNflLivePerformance();
     return (
       <PageShell>
         <PageTitle>
           NFL Model Performance
         </PageTitle>
         <FootballPerformanceTabs sport="nfl" active="accuracy" query={query}>
-          <ForecastPerformance searchParams={Promise.resolve(params)} />
+          <ForecastPerformance live={live} />
         </FootballPerformanceTabs>
       </PageShell>
     );

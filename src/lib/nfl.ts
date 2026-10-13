@@ -1,6 +1,8 @@
 import { cache } from "react";
 import { supabaseNfl } from "@/lib/supabase";
+import type { FootballLivePerformance } from "@/lib/football-performance";
 import type {
+  NflPerformanceMetric,
   NflSeasonWinTotal,
   NflTeamIdentity,
   NflTeamRating,
@@ -120,4 +122,48 @@ export async function fetchSeasonWinTotals(): Promise<{
         r.games_played + r.games_remaining === 17,
     );
   return { rows: complete ? rows : [], unavailable: !complete };
+}
+
+// Live-season grading for the most recent graded season. Every number here
+// comes from frozen records graded by the backend; the page only formats
+// them. A failure degrades to the empty state rather than failing the build.
+export async function fetchNflLivePerformance(): Promise<FootballLivePerformance> {
+  const empty: FootballLivePerformance = {
+    season: null,
+    metrics: [],
+    lastGradedAt: null,
+    latestKickoff: null,
+  };
+  const latestRes = await supabaseNfl
+    .from("graded_games")
+    .select("season, graded_at")
+    .order("season", { ascending: false })
+    .order("graded_at", { ascending: false })
+    .limit(1);
+  const latest = latestRes.data?.[0];
+  if (latestRes.error || !latest) return empty;
+
+  const [metricsRes, kickoffRes] = await Promise.all([
+    supabaseNfl
+      .from("performance_metrics")
+      .select("*")
+      .eq("season", latest.season)
+      .order("segment_order", { ascending: true }),
+    supabaseNfl
+      .from("graded_games")
+      .select("start_date")
+      .eq("season", latest.season)
+      .order("start_date", { ascending: false })
+      .limit(1),
+  ]);
+  if (metricsRes.error) {
+    console.error("nfl performance metrics fetch failed:", metricsRes.error.message);
+    return empty;
+  }
+  return {
+    season: latest.season,
+    metrics: (metricsRes.data ?? []) as NflPerformanceMetric[],
+    lastGradedAt: latest.graded_at,
+    latestKickoff: kickoffRes.data?.[0]?.start_date ?? null,
+  };
 }

@@ -3263,6 +3263,135 @@ export type Database = {
         }
         Relationships: []
       }
+      graded_games: {
+        Row: {
+          actual_margin: number
+          actual_total: number
+          away_points: number
+          away_qb_adjustment: number | null
+          away_team: string
+          away_team_abbr: string
+          closing_source: string | null
+          closing_spread: number | null
+          closing_total: number | null
+          degrees_of_freedom: number
+          distribution: string | null
+          div_game: boolean | null
+          forecast_as_of: string
+          forecast_market_home_spread: number | null
+          forecast_recorded_at: string
+          forecast_week: number
+          game_id: string
+          graded_at: string
+          home_points: number
+          home_qb_adjustment: number | null
+          home_team: string
+          home_team_abbr: string
+          home_win_probability: number
+          margin_sd: number
+          market_informed_home_margin: number
+          market_informed_total: number | null
+          market_weight: number | null
+          model_total: number | null
+          model_version: string
+          neutral_site: boolean
+          probability_method: string
+          pure_home_margin: number
+          rest_adjustment: number | null
+          score_source: string
+          season: number
+          season_type: string
+          source_fetched_at: string
+          start_date: string
+          total_sd: number | null
+          week: number
+        }
+        Insert: {
+          actual_margin: number
+          actual_total: number
+          away_points: number
+          away_qb_adjustment?: number | null
+          away_team: string
+          away_team_abbr: string
+          closing_source?: string | null
+          closing_spread?: number | null
+          closing_total?: number | null
+          degrees_of_freedom: number
+          distribution?: string | null
+          div_game?: boolean | null
+          forecast_as_of: string
+          forecast_market_home_spread?: number | null
+          forecast_recorded_at: string
+          forecast_week: number
+          game_id: string
+          graded_at: string
+          home_points: number
+          home_qb_adjustment?: number | null
+          home_team: string
+          home_team_abbr: string
+          home_win_probability: number
+          margin_sd: number
+          market_informed_home_margin: number
+          market_informed_total?: number | null
+          market_weight?: number | null
+          model_total?: number | null
+          model_version: string
+          neutral_site: boolean
+          probability_method: string
+          pure_home_margin: number
+          rest_adjustment?: number | null
+          score_source: string
+          season: number
+          season_type: string
+          source_fetched_at: string
+          start_date: string
+          total_sd?: number | null
+          week: number
+        }
+        Update: {
+          actual_margin?: number
+          actual_total?: number
+          away_points?: number
+          away_qb_adjustment?: number | null
+          away_team?: string
+          away_team_abbr?: string
+          closing_source?: string | null
+          closing_spread?: number | null
+          closing_total?: number | null
+          degrees_of_freedom?: number
+          distribution?: string | null
+          div_game?: boolean | null
+          forecast_as_of?: string
+          forecast_market_home_spread?: number | null
+          forecast_recorded_at?: string
+          forecast_week?: number
+          game_id?: string
+          graded_at?: string
+          home_points?: number
+          home_qb_adjustment?: number | null
+          home_team?: string
+          home_team_abbr?: string
+          home_win_probability?: number
+          margin_sd?: number
+          market_informed_home_margin?: number
+          market_informed_total?: number | null
+          market_weight?: number | null
+          model_total?: number | null
+          model_version?: string
+          neutral_site?: boolean
+          probability_method?: string
+          pure_home_margin?: number
+          rest_adjustment?: number | null
+          score_source?: string
+          season?: number
+          season_type?: string
+          source_fetched_at?: string
+          start_date?: string
+          total_sd?: number | null
+          week?: number
+        }
+        Relationships: []
+      }
       live_win_probability: {
         Row: {
           game_id: string
@@ -3407,6 +3536,90 @@ export type Database = {
           total?: number | null
           total_books?: number | null
           week?: number
+        }
+        Relationships: []
+      }
+      performance_metrics: {
+        Row: {
+          brier_score: number | null
+          closer_than_market_share: number | null
+          computed_at: string
+          coverage_50: number | null
+          coverage_80: number | null
+          coverage_90: number | null
+          games: number
+          games_with_market: number | null
+          log_loss: number | null
+          margin_bias: number | null
+          margin_mae: number | null
+          margin_rmse: number | null
+          market_mae: number | null
+          model_minus_market_mae: number | null
+          prediction_source: string
+          probability_games: number | null
+          season: number
+          segment: string
+          segment_kind: string
+          segment_order: number
+          thin_sample: boolean
+          total_bias: number | null
+          total_games: number | null
+          total_mae: number | null
+          total_rmse: number | null
+        }
+        Insert: {
+          brier_score?: number | null
+          closer_than_market_share?: number | null
+          computed_at: string
+          coverage_50?: number | null
+          coverage_80?: number | null
+          coverage_90?: number | null
+          games: number
+          games_with_market?: number | null
+          log_loss?: number | null
+          margin_bias?: number | null
+          margin_mae?: number | null
+          margin_rmse?: number | null
+          market_mae?: number | null
+          model_minus_market_mae?: number | null
+          prediction_source: string
+          probability_games?: number | null
+          season: number
+          segment: string
+          segment_kind: string
+          segment_order: number
+          thin_sample: boolean
+          total_bias?: number | null
+          total_games?: number | null
+          total_mae?: number | null
+          total_rmse?: number | null
+        }
+        Update: {
+          brier_score?: number | null
+          closer_than_market_share?: number | null
+          computed_at?: string
+          coverage_50?: number | null
+          coverage_80?: number | null
+          coverage_90?: number | null
+          games?: number
+          games_with_market?: number | null
+          log_loss?: number | null
+          margin_bias?: number | null
+          margin_mae?: number | null
+          margin_rmse?: number | null
+          market_mae?: number | null
+          model_minus_market_mae?: number | null
+          prediction_source?: string
+          probability_games?: number | null
+          season?: number
+          segment?: string
+          segment_kind?: string
+          segment_order?: number
+          thin_sample?: boolean
+          total_bias?: number | null
+          total_games?: number | null
+          total_mae?: number | null
+          total_rmse?: number | null
         }
         Relationships: []
       }
