@@ -21,9 +21,7 @@ import type {
 } from "@/lib/types";
 import { chartAxisProps, chartTooltipStyle, useChartTheme } from "@/lib/chart-theme";
 import { EMPTY, formatNumber, formatPct, formatSigned } from "@/lib/utils";
-import { PlayerHeadshot } from "@/components/player-headshot";
-import { cfbPlayerHeadshotUrl } from "@/lib/player-headshots";
-import { TeamLogo } from "@/components/team-logo";
+import { PlayerCell } from "@/components/player-cell";
 import { ToggleGroup } from "@/components/toggle-group";
 import { ViewTabPanel, ViewTabs } from "@/components/view-tabs";
 import {
@@ -93,36 +91,6 @@ function parseJson<T>(text: string | null | undefined): T | null {
   } catch {
     return null;
   }
-}
-
-function PlayerCell({
-  athleteId,
-  name,
-  team,
-  position,
-  logo,
-}: {
-  athleteId: string;
-  name: string;
-  team: string;
-  position: string | null;
-  logo: CfbTeamIdentity | undefined;
-}) {
-  return (
-    <div className="flex items-center gap-2.5">
-      <PlayerHeadshot name={name} src={cfbPlayerHeadshotUrl(athleteId)} className="h-9 w-9" />
-      <div className="min-w-0">
-        <div className="truncate font-medium">{name}</div>
-        <div className="flex items-center gap-1 truncate text-xs text-muted-foreground">
-          <TeamLogo team={logo} name={team} className="h-3.5 w-3.5" />
-          <span className="truncate">
-            {team}
-            {position ? ` · ${position}` : ""}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function statLine(row: CfbHeismanBoardRow): string {

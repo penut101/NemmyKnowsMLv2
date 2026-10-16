@@ -810,6 +810,66 @@ export type Database = {
         }
         Relationships: []
       }
+      position_traits: {
+        Row: {
+          as_of: string
+          athlete_id: string
+          athlete_name: string | null
+          games: number | null
+          in_grade: boolean
+          kind: string | null
+          model_version: string
+          percentile: number | null
+          points_above_replacement: number | null
+          position_group: string
+          season: number
+          team: string | null
+          team_id: number | null
+          trait: string
+          uncertainty: number | null
+          value: number | null
+          week: number
+        }
+        Insert: {
+          as_of: string
+          athlete_id: string
+          athlete_name?: string | null
+          games?: number | null
+          in_grade: boolean
+          kind?: string | null
+          model_version: string
+          percentile?: number | null
+          points_above_replacement?: number | null
+          position_group: string
+          season: number
+          team?: string | null
+          team_id?: number | null
+          trait: string
+          uncertainty?: number | null
+          value?: number | null
+          week: number
+        }
+        Update: {
+          as_of?: string
+          athlete_id?: string
+          athlete_name?: string | null
+          games?: number | null
+          in_grade?: boolean
+          kind?: string | null
+          model_version?: string
+          percentile?: number | null
+          points_above_replacement?: number | null
+          position_group?: string
+          season?: number
+          team?: string | null
+          team_id?: number | null
+          trait?: string
+          uncertainty?: number | null
+          value?: number | null
+          week?: number
+        }
+        Relationships: []
+      }
       qb_availability: {
         Row: {
           notes: string | null

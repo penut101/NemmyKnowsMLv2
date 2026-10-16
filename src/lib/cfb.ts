@@ -8,6 +8,7 @@ import type {
   CfbPerformanceMetric,
   CfbPlayerModelMeta,
   CfbPlayerValue,
+  CfbPositionTrait,
   CfbTeamIdentity,
   CfbTeamRating,
   CfbTeamUnitRating,
@@ -261,5 +262,160 @@ export const fetchHeismanTracker = cache(async (): Promise<CfbHeismanTracker> =>
     boardWeek,
     history: (historyRes.data ?? []) as CfbHeismanHistory[],
     meta: ((metaRes.data ?? [])[0] as CfbPlayerModelMeta | undefined) ?? null,
+  };
+});
+
+// Player grades: the latest published week of cfb.position_traits. One grade
+// row per qualified FBS player and position, so the page reads only the top
+// of each position and the trait rows of those players; the whole table would
+// be tens of thousands of rows an hour against the egress budget.
+export const GRADE_ROWS = 40;
+const ID_CHUNK = 50;
+
+export interface CfbGradedPlayer {
+  athleteId: string;
+  name: string;
+  team: string;
+  teamId: number | null;
+  games: number | null;
+  grade: number;
+  gradePercentile: number | null;
+  uncertainty: number | null;
+  war: number | null;
+  warPercentile: number | null;
+  pointsAboveReplacement: number | null;
+  traits: CfbPositionTrait[];
+}
+
+export interface CfbPositionGrades {
+  season: number | null;
+  week: number | null;
+  asOf: string | null;
+  modelVersion: string | null;
+  groups: Record<string, CfbGradedPlayer[]>;
+  gradedCounts: Record<string, number>;
+}
+
+const EMPTY_GRADES: CfbPositionGrades = {
+  season: null,
+  week: null,
+  asOf: null,
+  modelVersion: null,
+  groups: {},
+  gradedCounts: {},
+};
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+export const fetchPositionGrades = cache(async (): Promise<CfbPositionGrades> => {
+  const latestRes = await supabaseCfb
+    .from("position_traits")
+    .select("season, week, as_of, model_version")
+    .eq("trait", "grade")
+    .order("season", { ascending: false })
+    .order("week", { ascending: false })
+    .limit(1);
+  const latest = latestRes.data?.[0];
+  if (latestRes.error || !latest) return EMPTY_GRADES;
+
+  const groupsRes = await supabaseCfb
+    .from("position_traits")
+    .select("position_group")
+    .eq("season", latest.season)
+    .eq("trait", "grade")
+    .limit(1000);
+  if (groupsRes.error) {
+    console.error("cfb position grades fetch failed:", groupsRes.error.message);
+    return EMPTY_GRADES;
+  }
+  const gradedCounts: Record<string, number> = {};
+  for (const row of groupsRes.data ?? []) {
+    gradedCounts[row.position_group] = (gradedCounts[row.position_group] ?? 0) + 1;
+  }
+  // A position with more graded players than one page returns is counted
+  // exactly, one head request per position.
+  await Promise.all(
+    Object.keys(gradedCounts)
+      .filter((group) => gradedCounts[group] >= 1000)
+      .map(async (group) => {
+        const res = await supabaseCfb
+          .from("position_traits")
+          .select("athlete_id", { count: "exact", head: true })
+          .eq("season", latest.season)
+          .eq("trait", "grade")
+          .eq("position_group", group);
+        if (res.count != null) gradedCounts[group] = res.count;
+      })
+  );
+
+  const gradeRows = await Promise.all(
+    Object.keys(gradedCounts).map((group) =>
+      supabaseCfb
+        .from("position_traits")
+        .select("*")
+        .eq("season", latest.season)
+        .eq("trait", "grade")
+        .eq("position_group", group)
+        .order("value", { ascending: false })
+        .order("percentile", { ascending: false })
+        .limit(GRADE_ROWS)
+    )
+  );
+  const grades = gradeRows.flatMap((res) => (res.data ?? []) as CfbPositionTrait[]);
+  const ids = grades.map((row) => row.athlete_id);
+
+  const detailRows = await Promise.all(
+    chunk(ids, ID_CHUNK).map((part) =>
+      supabaseCfb
+        .from("position_traits")
+        .select("*")
+        .eq("season", latest.season)
+        .neq("trait", "grade")
+        .in("athlete_id", part)
+        .limit(1000)
+    )
+  );
+  const details = detailRows.flatMap((res) => (res.data ?? []) as CfbPositionTrait[]);
+  const byAthlete = new Map<string, CfbPositionTrait[]>();
+  for (const row of details) {
+    const list = byAthlete.get(row.athlete_id) ?? [];
+    list.push(row);
+    byAthlete.set(row.athlete_id, list);
+  }
+
+  const groups: Record<string, CfbGradedPlayer[]> = {};
+  for (const row of grades) {
+    if (row.value == null) continue;
+    const rows = byAthlete.get(row.athlete_id) ?? [];
+    const war = rows.find((r) => r.trait === "war") ?? null;
+    const player: CfbGradedPlayer = {
+      athleteId: row.athlete_id,
+      name: row.athlete_name ?? row.athlete_id,
+      team: row.team ?? "",
+      teamId: row.team_id,
+      games: row.games,
+      grade: row.value,
+      gradePercentile: row.percentile,
+      uncertainty: row.uncertainty,
+      war: war?.value ?? null,
+      warPercentile: war?.percentile ?? null,
+      pointsAboveReplacement: war?.points_above_replacement ?? null,
+      traits: rows
+        .filter((r) => r.trait !== "war")
+        .sort((a, b) => Number(b.in_grade) - Number(a.in_grade) || a.trait.localeCompare(b.trait)),
+    };
+    (groups[row.position_group] ??= []).push(player);
+  }
+  return {
+    season: latest.season,
+    week: latest.week,
+    asOf: latest.as_of,
+    modelVersion: latest.model_version,
+    groups,
+    gradedCounts,
   };
 });

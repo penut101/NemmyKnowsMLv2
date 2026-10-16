@@ -168,6 +168,8 @@ export type CfbHeismanHistory = Omit<Tables<"cfb", "heisman_history">, "actual_w
   actual_winner_predicted_rank: number | null;
 };
 export type CfbPlayerModelMeta = Tables<"cfb", "player_model_meta">;
+// Latest-week trait, grade and WAR rows per qualified FBS player.
+export type CfbPositionTrait = Tables<"cfb", "position_traits">;
 
 // One frozen grading record per completed game: the projection published
 // before kickoff, the CFBD closing line, and the final score.
