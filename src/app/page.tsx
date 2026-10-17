@@ -7,7 +7,7 @@ import { ContactLine } from "@/components/site-footer";
 import { fetchBettingHeadline } from "@/lib/bet-ledger";
 import { mlbHeadline } from "@/lib/mlb-headline";
 import { supabase, supabaseCfb, supabaseNfl } from "@/lib/supabase";
-import { cn, formatNumber, formatPct, formatSigned } from "@/lib/utils";
+import { formatNumber, formatPct, formatSigned } from "@/lib/utils";
 import { fetchLivePerformance } from "@/lib/cfb";
 import { fetchForecastAccuracy as fetchNflAccuracy } from "@/lib/nfl";
 import { fetchCfbPickSummary } from "@/lib/cfb-picks";
@@ -324,36 +324,60 @@ function ModelStats({ forecast, markets, period, spreadLabel = "Spreads" }: {
   return (
     <div className="mt-4 border-t border-border pt-4">
       {forecast && (
-        <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
-          {forecast.stats.map((stat) => (
-            <div key={stat.label}>
-              <p className="text-xs text-muted-foreground">{stat.label}</p>
-              <p className="mt-0.5 font-mono text-base font-bold tabular-nums">
-                {stat.value}
-              </p>
-            </div>
-          ))}
-          <p className="ml-auto font-mono text-xs text-muted-foreground">
+        <div>
+          <dl className="grid grid-cols-3 gap-x-3">
+            {forecast.stats.map((stat) => (
+              <div key={stat.label} className="flex min-w-0 flex-col">
+                <dt className="flex-1 text-xs text-muted-foreground">{stat.label}</dt>
+                <dd className="mt-1 font-mono text-base font-bold text-foreground tabular-nums">
+                  {stat.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-2 font-mono text-xs text-muted-foreground">
             {forecast.sample}
           </p>
         </div>
       )}
-      <div
-        className={cn(
-          "flex flex-wrap gap-x-5 gap-y-1 font-mono text-xs text-muted-foreground tabular-nums",
-          forecast && "mt-3",
-        )}
-      >
-        {markets.map((record) => (
-          <span key={record.market}>
-            {record.market === "spreads" ? spreadLabel : MARKET_HEADINGS[record.market]}{" "}
-            {record.wins}&ndash;{record.losses}&ndash;{record.pushes} · ROI{" "}
-            {formatPct(record.roi)}
-            {record.pending ? ` · ${record.pending} pending` : ""}
-          </span>
-        ))}
-        <span className="ml-auto">{period}</span>
-      </div>
+      <p className="mt-1 font-mono text-xs text-muted-foreground">{period}</p>
+      {markets.length > 0 && (
+        <details className="relative z-10 mt-3 text-xs text-muted-foreground">
+          <summary className="w-fit cursor-pointer rounded-sm py-1 focus-visible:outline-2 focus-visible:outline-offset-4">
+            Prediction results
+          </summary>
+          <table className="mt-2 w-full text-xs tabular-nums">
+            <caption className="sr-only">Prediction results by market</caption>
+            <thead className="border-b border-border text-muted-foreground">
+              <tr>
+                <th scope="col" className="pb-2 text-left font-normal">Market</th>
+                <th scope="col" className="px-3 pb-2 text-right font-normal">
+                  <abbr title="Wins, losses, pushes" className="no-underline">W-L-P</abbr>
+                </th>
+                <th scope="col" className="pb-2 text-right font-normal">ROI</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/50">
+              {markets.map((record) => (
+                <tr key={record.market}>
+                  <th scope="row" className="py-2 text-left align-top font-normal text-muted-foreground">
+                    {record.market === "spreads" ? spreadLabel : MARKET_HEADINGS[record.market]}
+                    {record.pending > 0 && (
+                      <span className="mt-0.5 block font-mono">{record.pending} pending</span>
+                    )}
+                  </th>
+                  <td className="whitespace-nowrap px-3 py-2 text-right align-top font-mono text-muted-foreground">
+                    {record.wins}&ndash;{record.losses}&ndash;{record.pushes}
+                  </td>
+                  <td className="whitespace-nowrap py-2 text-right align-top font-mono text-muted-foreground">
+                    {formatPct(record.roi)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
     </div>
   );
 }
