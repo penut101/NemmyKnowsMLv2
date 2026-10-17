@@ -44,7 +44,7 @@ export default async function MlbPlayersPage() {
             Projecting the {season} season
           </PageDescription>
         </div>
-        <LastUpdated timestamp={values.asOf} schedule="Updates nightly" />
+        <LastUpdated timestamp={values.updatedAt} schedule="Updates nightly" />
       </PageHeader>
 
       <p className="max-w-4xl text-sm text-muted-foreground leading-relaxed">

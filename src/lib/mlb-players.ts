@@ -34,7 +34,7 @@ export interface PlayerDetail {
 }
 
 export interface PlayerValues {
-  asOf: string | null;
+  updatedAt: string | null;
   season: number | null;
   modelVersion: string | null;
   index: PlayerValueIndex[];
@@ -62,7 +62,7 @@ export const fetchPlayerValues = cache(async (): Promise<PlayerValues> => {
   }
   const first = index[0];
   return {
-    asOf: first?.as_of ?? null,
+    updatedAt: first?.updated_at ?? null,
     season: first?.season ?? null,
     modelVersion: first?.model_version ?? null,
     index,
