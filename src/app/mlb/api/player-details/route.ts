@@ -22,7 +22,8 @@ export async function GET(request: Request) {
         },
       }
     );
-  } catch {
+  } catch (error) {
+    console.error("mlb player details fetch failed:", error);
     return Response.json(
       { error: "Player details are temporarily unavailable." },
       { status: 503, headers: { "Cache-Control": "no-store" } }

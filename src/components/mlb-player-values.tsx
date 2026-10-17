@@ -151,7 +151,24 @@ function OutlookTile({ year, graded }: { year: OutlookYear; graded: boolean }) {
   );
 }
 
-function PlayerCard({ row, detail, showDetails = true }: { row: PlayerValueIndex; detail: PlayerDetail | undefined; showDetails?: boolean }) {
+function DetailStatus({ failed, onRetry, loadingText = "Loading traits…" }: { failed: boolean; onRetry: () => void; loadingText?: string }) {
+  return failed ? (
+    <div role="status" className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+      <p>Could not load traits and outlook. Please try again.</p>
+      <button type="button" onClick={onRetry} className="min-h-10 rounded-md border border-border px-3 text-sm text-primary hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring">Retry</button>
+    </div>
+  ) : (
+    <p role="status" className="text-xs text-muted-foreground">{loadingText}</p>
+  );
+}
+
+function PlayerCard({ row, detail, failed, onRetry, showDetails = true }: {
+  row: PlayerValueIndex;
+  detail: PlayerDetail | undefined;
+  failed: boolean;
+  onRetry: () => void;
+  showDetails?: boolean;
+}) {
   const graded = row.grade != null;
   const head = headlineValue(row);
   const pitcher = PITCHER_GROUPS.has(row.position_group);
@@ -205,7 +222,7 @@ function PlayerCard({ row, detail, showDetails = true }: { row: PlayerValueIndex
         </div>
       </div>
       {showDetails && (detail == null ? (
-        <p className="text-xs text-muted-foreground">Loading traits…</p>
+        <DetailStatus failed={failed} onRetry={onRetry} />
       ) : (
         <div className="grid grid-cols-1 gap-x-8 gap-y-4 md:grid-cols-2">
           {panels.map((panel) => {
@@ -244,9 +261,13 @@ function PlayerCard({ row, detail, showDetails = true }: { row: PlayerValueIndex
 function MlbComparison({
   rows,
   loaded,
+  failed,
+  onRetry,
 }: {
   rows: [PlayerValueIndex, PlayerValueIndex];
   loaded: Record<string, PlayerDetail>;
+  failed: boolean;
+  onRetry: () => void;
 }) {
   const details = rows.map((row) => loaded[String(row.player_id)]);
   const traits = [
@@ -380,9 +401,7 @@ function MlbComparison({
           })}
         </div>
       ) : (
-        <p role="status" className="text-xs text-muted-foreground">
-          Loading comparison traits…
-        </p>
+        <DetailStatus failed={failed} onRetry={onRetry} loadingText="Loading comparison traits…" />
       )}
     </section>
   );
@@ -435,6 +454,7 @@ export default function MlbPlayerValues({ index }: { index: PlayerValueIndex[] }
   const comparedRows = compare.map((id) => index.find((row) => String(row.player_id) === id)).filter((row): row is PlayerValueIndex => row != null);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [loaded, setLoaded] = useState<Record<string, PlayerDetail>>({});
+  const [failed, setFailed] = useState<Record<string, boolean>>({});
 
   const teams = useMemo(() => {
     const names = new Set<string>();
@@ -474,25 +494,61 @@ export default function MlbPlayerValues({ index }: { index: PlayerValueIndex[] }
   }, [index, search, position, team, sortKey, sortDir, loaded]);
   const visible = matches.slice(0, PAGE_ROWS);
 
+  // A stable key keeps opening a card from cancelling its pending request.
+  const requestIds = [...new Set([...compare.map(Number), ...visible.map((row) => row.player_id)])]
+    .filter((id) => !loaded[String(id)] && !failed[String(id)])
+    .slice(0, PAGE_ROWS)
+    .sort((a, b) => a - b)
+    .join(",");
+
   useEffect(() => {
-    const missing = [...new Set([...compare.map(Number), ...visible.map((row) => row.player_id)])].filter((id) => !loaded[String(id)]).slice(0, PAGE_ROWS);
-    if (missing.length === 0) return;
+    if (!requestIds) return;
+    const ids = requestIds.split(",");
     const controller = new AbortController();
-    fetch(`/mlb/api/player-details?ids=${missing.join(",")}`, { signal: controller.signal })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((body: { players?: Record<string, PlayerDetail> } | null) => {
-        if (body?.players) setLoaded((prev) => ({ ...prev, ...body.players }));
+    let active = true;
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
+    fetch(`/mlb/api/player-details?ids=${requestIds}`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) throw new Error("Player details unavailable");
+        return res.json() as Promise<{ players?: Record<string, PlayerDetail> }>;
       })
-      .catch(() => {});
-    return () => controller.abort();
-  }, [visible, compare, loaded]);
+      .then((body) => {
+        if (!active) return;
+        const received: Record<string, PlayerDetail> = {};
+        const missing: Record<string, boolean> = {};
+        for (const id of ids) {
+          const detail = body?.players?.[id];
+          if (detail && Array.isArray(detail.traits) && Array.isArray(detail.outlook)) received[id] = detail;
+          else missing[id] = true;
+        }
+        setLoaded((prev) => ({ ...prev, ...received }));
+        setFailed((prev) => ({ ...prev, ...missing }));
+      })
+      .catch(() => {
+        if (active) setFailed((prev) => ({ ...prev, ...Object.fromEntries(ids.map((id) => [id, true])) }));
+      })
+      .finally(() => window.clearTimeout(timeout));
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [requestIds]);
+
+  const retryDetails = (ids: number[]) => {
+    setFailed((prev) => {
+      const next = { ...prev };
+      for (const id of ids) delete next[String(id)];
+      return next;
+    });
+  };
 
   const graded = matches.filter((row) => row.grade != null).length;
 
   return (
     <div className="min-w-0 space-y-section">
       <PlayerComparisonPicker players={comparisonPlayers} selected={compare} onChange={setCompare} description="Compare two batters, starters, or relievers." disclosure={{ open: compareOpen, onOpenChange: setCompareOpen }} />
-      {comparedRows.length === 2 && <MlbComparison rows={[comparedRows[0], comparedRows[1]]} loaded={loaded} />}
+      {comparedRows.length === 2 && <MlbComparison rows={[comparedRows[0], comparedRows[1]]} loaded={loaded} failed={comparedRows.some((row) => failed[String(row.player_id)])} onRetry={() => retryDetails(comparedRows.map((row) => row.player_id))} />}
       <div className="flex flex-wrap items-center gap-3">
         {/* Eleven positions overflow a phone, so small screens get one select beside the team select. */}
         <div className="hidden md:block">
@@ -572,7 +628,7 @@ export default function MlbPlayerValues({ index }: { index: PlayerValueIndex[] }
                   />
                 </div>
               </div>
-              <PlayerCard row={row} detail={loaded[String(row.player_id)]} showDetails={open} />
+              <PlayerCard row={row} detail={loaded[String(row.player_id)]} failed={!!failed[String(row.player_id)]} onRetry={() => retryDetails([row.player_id])} showDetails={open} />
               <button
                 type="button"
                 aria-expanded={open}
@@ -663,7 +719,7 @@ export default function MlbPlayerValues({ index }: { index: PlayerValueIndex[] }
                   {open && (
                     <TableRow className="hover:bg-transparent">
                       <TableCell colSpan={12} className="whitespace-normal bg-muted/20">
-                        <PlayerCard row={row} detail={detail} />
+                        <PlayerCard row={row} detail={detail} failed={!!failed[String(row.player_id)]} onRetry={() => retryDetails([row.player_id])} />
                       </TableCell>
                     </TableRow>
                   )}

@@ -11,7 +11,7 @@ export const GRADE_TIP =
   "Projected talent on a 20 to 80 scale, relative to his position. 50 is average; the range reflects uncertainty.";
 
 export const TRADE_VALUE_TIP =
-  "Projected value over his remaining control years, minus salary. Future seasons are discounted 8 percent per year.";
+  "Projected value over his remaining control years, minus salary. Future seasons are discounted 8 percent per year. The range reflects sampling uncertainty only; it excludes uncertainty in aging, playing time, and the price of a win.";
 
 export const MARKET_VALUE_TIP =
   "Estimated market value of next season’s projected wins. Shown when no team-control years remain.";

@@ -70,10 +70,16 @@ export const fetchPlayerValues = cache(async (): Promise<PlayerValues> => {
 });
 
 export async function fetchPlayerDetails(ids: number[]): Promise<Record<string, PlayerDetail>> {
+  const signal = AbortSignal.timeout(10_000);
   const [valuesRes, traitsRes] = await Promise.all([
-    supabase.from("player_values").select("player_id, outlook, tip").in("player_id", ids).limit(DETAIL_IDS),
-    supabase.from("player_traits").select("*").in("player_id", ids).limit(DETAIL_IDS * 16),
+    supabase.from("player_values").select("player_id, outlook, tip").in("player_id", ids).limit(DETAIL_IDS).abortSignal(signal),
+    supabase.from("player_traits").select("*").in("player_id", ids).limit(DETAIL_IDS * 16).abortSignal(signal),
   ]);
+  // Failed or incomplete reads must reach the route's uncached 503 response.
+  if (valuesRes.error) throw new Error(`Player outlook read failed: ${valuesRes.error.message}`);
+  if (traitsRes.error) throw new Error(`Player traits read failed: ${traitsRes.error.message}`);
+  const returnedIds = new Set(valuesRes.data?.map((row) => row.player_id));
+  if (ids.some((id) => !returnedIds.has(id))) throw new Error("Player outlook rows missing");
   const out: Record<string, PlayerDetail> = {};
   for (const row of valuesRes.data ?? []) {
     out[String(row.player_id)] = {
