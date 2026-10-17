@@ -160,7 +160,7 @@ function Headline({
   positive?: boolean;
 }) {
   return (
-    <div className="flex min-w-0 flex-col items-start sm:items-center">
+    <div className="flex min-w-0 flex-col items-center gap-1 text-center">
       <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
         {label} <InfoTip text={tip} label={tipLabel} />
       </span>
@@ -200,13 +200,29 @@ function GradeCard({
     else sections.push({ kind: line.kind, names: [line.name] });
   }
   return (
-    <article className="self-start space-y-2 border-t border-rule-strong pt-3 pb-4">
+    <article className="self-start space-y-3 rounded-lg border border-rule-strong bg-card p-3 sm:p-4">
       <div className="flex flex-col gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground">{rank}</span>
-          <Identity row={row} logo={logo} />
+          <span className="shrink-0 font-mono text-xs text-muted-foreground">{rank}</span>
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <Identity row={row} logo={logo} />
+          </div>
+          <button
+            type="button"
+            onClick={onCompare}
+            aria-pressed={compared}
+            aria-label={`Compare ${row.name}`}
+            className={cn(
+              "min-h-9 shrink-0 rounded-md border px-3 py-1 font-mono text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              compared
+                ? "border-[var(--brand-highlight)] bg-[var(--brand-highlight)] text-[var(--brand-ink)]"
+                : "border-border text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {compared ? "comparing" : "compare"}
+          </button>
         </div>
-        <div className={cn("grid gap-3 border-y border-border py-3 text-left sm:border-0 sm:py-0 sm:text-center", rated ? "grid-cols-3" : "grid-cols-2")}>
+        <div className={cn("grid gap-2 divide-x divide-border rounded-md bg-muted/30 py-3", rated ? "grid-cols-3" : "grid-cols-2")}>
           <Headline
             label="grade"
             tip={rated ? rating.tip : copy.gradeTip}
@@ -243,22 +259,6 @@ function GradeCard({
             positive={player?.war != null && player.war > 0}
           />
         </div>
-      </div>
-      <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={onCompare}
-            aria-pressed={compared}
-            aria-label={`Compare ${row.name}`}
-            className={cn(
-              "min-h-9 shrink-0 rounded-md border px-3 py-1 font-mono text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              compared
-                ? "border-[var(--brand-highlight)] bg-[var(--brand-highlight)] text-[var(--brand-ink)]"
-                : "border-border text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {compared ? "comparing" : "compare"}
-          </button>
       </div>
       {player && (
         <Accordion.Root multiple className="space-y-2">
@@ -641,7 +641,7 @@ export default function PositionGrades({
       {visible.length === 0 ? (
         <p className="text-sm text-muted-foreground">No players match.</p>
       ) : (
-        <div className="grid grid-cols-1 gap-x-8 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {visible.map((row, i) => (
             <GradeCard
               key={row.athleteId}

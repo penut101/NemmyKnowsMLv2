@@ -56,18 +56,16 @@ export function PlayerComparisonPicker({
       open={disclosure.open}
       onOpenChange={disclosure.onOpenChange}
       render={<section aria-label="Compare players" />}
-      className="space-y-3 rounded-lg border border-rule-strong bg-muted/30 p-4"
+      className="rounded-md border border-rule-strong"
     >
       <h2>
-        <Collapsible.Trigger className="group flex min-h-11 w-full items-center justify-between gap-3 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          <span>
-            <span className="block text-base">Compare two players</span>
-            <span className="mt-1 block text-sm font-normal text-muted-foreground">{description}</span>
-          </span>
+        <Collapsible.Trigger className="group flex min-h-11 w-full items-center justify-between gap-3 rounded-md px-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <span className="text-sm">Compare two players</span>
           <ChevronDown aria-hidden="true" className="size-4 shrink-0 transition-transform group-data-[panel-open]:rotate-180" />
         </Collapsible.Trigger>
       </h2>
-      <Collapsible.Panel className="space-y-2">
+      <Collapsible.Panel className="space-y-3 px-3 pb-3">
+        <p className="text-xs text-muted-foreground">{description}</p>
         <div className="grid gap-3 sm:grid-cols-2">
           {([0, 1] as const).map((slot) => (
             <Combobox.Root
