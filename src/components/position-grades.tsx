@@ -560,7 +560,15 @@ export default function PositionGrades({
   return (
     <div className="space-y-section">
       <div className="flex flex-wrap items-center gap-3">
-        <ToggleGroup label="Position" options={positions} value={position} onChange={setPosition} />
+        <ToggleGroup
+          label="Position"
+          options={positions}
+          value={position}
+          onChange={(next) => {
+            setPosition(next);
+            setCompare([]);
+          }}
+        />
         <select
           aria-label={copy.groupLabel}
           value={group}
