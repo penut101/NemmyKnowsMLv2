@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Popover } from "@base-ui/react/popover";
 import { cn } from "@/lib/utils";
 
 // A small circled "i" that opens a one-paragraph explanation on click and
@@ -15,49 +15,34 @@ export function InfoTip({
   label?: string;
   className?: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDocPointer = (e: PointerEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("pointerdown", onDocPointer);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onDocPointer);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
   return (
-    <span ref={wrapRef} className={cn("relative inline-flex", className)}>
-      <button
-        type="button"
-        aria-label={label ?? text}
-        aria-expanded={open}
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((v) => !v);
-        }}
-        className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-muted-foreground/40 font-serif text-[9px] italic leading-none text-muted-foreground/70 cursor-pointer select-none hover:border-foreground/60 hover:text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/60"
-      >
-        i
-      </button>
-      {open && (
-        <span
-          role="tooltip"
-          className="absolute left-1/2 top-full z-50 mt-1.5 w-64 max-w-[80vw] -translate-x-1/2 rounded-md border border-border bg-popover px-3 py-2 text-left text-[11px] font-normal normal-case leading-snug tracking-normal text-popover-foreground shadow-md"
+    <span className={cn("inline-flex", className)}>
+      <Popover.Root>
+        <Popover.Trigger
+          aria-label={label ?? text}
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-muted-foreground/40 font-serif text-[9px] italic leading-none text-muted-foreground/70 cursor-pointer select-none hover:border-foreground/60 hover:text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-foreground/60"
         >
-          {text}
-        </span>
-      )}
+          i
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Positioner
+            side="bottom"
+            sideOffset={6}
+            collisionPadding={8}
+            collisionAvoidance={{ side: "flip", align: "shift", fallbackAxisSide: "none" }}
+            className="z-50 data-[anchor-hidden]:invisible"
+          >
+            <Popover.Popup
+              aria-label={label ?? text}
+              onClick={(e) => e.stopPropagation()}
+              className="w-64 max-w-[min(var(--available-width),calc(100vw-1rem))] max-h-[var(--available-height)] overflow-y-auto rounded-md border border-border bg-popover px-3 py-2 text-left text-[11px] font-normal normal-case leading-snug tracking-normal whitespace-normal text-popover-foreground shadow-md outline-none [overflow-wrap:anywhere]"
+            >
+              <Popover.Description>{text}</Popover.Description>
+            </Popover.Popup>
+          </Popover.Positioner>
+        </Popover.Portal>
+      </Popover.Root>
     </span>
   );
 }

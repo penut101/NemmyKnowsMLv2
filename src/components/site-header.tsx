@@ -7,10 +7,10 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { MomentumWordmark } from "@/components/momentum-wordmark";
 
 const links = [
-  { href: "/mlb/games", label: "MLB" },
-  { href: "/cfb/predictions", label: "CFB" },
-  { href: "/nfl/predictions", label: "NFL" },
-  { href: "/nhl/games", label: "NHL" },
+  { href: "/mlb/players", label: "MLB" },
+  { href: "/cfb/ratings", label: "CFB" },
+  { href: "/nfl/ratings", label: "NFL" },
+  { href: "/nhl/ratings", label: "NHL" },
   { href: "/blog", label: "Blog" },
   { href: "/about", label: "About" },
 ];
