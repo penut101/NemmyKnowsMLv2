@@ -4,6 +4,7 @@ import type { NflPicksDatabase } from "@/lib/nfl-picks.database.types";
 import type { Database } from "@/lib/database.types";
 import type { CfbPicksDatabase } from "@/lib/cfb-picks.database.types";
 import type { CfbRatingsDatabase } from "@/lib/cfb-ratings.database.types";
+import { restCacheTags } from "./cache-tags.ts";
 
 type CfbDatabase = Omit<Database, "cfb"> & {
   cfb: Omit<Database["cfb"], "Tables" | "Views" | "Functions"> & {
@@ -53,9 +54,9 @@ export const supabase = createClient<Database, "mlb">(url, anonKey, {
 });
 
 // Query URLs include every filter, so cached pages never share different
-// windows. Public football reads are tagged by sport and cached for an hour;
+// windows. Public reads are tagged by source table and cached for an hour;
 // the revalidation webhook (/api/revalidate, fired by a Postgres trigger on
-// every pipeline write) drops the tag, so the hour is only a safety net.
+// every pipeline write) expires dependent reads, so the hour is a safety net.
 // Mutations bypass the cache.
 export const CACHE_SECONDS = 3600;
 
@@ -69,7 +70,7 @@ function cachedPublicFetch(sport: string): typeof fetch {
     return fetch(
       input,
       restRead
-        ? { ...init, next: { revalidate: CACHE_SECONDS, tags: [sport] } }
+        ? { ...init, next: { revalidate: CACHE_SECONDS, tags: restCacheTags(sport, new URL(String(input))) } }
         : init,
     );
   };

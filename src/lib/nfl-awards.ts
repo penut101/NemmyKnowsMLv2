@@ -1,4 +1,5 @@
 import "server-only";
+import { tableCacheTag } from "./cache-tags";
 import type { AwardBoard, AwardMeta, AwardKey, AwardLeader, AwardTrajectoryPoint } from "./nfl-awards-types";
 
 export const TRAJECTORY_LINES = 8;
@@ -11,7 +12,7 @@ async function read<T>(table: string, query: Record<string, string>): Promise<T[
   if (!url || !key) throw new Error("NFL awards data connection is unavailable");
   const response = await fetch(`${url}/rest/v1/${table}?${new URLSearchParams(query)}`, {
     headers: { apikey: key, Authorization: `Bearer ${key}`, "Accept-Profile": "nfl" },
-    next: { revalidate: 3600, tags: ["nfl"] },
+    next: { revalidate: 3600, tags: ["nfl", tableCacheTag("nfl", table)] },
   });
   if (!response.ok) throw new Error(`NFL awards request failed (${response.status})`);
   return response.json() as Promise<T[]>;

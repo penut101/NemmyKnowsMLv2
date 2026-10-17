@@ -27,6 +27,12 @@ export interface PositionTraitRow {
   points_above_replacement: number | null;
 }
 
+// Identity and publication metadata belong to the player and page, not every
+// trait in the cached browser payload. Keep every field the cards and comparison use.
+export type GradedPlayerTrait = Pick<PositionTraitRow,
+  "trait" | "value" | "percentile" | "kind" | "in_grade" | "reliability"
+>;
+
 export interface GradedPlayer {
   athleteId: string;
   name: string;
@@ -44,7 +50,7 @@ export interface GradedPlayer {
   war: number | null;
   warPercentile: number | null;
   pointsAboveReplacement: number | null;
-  traits: PositionTraitRow[];
+  traits: GradedPlayerTrait[];
 }
 
 // One row per graded player for search and filters. `group` is the filter
@@ -132,7 +138,10 @@ export function buildGradedPlayers(rows: PositionTraitRow[]): Record<string, Gra
       pointsAboveReplacement: war?.points_above_replacement ?? null,
       traits: list
         .filter((r) => r.trait !== "grade" && r.trait !== "war" && r.trait !== "rating")
-        .sort((a, b) => Number(b.in_grade) - Number(a.in_grade) || a.trait.localeCompare(b.trait)),
+        .sort((a, b) => Number(b.in_grade) - Number(a.in_grade) || a.trait.localeCompare(b.trait))
+        .map(({ trait, value, percentile, kind, in_grade, reliability }) => ({
+          trait, value, percentile, kind, in_grade, reliability,
+        })),
     };
   }
   return out;

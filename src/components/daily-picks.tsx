@@ -1,5 +1,5 @@
 import { PageSection } from "@/components/page-layout";
-import Link from "next/link";
+import { IntentLink as Link } from "@/components/navigation-link";
 import { Kickoff } from "@/components/kickoff-cells";
 import { LocalKickoffs } from "@/components/local-kickoffs";
 import { MARKET_LABELS } from "@/lib/football-picks";

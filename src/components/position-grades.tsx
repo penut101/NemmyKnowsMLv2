@@ -1,7 +1,7 @@
 "use client";
 
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import type { GradedPlayer, PlayerIndexRow, PositionTraitRow } from "@/lib/position-grades";
+import type { GradedPlayer, PlayerIndexRow, GradedPlayerTrait } from "@/lib/position-grades";
 import {
   KIND_LABELS,
   KIND_ORDER,
@@ -53,7 +53,7 @@ function TraitRow({
   sport: GradeSport;
   name: string;
   group: string;
-  trait: PositionTraitRow | undefined;
+  trait: GradedPlayerTrait | undefined;
 }) {
   const { label, tip } = traitLabel(name, sport);
   const inGrade = trait?.in_grade ?? false;
@@ -304,8 +304,8 @@ function CompareRow({
 }: {
   sport: GradeSport;
   name: string;
-  left: PositionTraitRow | undefined;
-  right: PositionTraitRow | undefined;
+  left: GradedPlayerTrait | undefined;
+  right: GradedPlayerTrait | undefined;
 }) {
   const { label, tip } = traitLabel(name, sport);
   const sample = left ?? right;
@@ -313,8 +313,8 @@ function CompareRow({
   const style = kind === "style" || kind === "role";
   const dimmed = kind != null ? kind === "noise" : !(sample?.in_grade ?? false);
   const reliability = sample?.reliability ?? null;
-  const pct = (t: PositionTraitRow | undefined) => t?.percentile ?? null;
-  const bar = (t: PositionTraitRow | undefined, color: string, fromRight: boolean) => (
+  const pct = (t: GradedPlayerTrait | undefined) => t?.percentile ?? null;
+  const bar = (t: GradedPlayerTrait | undefined, color: string, fromRight: boolean) => (
     <span className={cn("flex h-1.5 overflow-hidden rounded-[1px] bg-grid", fromRight && "justify-end")}>
       <span
         className={cn("block h-full", color, dimmed && "opacity-40")}
@@ -322,7 +322,7 @@ function CompareRow({
       />
     </span>
   );
-  const value = (t: PositionTraitRow | undefined) => (t?.value == null ? "" : ` (${formatNumber(t.value, 3)})`);
+  const value = (t: GradedPlayerTrait | undefined) => (t?.value == null ? "" : ` (${formatNumber(t.value, 3)})`);
   return (
     <div
       className={cn(

@@ -1,5 +1,5 @@
 import { PageDescription, PageHeader, PageSection, PageShell, PageTitle } from "@/components/page-layout";
-import Link from "next/link";
+import { IntentLink as Link } from "@/components/navigation-link";
 import { HomeFeatureSlot } from "@/components/home-feature-slot";
 import { fetchHomeFeature } from "@/lib/home-features.server";
 import { SiteHeader } from "@/components/site-header";

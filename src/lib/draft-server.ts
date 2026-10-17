@@ -1,5 +1,6 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
+import { tableCacheTag } from "./cache-tags";
 import { gzipSync, gunzipSync } from "node:zlib";
 import type {
   CollegePlayer,
@@ -38,7 +39,7 @@ const publication = unstable_cache(
     return gzipSync(await response.text()).toString("base64");
   },
   ["draft-publication-compressed-v1"],
-  { revalidate: 3600, tags: ["cfb"] },
+  { revalidate: 3600, tags: ["cfb", tableCacheTag("cfb", "draft_publications")] },
 );
 
 export async function fetchDraft(

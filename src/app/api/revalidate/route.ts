@@ -1,14 +1,29 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { revalidatePath, revalidateTag } from "next/cache";
+import { tableCacheTag } from "@/lib/cache-tags";
 
 // Called by a Postgres statement trigger (public.site_revalidate) whenever a
-// pipeline writes a table the site reads. Marking the sport's pages and
-// cached reads stale here is what lets every page keep an hour-long cache
-// instead of regenerating on a timer: the next visit after a publish renders
-// fresh, and a quiet day costs no renders at all.
+// pipeline writes a table the site reads. Expiring a source tag also expires
+// pages that consumed it, without invalidating unrelated pages or data.
 
 const SPORTS = new Set(["mlb", "cfb", "nfl", "nhl"]);
+
+// MLB's uncached Supabase client also serves live games, so its static pages
+// need explicit paths. Include consumers of the season-unified and ledger views.
+const MLB_PATHS: Record<string, string[]> = {
+  games: ["/", "/mlb/history", "/mlb/performance", "/mlb/methodology"],
+  model_outputs: ["/", "/mlb/history", "/mlb/performance", "/mlb/methodology"],
+  model_outputs_season: ["/", "/mlb/history", "/mlb/performance"],
+  model_outputs_season_v1_archive: ["/", "/mlb/history", "/mlb/performance"],
+  model_evaluation: ["/", "/mlb/performance"],
+  model_calibration: ["/mlb/performance"],
+  model_edge_buckets: ["/mlb/performance"],
+  posterior_sigmas: ["/mlb/performance"],
+  player_values: ["/mlb/players"],
+  player_traits: [], // Details use their API route's CDN window.
+  playoff_forecasts: [], // Both consumers use the tagged REST read.
+};
 
 function authorized(request: Request) {
   const expected = process.env.REVALIDATE_SECRET;
@@ -36,10 +51,22 @@ export async function POST(request: Request) {
   if (sport === "mlb" && body?.table === "live_win_probability") {
     return NextResponse.json({ revalidated: null });
   }
+  const table = typeof body?.table === "string" ? body.table : "";
+  if (table && !/^[a-z_][a-z0-9_]*$/.test(table)) {
+    return NextResponse.json({ error: "invalid table" }, { status: 400 });
+  }
   // A published decision must be visible on the next visit, with no stale window.
-  revalidateTag(sport, { expire: 0 });
-  revalidatePath(`/${sport}`, "layout");
-  // The home page shows each sport's headline numbers.
-  revalidatePath("/");
+  if (!table || (sport === "mlb" && !Object.hasOwn(MLB_PATHS, table))) {
+    // Preserve schema-only refreshes and safely handle new untagged MLB tables.
+    revalidateTag(sport, { expire: 0 });
+    revalidatePath(`/${sport}`, "layout");
+    revalidatePath("/");
+  } else {
+    revalidateTag(tableCacheTag(sport, table), { expire: 0 });
+    revalidateTag(tableCacheTag(sport, "rpc"), { expire: 0 });
+    if (sport === "mlb") {
+      for (const path of MLB_PATHS[table]) revalidatePath(path);
+    }
+  }
   return NextResponse.json({ revalidated: sport });
 }

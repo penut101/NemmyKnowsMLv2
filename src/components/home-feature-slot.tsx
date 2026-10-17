@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
+import { IntentLink as Link } from "@/components/navigation-link";
 import { PageSection } from "@/components/page-layout";
 
 export type HomeFeature = {

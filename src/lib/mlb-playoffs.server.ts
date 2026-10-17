@@ -1,4 +1,5 @@
 import "server-only";
+import { tableCacheTag } from "./cache-tags";
 import {
   PLAYOFF_STAGES,
   parsePlayoffForecast,
@@ -25,7 +26,7 @@ export async function fetchPlayoffEditions(): Promise<PlayoffEdition[]> {
         Authorization: `Bearer ${key}`,
         "Accept-Profile": "mlb",
       },
-      next: { revalidate: 3600, tags: ["mlb"] },
+      next: { revalidate: 3600, tags: ["mlb", tableCacheTag("mlb", "playoff_forecasts")] },
       signal: AbortSignal.timeout(8000),
     });
     if (!response.ok) return [];
