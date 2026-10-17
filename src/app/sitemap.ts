@@ -5,6 +5,7 @@ import { posts } from "./blog/posts";
 // Data pages refresh with each model publish; prose pages change with commits.
 const DATA_ROUTES = [
   "/mlb/games",
+  "/mlb/players",
   "/mlb/history",
   "/mlb/performance",
   "/cfb/predictions",

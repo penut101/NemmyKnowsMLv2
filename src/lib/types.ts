@@ -77,11 +77,6 @@ export type EdgeBucket = Narrow<
   { n_bets: number; hit_rate: number; roi: number }
 >;
 
-export type PosteriorSkill = Narrow<
-  Tables<"mlb", "posterior_skills">,
-  { actor_type: "batter" | "pitcher"; rank_type: "top" | "bottom" }
->;
-
 export type PosteriorSigma = Tables<"mlb", "posterior_sigmas">;
 
 // bet_ledger_v is a view, so Postgres reports every column nullable; the view

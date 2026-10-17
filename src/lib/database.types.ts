@@ -2754,6 +2754,267 @@ export type Database = {
         }
         Relationships: []
       }
+      player_contracts: {
+        Row: {
+          contract_start: number | null
+          contract_total_musd: number | null
+          contract_years: number | null
+          declined_to: string | null
+          fa_year: number | null
+          fetched_at: string
+          how_acquired: string | null
+          option_kind: string | null
+          option_musd: number | null
+          player_id: number
+          player_name: string | null
+          salary_kind: string
+          salary_musd: number | null
+          season: number
+          service_time: number | null
+          source_url: string | null
+          team: string | null
+          updated_at: string
+        }
+        Insert: {
+          contract_start?: number | null
+          contract_total_musd?: number | null
+          contract_years?: number | null
+          declined_to?: string | null
+          fa_year?: number | null
+          fetched_at: string
+          how_acquired?: string | null
+          option_kind?: string | null
+          option_musd?: number | null
+          player_id: number
+          player_name?: string | null
+          salary_kind: string
+          salary_musd?: number | null
+          season: number
+          service_time?: number | null
+          source_url?: string | null
+          team?: string | null
+          updated_at?: string
+        }
+        Update: {
+          contract_start?: number | null
+          contract_total_musd?: number | null
+          contract_years?: number | null
+          declined_to?: string | null
+          fa_year?: number | null
+          fetched_at?: string
+          how_acquired?: string | null
+          option_kind?: string | null
+          option_musd?: number | null
+          player_id?: number
+          player_name?: string | null
+          salary_kind?: string
+          salary_musd?: number | null
+          season?: number
+          service_time?: number | null
+          source_url?: string | null
+          team?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      player_traits: {
+        Row: {
+          as_of: string
+          grade: number | null
+          grade_high: number | null
+          grade_low: number | null
+          in_grade: boolean
+          inputs: Json
+          kind: string
+          model_version: string
+          panel: string
+          percentile: number | null
+          player_id: number
+          sample: number
+          trait: string
+          updated_at: string
+          value: number | null
+        }
+        Insert: {
+          as_of: string
+          grade?: number | null
+          grade_high?: number | null
+          grade_low?: number | null
+          in_grade: boolean
+          inputs?: Json
+          kind: string
+          model_version: string
+          panel: string
+          percentile?: number | null
+          player_id: number
+          sample?: number
+          trait: string
+          updated_at?: string
+          value?: number | null
+        }
+        Update: {
+          as_of?: string
+          grade?: number | null
+          grade_high?: number | null
+          grade_low?: number | null
+          in_grade?: boolean
+          inputs?: Json
+          kind?: string
+          model_version?: string
+          panel?: string
+          percentile?: number | null
+          player_id?: number
+          sample?: number
+          trait?: string
+          updated_at?: string
+          value?: number | null
+        }
+        Relationships: []
+      }
+      player_value_models: {
+        Row: {
+          fitted_at: string
+          last_dev_season: number
+          model_version: string
+          payload: Json
+          updated_at: string
+        }
+        Insert: {
+          fitted_at: string
+          last_dev_season: number
+          model_version: string
+          payload: Json
+          updated_at?: string
+        }
+        Update: {
+          fitted_at?: string
+          last_dev_season?: number
+          model_version?: string
+          payload?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      player_values: {
+        Row: {
+          age: number | null
+          as_of: string
+          bats: string | null
+          contract_status: string
+          control_years: number
+          fa_year: number | null
+          grade: number | null
+          grade_high: number | null
+          grade_low: number | null
+          grade_percentile: number | null
+          grade_reason: string | null
+          headshot_url: string | null
+          impact_runs: number | null
+          impact_war: number | null
+          level: string
+          market_value_musd: number | null
+          model_version: string
+          outlook: Json
+          owed_through_control_musd: number | null
+          player_id: number
+          player_name: string | null
+          playing_time: number | null
+          position_group: string
+          projected_war: number | null
+          salary_current_musd: number | null
+          season: number
+          secondary_positions: string[]
+          service_time: number | null
+          status: string
+          team: string | null
+          team_id: number | null
+          throws: string | null
+          tip: Json
+          trade_value_high: number | null
+          trade_value_low: number | null
+          trade_value_musd: number | null
+          updated_at: string
+        }
+        Insert: {
+          age?: number | null
+          as_of: string
+          bats?: string | null
+          contract_status: string
+          control_years?: number
+          fa_year?: number | null
+          grade?: number | null
+          grade_high?: number | null
+          grade_low?: number | null
+          grade_percentile?: number | null
+          grade_reason?: string | null
+          headshot_url?: string | null
+          impact_runs?: number | null
+          impact_war?: number | null
+          level?: string
+          market_value_musd?: number | null
+          model_version: string
+          outlook?: Json
+          owed_through_control_musd?: number | null
+          player_id: number
+          player_name?: string | null
+          playing_time?: number | null
+          position_group: string
+          projected_war?: number | null
+          salary_current_musd?: number | null
+          season: number
+          secondary_positions?: string[]
+          service_time?: number | null
+          status: string
+          team?: string | null
+          team_id?: number | null
+          throws?: string | null
+          tip?: Json
+          trade_value_high?: number | null
+          trade_value_low?: number | null
+          trade_value_musd?: number | null
+          updated_at?: string
+        }
+        Update: {
+          age?: number | null
+          as_of?: string
+          bats?: string | null
+          contract_status?: string
+          control_years?: number
+          fa_year?: number | null
+          grade?: number | null
+          grade_high?: number | null
+          grade_low?: number | null
+          grade_percentile?: number | null
+          grade_reason?: string | null
+          headshot_url?: string | null
+          impact_runs?: number | null
+          impact_war?: number | null
+          level?: string
+          market_value_musd?: number | null
+          model_version?: string
+          outlook?: Json
+          owed_through_control_musd?: number | null
+          player_id?: number
+          player_name?: string | null
+          playing_time?: number | null
+          position_group?: string
+          projected_war?: number | null
+          salary_current_musd?: number | null
+          season?: number
+          secondary_positions?: string[]
+          service_time?: number | null
+          status?: string
+          team?: string | null
+          team_id?: number | null
+          throws?: string | null
+          tip?: Json
+          trade_value_high?: number | null
+          trade_value_low?: number | null
+          trade_value_musd?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       posterior_sigmas: {
         Row: {
           mean: number

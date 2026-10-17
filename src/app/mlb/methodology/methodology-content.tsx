@@ -630,6 +630,52 @@ export function MethodologyContent({
       </SectionCard>
 
       <SectionCard
+        id="players"
+        title="Player Values"
+        subtitle="A projected grade, a trade value in dollars, and this season's impact for every 40-man player"
+      >
+        <div className="space-y-4 text-sm leading-relaxed">
+          <p>
+            The <strong>Grade</strong> is a 20 to 80 projection of true talent for a full season at
+            the player&apos;s position. Fifteen traits (contact, power, discipline, batted-ball quality,
+            platoon, range, arm, reliability, baserunning, sprint speed for hitters; stuff, command,
+            bat-missing, contact management, workload for pitchers) are each a weighted composite of
+            skill measurements from Statcast and Baseball Savant: swing decisions, whiffs, bat speed,
+            exit velocity, pitch velocity and movement, outs above average, arm strength. A trait&apos;s
+            weights are a bounded ridge fit of the player&apos;s own next-season value of that trait on
+            the inputs, and the Grade&apos;s weights a second ridge of next-season runs above average on
+            the traits plus a shrunk three-season outcome record. Both are fitted on the 2021 to 2025
+            development pairs with each pair held out in turn; 2026 chooses nothing.
+          </p>
+          <p>
+            <strong>Trade value</strong> prices the projection over the player&apos;s remaining control
+            years from Baseball-Reference contract data: projected wins each season after the age
+            curve, times the price of a win, minus salary, discounted 8 percent a year. Pre-arbitration
+            seasons pay the league minimum, arbitration seasons a fitted share of market value, options
+            go the way of whoever holds them. The price of a win is the slope of average annual value on
+            this model&apos;s own projected wins across free-agent contracts signed since 2024. It comes
+            out well below the published rate because the projections are calibrated and compressed:
+            a star projects lower here than in public systems, so long star contracts read as negative.
+            A player with no control years left shows a one-season <strong>Market value</strong> instead.
+          </p>
+          <p>
+            <strong>Impact</strong> is descriptive: this season&apos;s plate appearances valued by run
+            expectancy, plus fielding and baserunning runs, above a replacement-level player at the
+            position, in wins. Replacement level and the positional scale are the conventional ones; the
+            measured alternatives were biased by who kept playing and by outs above average being
+            relative to each position already.
+          </p>
+          <p>
+            On the 2025 to 2026 holdout, scored once with the final model, the Grade&apos;s rank
+            correlation with next-season runs was .404 for hitters against .385 for prior-season xwOBA
+            and .329 for a Marcel projection, .389 for starters against .334 for prior production, and
+            .192 for relievers against .105. A player is graded once his season-equivalent sample
+            reaches 100 plate appearances or batters faced; below that the page shows no number.
+          </p>
+        </div>
+      </SectionCard>
+
+      <SectionCard
         id="backtest"
         title="Head-to-Head Backtest vs Frozen v1"
         subtitle="542 games, March 26 to May 9, 2026. v2 wins on every metric."

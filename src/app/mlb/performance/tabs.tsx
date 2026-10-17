@@ -4,7 +4,6 @@ import type {
   ModelEvaluation,
   CalibrationBin,
   EdgeBucket,
-  PosteriorSkill,
   PosteriorSigma,
   LiveKpis,
 } from "@/lib/types";
@@ -17,7 +16,6 @@ import { MetricLineChart } from "@/components/metric-line-chart";
 import { CalibrationChart } from "@/components/calibration-chart";
 import { EquityCurveChart } from "@/components/equity-curve-chart";
 import { ResidualsChart } from "@/components/residuals-chart";
-import { TopSkillsLeaderboard } from "@/components/top-skills-leaderboard";
 import { VarianceDecompositionChart } from "@/components/variance-decomposition-chart";
 import { V2Badge } from "@/components/v2-badge";
 import { getV2BoundaryDate } from "@/lib/constants";
@@ -38,7 +36,6 @@ interface PerformanceTabsProps {
   calibration: CalibrationBin[];
   edgeBuckets: EdgeBucket[];
   residuals: number[];
-  posteriorSkills: PosteriorSkill[];
   posteriorSigmas: PosteriorSigma[];
   liveKpis: LiveKpis | null;
 }
@@ -55,7 +52,6 @@ export function PerformanceTabs({
   calibration,
   edgeBuckets,
   residuals,
-  posteriorSkills,
   posteriorSigmas,
   liveKpis,
 }: PerformanceTabsProps) {
@@ -333,20 +329,6 @@ export function PerformanceTabs({
 
       <TabsContent value="diagnostics" className="space-y-8">
         <div>
-          <h2 className="font-heading text-lg mb-1">Posterior Skill Leaderboard</h2>
-          <p className="text-muted-foreground text-xs mb-4">
-            xwOBA from the hierarchical Bayesian skill model. Season-long posterior estimate, refreshed after each refit.
-          </p>
-          {posteriorSkills.length > 0 ? (
-            <TopSkillsLeaderboard skills={posteriorSkills} />
-          ) : (
-            <p className="text-muted-foreground text-sm">
-              No skill data yet. Runs after train-v2.yml completes.
-            </p>
-          )}
-        </div>
-
-        <div className="border-t border-border pt-6">
           <h2 className="font-heading text-lg mb-4">Variance Decomposition</h2>
           {posteriorSigmas.length > 0 ? (
             <VarianceDecompositionChart data={posteriorSigmas} />

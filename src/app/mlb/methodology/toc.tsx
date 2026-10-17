@@ -10,6 +10,7 @@ const sections = [
   { id: "skill", label: "Skill Layer" },
   { id: "simulator", label: "Simulator" },
   { id: "markets", label: "Markets" },
+  { id: "players", label: "Players" },
   { id: "backtest", label: "Backtest" },
   { id: "legacy-v1", label: "Legacy v1" },
 ];

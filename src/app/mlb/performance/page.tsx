@@ -5,7 +5,6 @@ import type {
   ModelEvaluation,
   CalibrationBin,
   EdgeBucket,
-  PosteriorSkill,
   PosteriorSigma,
 } from "@/lib/types";
 import { aggregateLedger } from "@/lib/betting-aggs";
@@ -21,7 +20,7 @@ export const metadata: Metadata = {
 };
 
 export default async function PerformancePage() {
-  const [evalRes, calRes, edgeRes, residRes, latestRes, skillsRes, sigmasRes, ledger] = await Promise.all([
+  const [evalRes, calRes, edgeRes, residRes, latestRes, sigmasRes, ledger] = await Promise.all([
     supabase
       .from("model_evaluation")
       .select("*")
@@ -48,11 +47,6 @@ export default async function PerformancePage() {
       .order("created_at", { ascending: false })
       .limit(1),
     supabase
-      .from("posterior_skills")
-      .select("*")
-      .order("refit_date", { ascending: false })
-      .limit(80),
-    supabase
       .from("posterior_sigmas")
       .select("*")
       .order("refit_date", { ascending: false })
@@ -67,7 +61,6 @@ export default async function PerformancePage() {
   const lastUpdated: string | null = latestRes.data?.[0]?.created_at ?? null;
   const calibration = (calRes.data ?? []) as CalibrationBin[];
   const edgeBuckets = (edgeRes.data ?? []) as EdgeBucket[];
-  const posteriorSkills = (skillsRes.data ?? []) as PosteriorSkill[];
   const posteriorSigmas = (sigmasRes.data ?? []) as PosteriorSigma[];
   const liveKpis = ledger === null ? null : aggregateLedger(ledger);
 
@@ -135,7 +128,6 @@ export default async function PerformancePage() {
         calibration={calibration}
         edgeBuckets={edgeBuckets}
         residuals={residuals}
-        posteriorSkills={posteriorSkills}
         posteriorSigmas={posteriorSigmas}
         liveKpis={liveKpis}
       />
