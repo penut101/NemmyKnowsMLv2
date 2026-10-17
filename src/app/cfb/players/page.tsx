@@ -20,9 +20,9 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function PlayersPage() {
   const [grades, teams] = await Promise.all([fetchPositionGrades(), fetchTeams()]);
-  const { season, week, groups, gradedCounts } = grades;
+  const { season, week, index, details, gradedCounts } = grades;
 
-  if (season == null || Object.keys(groups).length === 0) {
+  if (season == null || index.length === 0) {
     return (
       <PageShell>
         <PageTitle>Player Grades</PageTitle>
@@ -34,9 +34,8 @@ export default async function PlayersPage() {
     );
   }
 
-  const topQb = groups.QB?.[0] ?? null;
-  const warLeader = Object.values(groups)
-    .flat()
+  const topQb = index.find((row) => row.positionGroup === "QB" && row.grade != null) ?? null;
+  const warLeader = Object.values(details)
     .filter((p) => p.war != null)
     .sort((a, b) => (b.war ?? 0) - (a.war ?? 0))[0] ?? null;
   const gradedTotal = Object.values(gradedCounts).reduce((sum, n) => sum + n, 0);
@@ -72,7 +71,7 @@ export default async function PlayersPage() {
           label="WAR leader"
           value={warLeader?.name ?? "–"}
           sub={warLeader ? `${warLeader.team} · ${formatSigned(warLeader.war, 2)} wins` : "no credited plays"}
-          tooltip={WAR_TIP}
+          tooltip={`${WAR_TIP} Leader among the players shown on the server-rendered page.`}
         />
         <KpiCard
           label="Graded players"
@@ -82,7 +81,7 @@ export default async function PlayersPage() {
         />
       </div>
 
-      <PositionGrades groups={groups} gradedCounts={gradedCounts} teams={[...teams.values()]} />
+      <PositionGrades season={season} index={index} details={details} gradedCounts={gradedCounts} teams={[...teams.values()]} />
     </PageShell>
   );
 }
