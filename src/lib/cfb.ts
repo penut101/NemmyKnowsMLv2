@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { POSITION_ORDER } from "@/lib/position-traits";
 import { supabaseCfb } from "@/lib/supabase";
 import type {
   CfbBacktestPrediction,
@@ -322,34 +323,23 @@ export const fetchPositionGrades = cache(async (): Promise<CfbPositionGrades> =>
   const latest = latestRes.data?.[0];
   if (latestRes.error || !latest) return EMPTY_GRADES;
 
-  const groupsRes = await supabaseCfb
-    .from("position_traits")
-    .select("position_group")
-    .eq("season", latest.season)
-    .eq("trait", "grade")
-    .limit(1000);
-  if (groupsRes.error) {
-    console.error("cfb position grades fetch failed:", groupsRes.error.message);
-    return EMPTY_GRADES;
-  }
+  // One head request per position counts the graded players; the grade rows
+  // themselves are read only for the top of each position.
   const gradedCounts: Record<string, number> = {};
-  for (const row of groupsRes.data ?? []) {
-    gradedCounts[row.position_group] = (gradedCounts[row.position_group] ?? 0) + 1;
-  }
-  // A position with more graded players than one page returns is counted
-  // exactly, one head request per position.
   await Promise.all(
-    Object.keys(gradedCounts)
-      .filter((group) => gradedCounts[group] >= 1000)
-      .map(async (group) => {
-        const res = await supabaseCfb
-          .from("position_traits")
-          .select("athlete_id", { count: "exact", head: true })
-          .eq("season", latest.season)
-          .eq("trait", "grade")
-          .eq("position_group", group);
-        if (res.count != null) gradedCounts[group] = res.count;
-      })
+    POSITION_ORDER.map(async (group) => {
+      const res = await supabaseCfb
+        .from("position_traits")
+        .select("athlete_id", { count: "exact", head: true })
+        .eq("season", latest.season)
+        .eq("trait", "grade")
+        .eq("position_group", group);
+      if (res.error) {
+        console.error("cfb position grades count failed:", res.error.message);
+        return;
+      }
+      if ((res.count ?? 0) > 0) gradedCounts[group] = res.count ?? 0;
+    })
   );
 
   const gradeRows = await Promise.all(
