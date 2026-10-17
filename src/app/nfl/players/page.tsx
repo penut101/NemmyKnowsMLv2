@@ -62,18 +62,10 @@ export default async function NflPlayersPage() {
       <PlayerSectionTabs sections={NFL_PLAYER_SECTIONS} />
 
       <p className="max-w-4xl text-sm text-muted-foreground leading-relaxed">
-        Two numbers per player, both his own. The grade is a 20 to 80 number. For
-        quarterbacks and running backs it is a fitted forecast of the rest of his
-        season, built from his production, the processing measures charted on every
-        throw (what happens past the first read, the checkdown, the blitz) and his
-        prior season, checked on a held-out season against EPA alone. At the other
-        positions it is built from named traits adjusted for the opponents faced, with
-        weights set by how reliably each trait repeats, how much of it travels when a
-        player changes teams, and how well it predicts his next season. Every measure
-        on a card says how it is calculated and how well it repeats from game to game.
-        Wins above replacement is what his credited plays were worth above a
-        replacement-level player at his position, converted to wins with the leverage
-        of the games he played in.
+        A 20 to 80 grade and wins above replacement for every qualified player. Quarterback
+        and running back grades are fitted forecasts of the rest of the season, checked on a
+        held-out season against EPA alone; the info icon on every measure says how it is
+        calculated and how well it repeats.
       </p>
 
       <div className="grid grid-cols-2 gap-4 border-y border-rule-strong py-4 sm:grid-cols-3">

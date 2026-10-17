@@ -74,7 +74,7 @@ function TraitRow({
   return (
     <div
       className={cn(
-        "grid grid-cols-[minmax(0,15rem)_1fr_2.25rem] items-center gap-2.5 text-xs",
+        "grid grid-cols-[minmax(0,11rem)_1fr_2rem] items-center gap-2 text-xs sm:grid-cols-[minmax(0,15rem)_1fr_2.25rem] sm:gap-2.5",
         dimmed && "text-muted-foreground"
       )}
     >
@@ -205,12 +205,12 @@ function GradeCard({
   }
   return (
     <article className="space-y-2 border-t border-rule-strong pt-3 pb-4">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <span className="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground">{rank}</span>
           <Identity row={row} logo={logo} />
         </div>
-        <div className="flex shrink-0 gap-3 text-right">
+        <div className="flex shrink-0 flex-wrap justify-end gap-3 pl-8 text-right sm:pl-0">
           <Headline
             label="grade"
             tip={rated ? rating.tip : copy.gradeTip}
@@ -221,7 +221,7 @@ function GradeCard({
                 ? "no grade at this position"
                 : `±${formatNumber(player?.uncertainty, 1)} · pct ${row.percentile == null ? EMPTY : Math.round(row.percentile)}`
             }
-            width="w-28"
+            width="w-24 sm:w-28"
           />
           {rated && (
             <Headline
@@ -231,7 +231,7 @@ function GradeCard({
               value={formatSigned(player.rating, 2)}
               sub={`${rating.unit}${player.ratingRange != null ? ` · range ±${formatNumber(player.ratingRange, 0)}` : ""}`}
               positive={player.rating != null && player.rating > 0}
-              width="w-32"
+              width="w-28 sm:w-32"
             />
           )}
           <Headline
@@ -247,7 +247,7 @@ function GradeCard({
                   : `${formatSigned(player.pointsAboveReplacement, 0)} pts`
             }
             positive={player?.war != null && player.war > 0}
-            width="w-24"
+            width="w-20 sm:w-24"
           />
         </div>
       </div>
@@ -326,7 +326,7 @@ function CompareRow({
   return (
     <div
       className={cn(
-        "grid grid-cols-[2.25rem_1fr_minmax(0,13rem)_1fr_2.25rem] items-center gap-2.5 text-xs",
+        "grid grid-cols-[1.75rem_1fr_minmax(0,7.5rem)_1fr_1.75rem] items-center gap-1.5 text-xs sm:grid-cols-[2.25rem_1fr_minmax(0,13rem)_1fr_2.25rem] sm:gap-2.5",
         dimmed && "text-muted-foreground"
       )}
     >
@@ -590,14 +590,14 @@ export default function PositionGrades({
           className="h-8 w-56 border border-input bg-transparent px-2 text-sm"
         />
       </div>
-      <p className="max-w-4xl text-sm text-muted-foreground leading-relaxed">
+      <p className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
         {search
-          ? `${matches.length} player${matches.length === 1 ? "" : "s"} match “${query.trim()}”${group === ALL ? "" : ` in the ${group}`}, best grade first.`
-          : `Top ${visible.length} of ${matches.length} ${group === ALL ? "" : `${group} `}${position}, ${graded} graded this week.`}{" "}
-        Every bar is a percentile among {copy.pool}{" "}at the position this week: gold bars are counted
-        from the player&apos;s own tagged plays or box score, striped blue bars are inferred from unit outcomes
-        or teammates, grey bars rank a style trait rather than merit, and dimmed lines carry no weight in the grade.
-        The r beside a measure is how well it repeats from a player&apos;s odd games to his even games.
+          ? `${matches.length} player${matches.length === 1 ? "" : "s"} match “${query.trim()}”${group === ALL ? "" : ` in the ${group}`}, best grade first`
+          : `Top ${visible.length} of ${matches.length} ${group === ALL ? "" : `${group} `}${position} · ${graded} graded this week`}
+        <InfoTip
+          text={`Every bar is a percentile among ${copy.pool} at the position this week. Gold bars are counted from the player's own tagged plays or box score, striped blue bars are inferred from unit outcomes or teammates, grey bars rank a style trait rather than merit, and dimmed lines carry no weight in the grade. The r beside a measure is how well it repeats from a player's odd games to his even games.`}
+          label="How to read the bars"
+        />
       </p>
       {compare.length === 2 && byId.get(compare[0]) && byId.get(compare[1]) && (
         <ComparePanel
