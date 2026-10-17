@@ -1,5 +1,7 @@
 "use client";
 
+import { Accordion } from "@base-ui/react/accordion";
+import { ChevronDown } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import type { GradedPlayer, GradedPlayerTrait, PlayerIndexRow } from "@/lib/position-grades";
 import {
@@ -200,7 +202,7 @@ function GradeCard({
     else sections.push({ kind: line.kind, names: [line.name] });
   }
   return (
-    <article className="space-y-2 border-t border-rule-strong pt-3 pb-4">
+    <article className="self-start space-y-2 border-t border-rule-strong pt-3 pb-4">
       <div className="flex flex-col gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <span className="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground">{rank}</span>
@@ -264,27 +266,50 @@ function GradeCard({
           </button>
       </div>
       {player && (
-        <div className="space-y-2">
-          {sections.map((section) => (
-            <div key={section.kind ?? "traits"} className="space-y-1.5">
-              {section.kind && (
-                <div className="flex items-center gap-1.5 pt-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                  {KIND_LABELS[section.kind].label}
-                  <InfoTip text={KIND_LABELS[section.kind].tip} label={`What are ${KIND_LABELS[section.kind].label} measures?`} />
+        <Accordion.Root multiple className="space-y-2">
+          {sections.map((section) => {
+            const label = section.kind ? KIND_LABELS[section.kind].label : "Attributes";
+            const traits = section.names.map((name) => (
+              <TraitRow
+                key={name}
+                sport={sport}
+                name={name}
+                group={row.positionGroup}
+                trait={player.traits.find((t) => t.trait === name)}
+              />
+            ));
+            const info = section.kind && (
+              <InfoTip text={KIND_LABELS[section.kind].tip} label={`What are ${label} measures?`} />
+            );
+            return sport === "nfl" ? (
+              <Accordion.Item key={section.kind ?? "traits"} value={section.kind ?? "traits"} className="border-t border-border">
+                <div className="flex items-center gap-2">
+                  <Accordion.Header className="min-w-0 flex-1">
+                    <Accordion.Trigger className="group flex min-h-11 w-full items-center gap-2 rounded-sm text-left font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      <ChevronDown aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-[panel-open]:rotate-180" />
+                      <span>{label}</span>
+                      <span className="ml-auto text-[10px] text-muted-foreground">{section.names.length}</span>
+                    </Accordion.Trigger>
+                  </Accordion.Header>
+                  {info}
                 </div>
-              )}
-              {section.names.map((name) => (
-                <TraitRow
-                  key={name}
-                  sport={sport}
-                  name={name}
-                  group={row.positionGroup}
-                  trait={player.traits.find((t) => t.trait === name)}
-                />
-              ))}
-            </div>
-          ))}
-        </div>
+                <Accordion.Panel className="space-y-1.5 pb-3">
+                  {traits}
+                </Accordion.Panel>
+              </Accordion.Item>
+            ) : (
+              <div key={section.kind ?? "traits"} className="space-y-1.5">
+                {section.kind && (
+                  <div className="flex items-center gap-1.5 pt-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                    {label}
+                    {info}
+                  </div>
+                )}
+                {traits}
+              </div>
+            );
+          })}
+        </Accordion.Root>
       )}
     </article>
   );
