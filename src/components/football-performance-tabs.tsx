@@ -9,7 +9,7 @@ export function FootballPerformanceTabs({
   children,
   sport = "cfb",
 }: {
-  active: "picks" | "accuracy";
+  active: "picks" | "accuracy" | "players";
   query: string;
   children: ReactNode;
   sport?: PickSport;
@@ -18,7 +18,7 @@ export function FootballPerformanceTabs({
     <>
       <nav
         aria-label="Performance view"
-        className="flex gap-1 border-b border-border"
+        className="flex gap-1 overflow-x-auto border-b border-border"
       >
         {[
           {
@@ -31,13 +31,18 @@ export function FootballPerformanceTabs({
             label: "Recommendations",
             href: `/${sport}/performance?${query}&view=picks`,
           },
+          {
+            key: "players",
+            label: "Player models",
+            href: `/${sport}/performance?${query}&view=players`,
+          },
         ].map((view) => (
           <Link
             key={view.key}
             href={view.href}
             aria-current={active === view.key ? "page" : undefined}
             className={cn(
-              "border-b-2 px-4 py-2 text-sm",
+              "shrink-0 border-b-2 px-3 py-2 text-sm",
               active === view.key
                 ? "border-primary text-primary"
                 : "border-transparent text-muted-foreground hover:text-foreground",

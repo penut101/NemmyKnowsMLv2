@@ -20,6 +20,7 @@ import { mlbTeamIdentity } from "@/lib/mlb-teams";
 import { EMPTY, cn, formatNumber, formatSigned } from "@/lib/utils";
 import { InfoTip } from "@/components/info-tip";
 import { PlayerCell } from "@/components/player-cell";
+import { PlayerComparisonPicker } from "@/components/player-comparison-picker";
 import { ToggleGroup } from "@/components/toggle-group";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -118,7 +119,7 @@ function TraitRow({ trait }: { trait: PlayerTrait }) {
       : `${tip} Not used in the grade.`;
   const text = `${detail}${trait.grade != null ? ` Grade range: ${formatNumber(trait.grade_low, 0)} to ${formatNumber(trait.grade_high, 0)}.` : ""}`;
   return (
-    <div className={cn("grid grid-cols-[9rem_1fr_2.5rem] items-center gap-2.5 text-xs", !trait.in_grade && "text-muted-foreground")}>
+    <div className={cn("grid min-w-0 grid-cols-[minmax(0,9rem)_minmax(0,1fr)_2rem] items-center gap-2 text-xs sm:gap-2.5", !trait.in_grade && "text-muted-foreground")}>
       <span className="flex min-w-0 items-center gap-1.5">
         <span className="truncate">{label}</span>
         <InfoTip text={text} label={`What is ${label}?`} />
@@ -137,27 +138,27 @@ function TraitRow({ trait }: { trait: PlayerTrait }) {
 function OutlookTile({ year, graded }: { year: OutlookYear; graded: boolean }) {
   const faded = !year.in_control && year.salary_kind !== "buyout";
   return (
-    <div className={cn("rounded-sm border border-border px-2 py-1.5 text-center font-mono text-[11px]", faded && "opacity-45")}>
+    <div className={cn("min-w-0 rounded-sm border border-border px-2 py-1.5 text-center font-mono text-[11px]", faded && "opacity-45")}>
       <div className="text-muted-foreground">{year.season} · {year.age}</div>
       <div className="font-bold text-primary">{graded && year.war != null ? `${formatNumber(year.war, 1)} WAR` : EMPTY}</div>
       <div className="text-muted-foreground">
         {faded ? "free agent" : `${formatMillions(year.salary_musd)} ${year.salary_kind === "pre_arb" ? "min" : year.salary_kind === "arbitration" ? "arb" : year.salary_kind === "option" ? "opt" : year.salary_kind === "buyout" ? "buyout" : ""}`}
       </div>
       <div className={cn("font-bold", (year.surplus_musd ?? 0) >= 0 ? "text-positive" : "text-destructive")}>
-        {faded || !graded || year.surplus_musd == null ? EMPTY : formatSigned(year.surplus_musd, 1).replace(/^([+-])/, "$1$")}M
+        {faded || !graded || year.surplus_musd == null ? EMPTY : `${formatSigned(year.surplus_musd, 1).replace(/^([+-])/, "$1$")}M`}
       </div>
     </div>
   );
 }
 
-function PlayerCard({ row, detail }: { row: PlayerValueIndex; detail: PlayerDetail | undefined }) {
+function PlayerCard({ row, detail, showDetails = true }: { row: PlayerValueIndex; detail: PlayerDetail | undefined; showDetails?: boolean }) {
   const graded = row.grade != null;
   const head = headlineValue(row);
   const pitcher = PITCHER_GROUPS.has(row.position_group);
   const panels = pitcher ? ["arsenal", "results", "durability"] : ["batting", "fielding"];
   return (
-    <div className="space-y-4 py-3">
-      <div className="flex flex-wrap gap-x-6 gap-y-1 font-mono text-[11px] text-muted-foreground">
+    <div className="min-w-0 space-y-4 py-3">
+      {showDetails && <div className="flex flex-wrap gap-x-6 gap-y-1 font-mono text-[11px] text-muted-foreground">
         <span>{row.bats ?? "?"}/{row.throws ?? "?"}</span>
         {row.secondary_positions.length > 0 && <span>also {row.secondary_positions.join(", ")}</span>}
         {row.service_time != null && <span>service {formatNumber(row.service_time, 3)}</span>}
@@ -167,22 +168,22 @@ function PlayerCard({ row, detail }: { row: PlayerValueIndex; detail: PlayerDeta
         {row.owed_through_control_musd != null && row.control_years > 0 && (
           <span>owed {formatMillions(row.owed_through_control_musd)} over {row.control_years} control year{row.control_years === 1 ? "" : "s"}</span>
         )}
-      </div>
-      <div className="grid grid-cols-3 gap-3">
+      </div>}
+      <div className="grid grid-cols-3 gap-3 [&>div]:min-w-0">
         <div>
-          <div className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+          <div className="inline-flex min-h-8 items-start gap-1 text-[10px] uppercase tracking-wider text-muted-foreground sm:min-h-0 sm:items-center">
             Grade <InfoTip text={GRADE_TIP} label="What is the Grade?" />
           </div>
-          <div className="font-mono text-2xl font-bold tabular-nums text-primary">{graded ? formatNumber(row.grade, 0) : EMPTY}</div>
+          <div className="font-mono text-lg font-bold tabular-nums sm:text-2xl text-primary">{graded ? formatNumber(row.grade, 0) : EMPTY}</div>
           <div className="font-mono text-[11px] text-muted-foreground">
-            {graded ? `${formatNumber(row.grade_low, 0)} to ${formatNumber(row.grade_high, 0)} · ${Math.round(row.grade_percentile ?? 0)}th pct · ${row.position_group}` : "Not enough data"}
+            {graded ? `${formatNumber(row.grade_low, 0)} to ${formatNumber(row.grade_high, 0)} · pct ${Math.round(row.grade_percentile ?? 0)} · ${row.position_group}` : "Not enough data"}
           </div>
         </div>
         <div>
-          <div className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+          <div className="inline-flex min-h-8 items-start gap-1 text-[10px] uppercase tracking-wider text-muted-foreground sm:min-h-0 sm:items-center">
             {head.label} <InfoTip text={`${head.tip} ${PRICE_TIP}`} label={`What is ${head.label}?`} />
           </div>
-          <div className={cn("font-mono text-2xl font-bold tabular-nums", (head.value ?? 0) >= 0 ? "text-positive" : "text-destructive")}>
+          <div className={cn("font-mono text-lg font-bold tabular-nums sm:text-2xl", (head.value ?? 0) >= 0 ? "text-positive" : "text-destructive")}>
             {graded ? formatMillions(head.value) : EMPTY}
           </div>
           <div className="font-mono text-[11px] text-muted-foreground">
@@ -194,16 +195,16 @@ function PlayerCard({ row, detail }: { row: PlayerValueIndex; detail: PlayerDeta
           </div>
         </div>
         <div>
-          <div className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+          <div className="inline-flex min-h-8 items-start gap-1 text-[10px] uppercase tracking-wider text-muted-foreground sm:min-h-0 sm:items-center">
             Impact <InfoTip text={IMPACT_TIP} label="What is Impact?" />
           </div>
-          <div className="font-mono text-2xl font-bold tabular-nums">{row.impact_war == null ? EMPTY : formatSigned(row.impact_war, 1)}</div>
+          <div className="font-mono text-lg font-bold tabular-nums sm:text-2xl">{row.impact_war == null ? EMPTY : formatSigned(row.impact_war, 1)}</div>
           <div className="font-mono text-[11px] text-muted-foreground">
             {row.impact_runs == null ? "no plate appearances" : `${formatSigned(row.impact_runs, 1)} runs · ${row.season - 1} season`}
           </div>
         </div>
       </div>
-      {detail == null ? (
+      {showDetails && (detail == null ? (
         <p className="text-xs text-muted-foreground">Loading traits…</p>
       ) : (
         <div className="grid grid-cols-1 gap-x-8 gap-y-4 md:grid-cols-2">
@@ -223,8 +224,8 @@ function PlayerCard({ row, detail }: { row: PlayerValueIndex; detail: PlayerDeta
             );
           })}
         </div>
-      )}
-      {detail != null && detail.outlook.length > 0 && (
+      ))}
+      {showDetails && detail != null && detail.outlook.length > 0 && (
         <div className="space-y-1.5">
           <div className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
             Control-year outlook <InfoTip text={`${OUTLOOK_TIP} ${PLAYING_TIME_TIP}`} label="What is the outlook?" />
@@ -237,6 +238,153 @@ function PlayerCard({ row, detail }: { row: PlayerValueIndex; detail: PlayerDeta
         </div>
       )}
     </div>
+  );
+}
+
+function MlbComparison({
+  rows,
+  loaded,
+}: {
+  rows: [PlayerValueIndex, PlayerValueIndex];
+  loaded: Record<string, PlayerDetail>;
+}) {
+  const details = rows.map((row) => loaded[String(row.player_id)]);
+  const traits = [
+    ...new Set(
+      details.flatMap(
+        (detail) =>
+          detail?.traits
+            .filter((trait) => trait.grade != null)
+            .map((trait) => trait.trait) ?? [],
+      ),
+    ),
+  ];
+  const metrics = [
+    { label: "Grade", values: rows.map((row) => formatNumber(row.grade, 0)) },
+    {
+      label: "Projected WAR",
+      values: rows.map((row) => formatNumber(row.projected_war, 1)),
+    },
+    {
+      label: "Trade value",
+      values: rows.map((row) =>
+        row.grade != null && headlineValue(row).label === "Trade value"
+          ? formatMillions(row.trade_value_musd)
+          : EMPTY,
+      ),
+    },
+    {
+      label: "Market value",
+      values: rows.map((row) =>
+        row.grade != null && headlineValue(row).label === "Market value"
+          ? formatMillions(row.market_value_musd)
+          : EMPTY,
+      ),
+    },
+    {
+      label: "Salary",
+      values: rows.map((row) => formatMillions(row.salary_current_musd)),
+    },
+    {
+      label: "Control years",
+      values: rows.map((row) => String(row.control_years)),
+    },
+    {
+      label: "Impact WAR",
+      values: rows.map((row) => formatNumber(row.impact_war, 1)),
+    },
+  ].filter((metric) => metric.values.some((value) => value !== EMPTY));
+  return (
+    <section
+      aria-label="Player comparison"
+      className="space-y-4 rounded-lg border border-rule-strong p-4"
+    >
+      <div className="grid grid-cols-2 gap-4">
+        {rows.map((row) => (
+          <div key={row.player_id} className="min-w-0">
+            <PlayerCell
+              athleteId={String(row.player_id)}
+              headshotUrl={row.headshot_url}
+              name={row.player_name ?? String(row.player_id)}
+              team={row.team || "FA"}
+              position={row.position_group}
+              logo={mlbTeamIdentity(row.team)}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="divide-y divide-border border-y border-rule-strong">
+        {metrics.map((metric) => (
+          <div
+            key={metric.label}
+            className="grid grid-cols-[1fr_1.4fr_1fr] items-center gap-2 py-2 text-sm"
+          >
+            <span className="font-mono font-semibold text-primary">
+              {metric.values[0]}
+            </span>
+            <span className="text-center text-xs text-muted-foreground">
+              {metric.label}
+            </span>
+            <span className="text-right font-mono font-semibold text-accent-blue">
+              {metric.values[1]}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Grades are relative to each player&apos;s position. Projected WAR uses a
+        common wins scale across positions.
+      </p>
+      {details.every(Boolean) ? (
+        <div className="space-y-3">
+          <h3 className="text-sm">Trait grades</h3>
+          {traits.map((name) => {
+            const grades = details.map(
+              (detail) =>
+                detail?.traits.find((trait) => trait.trait === name)?.grade,
+            );
+            return (
+              <div key={name} className="space-y-1">
+                <div className="grid grid-cols-[2rem_1fr_2rem] gap-2 text-xs">
+                  <span className="font-mono">
+                    {formatNumber(grades[0], 0)}
+                  </span>
+                  <span className="text-center">{traitLabel(name).label}</span>
+                  <span className="text-right font-mono">
+                    {formatNumber(grades[1], 0)}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {grades.map((grade, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        "flex h-1.5 bg-grid",
+                        i === 0 && "justify-end",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "h-full",
+                          i === 0 ? "bg-primary" : "bg-accent-blue",
+                        )}
+                        style={{
+                          width: `${grade == null ? 0 : Math.max(0, Math.min(100, ((grade - 20) / 60) * 100))}%`,
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p role="status" className="text-xs text-muted-foreground">
+          Loading comparison traits…
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -281,6 +429,9 @@ export default function MlbPlayerValues({ index }: { index: PlayerValueIndex[] }
   const [team, setTeam] = useState<string>(ALL);
   const [query, setQuery] = useState("");
   const search = useDeferredValue(query.trim().toLowerCase());
+  const [compare, setCompare] = useState<string[]>([]);
+  const comparisonPlayers = useMemo(() => index.map((row) => ({ id: String(row.player_id), label: `${row.player_name ?? row.player_id} · ${row.team || "FA"} · ${row.position_group}`, group: PITCHER_GROUPS.has(row.position_group) ? row.position_group : "batter" })), [index]);
+  const comparedRows = compare.map((id) => index.find((row) => String(row.player_id) === id)).filter((row): row is PlayerValueIndex => row != null);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [loaded, setLoaded] = useState<Record<string, PlayerDetail>>({});
 
@@ -323,7 +474,7 @@ export default function MlbPlayerValues({ index }: { index: PlayerValueIndex[] }
   const visible = matches.slice(0, PAGE_ROWS);
 
   useEffect(() => {
-    const missing = visible.filter((row) => !loaded[String(row.player_id)]).map((row) => row.player_id);
+    const missing = [...new Set([...compare.map(Number), ...visible.map((row) => row.player_id)])].filter((id) => !loaded[String(id)]).slice(0, PAGE_ROWS);
     if (missing.length === 0) return;
     const controller = new AbortController();
     fetch(`/mlb/api/player-details?ids=${missing.join(",")}`, { signal: controller.signal })
@@ -333,12 +484,14 @@ export default function MlbPlayerValues({ index }: { index: PlayerValueIndex[] }
       })
       .catch(() => {});
     return () => controller.abort();
-  }, [visible, loaded]);
+  }, [visible, compare, loaded]);
 
   const graded = matches.filter((row) => row.grade != null).length;
 
   return (
-    <div className="space-y-section">
+    <div className="min-w-0 space-y-section">
+      <PlayerComparisonPicker players={comparisonPlayers} selected={compare} onChange={setCompare} description="Compare any two batters, two starting pitchers, or two relievers." />
+      {comparedRows.length === 2 && <MlbComparison rows={[comparedRows[0], comparedRows[1]]} loaded={loaded} />}
       <div className="flex flex-wrap items-center gap-3">
         {/* Eleven positions overflow a phone, so small screens get one select beside the team select. */}
         <div className="hidden md:block">
@@ -373,9 +526,66 @@ export default function MlbPlayerValues({ index }: { index: PlayerValueIndex[] }
         {search
           ? `${matches.length} player${matches.length === 1 ? "" : "s"} match “${query.trim()}”.`
           : `Top ${visible.length} of ${matches.length} ${position}, ${graded} graded.`}{" "}
-        Best sorts by Grade, what the Dodgers want. Bargain sorts by Trade value, the gap between what a player
-        will produce over his control years and what he is owed. Click a row for the card.
+        Best ranks talent; Bargain ranks trade value. Open a player for details.
       </p>
+      <div className="space-y-4 md:hidden">
+        <div className="flex items-center gap-2">
+          <label htmlFor="mobile-player-sort" className="text-xs text-muted-foreground">Sort by</label>
+          <select
+            id="mobile-player-sort"
+            value={sortKey}
+            onChange={(event) => onSort(event.target.value as SortKey)}
+            className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+          >
+            <option value="grade">Grade</option>
+            <option value="value">Value</option>
+            <option value="age">Age</option>
+            <option value="impact">Impact</option>
+            <option value="projected_war">Projected WAR</option>
+            <option value="salary">Salary</option>
+            <option value="control_years">Control years</option>
+            <option value="per_war">Cost per WAR</option>
+            <option value="bat">{pitcherList ? "Stuff" : "Batting"}</option>
+            <option value="fld">{pitcherList ? "Command" : "Fielding"}</option>
+          </select>
+          <button type="button" onClick={() => onSort(sortKey)} aria-label={`Sort ${sortDir === "desc" ? "ascending" : "descending"}`} className="min-h-10 rounded-md border px-3 text-xs">
+            {sortDir === "desc" ? "High to low" : "Low to high"}
+          </button>
+        </div>
+        {visible.length === 0 && <p className="text-sm text-muted-foreground">No players match.</p>}
+        {visible.map((row, i) => {
+          const open = expanded === row.player_id;
+          const name = row.player_name ?? String(row.player_id);
+          return (
+            <article key={row.player_id} aria-label={name} className="min-w-0 rounded-lg border border-border p-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="shrink-0 font-mono text-xs text-muted-foreground">{i + 1}</span>
+                <div className="min-w-0 flex-1">
+                  <PlayerCell
+                    athleteId={String(row.player_id)}
+                    headshotUrl={row.headshot_url}
+                    name={name}
+                    team={row.team || "FA"}
+                    position={`${row.position_group}${row.age == null ? "" : ` · Age ${row.age}`}`}
+                    logo={mlbTeamIdentity(row.team)}
+                  />
+                </div>
+              </div>
+              <PlayerCard row={row} detail={loaded[String(row.player_id)]} showDetails={open} />
+              <button
+                type="button"
+                aria-expanded={open}
+                aria-label={`${open ? "Hide" : "Show"} details for ${name}`}
+                onClick={() => setExpanded(open ? null : row.player_id)}
+                className="min-h-10 w-full rounded-md border border-border text-sm text-primary hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+              >
+                {open ? "Hide details" : "View traits and outlook"}
+              </button>
+            </article>
+          );
+        })}
+      </div>
+      <div className="hidden md:block">
       <Table>
         <TableHeader>
           <TableRow>
@@ -451,7 +661,7 @@ export default function MlbPlayerValues({ index }: { index: PlayerValueIndex[] }
                   </TableRow>
                   {open && (
                     <TableRow className="hover:bg-transparent">
-                      <TableCell colSpan={12} className="bg-muted/20">
+                      <TableCell colSpan={12} className="whitespace-normal bg-muted/20">
                         <PlayerCard row={row} detail={detail} />
                       </TableCell>
                     </TableRow>
@@ -462,6 +672,7 @@ export default function MlbPlayerValues({ index }: { index: PlayerValueIndex[] }
           )}
         </TableBody>
       </Table>
+      </div>
     </div>
   );
 }

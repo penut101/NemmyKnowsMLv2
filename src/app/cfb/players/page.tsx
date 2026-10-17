@@ -62,7 +62,7 @@ export default async function PlayersPage() {
         converted to wins with the leverage of the games he played in.
       </p>
 
-      <div className="grid grid-cols-2 gap-4 border-y border-rule-strong py-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 divide-y divide-border border-y border-rule-strong [&>div]:py-3 sm:grid-cols-3 sm:gap-4 sm:divide-y-0">
         <KpiCard
           label="Top graded QB"
           value={topQb?.name ?? "–"}

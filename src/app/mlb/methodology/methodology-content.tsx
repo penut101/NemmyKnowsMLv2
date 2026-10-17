@@ -1,3 +1,4 @@
+import { MLB_PLAYER_EVALUATION } from "@/lib/mlb-player-evaluation";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import {
@@ -666,10 +667,13 @@ export function MethodologyContent({
             relative to each position already.
           </p>
           <p>
-            On the 2025 to 2026 holdout, scored once with the final model, the Grade&apos;s rank
-            correlation with next-season runs was .404 for hitters against .385 for prior-season xwOBA
-            and .329 for a Marcel projection, .389 for starters against .334 for prior production, and
-            .192 for relievers against .105. A player is graded once his season-equivalent sample
+            On the {MLB_PLAYER_EVALUATION.inputSeason} to {MLB_PLAYER_EVALUATION.outcomeSeason} holdout,
+            the Grade&apos;s rank correlation with next-season runs was {MLB_PLAYER_EVALUATION.groups[0].grade.toFixed(3)} for
+            hitters against {MLB_PLAYER_EVALUATION.groups[0].priorXwoba.toFixed(3)} for prior-season xwOBA
+            and {MLB_PLAYER_EVALUATION.groups[0].marcel.toFixed(3)} for a Marcel projection,
+            {" "}{MLB_PLAYER_EVALUATION.groups[1].grade.toFixed(3)} for starters against {MLB_PLAYER_EVALUATION.groups[1].priorProduction.toFixed(3)} for
+            prior production, and {MLB_PLAYER_EVALUATION.groups[2].grade.toFixed(3)} for relievers
+            against {MLB_PLAYER_EVALUATION.groups[2].marcel.toFixed(3)} for Marcel. A player is graded once his season-equivalent sample
             reaches 100 plate appearances or batters faced; below that the page shows no number.
           </p>
         </div>

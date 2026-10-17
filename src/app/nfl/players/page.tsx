@@ -62,13 +62,10 @@ export default async function NflPlayersPage() {
       <PlayerSectionTabs sections={NFL_PLAYER_SECTIONS} />
 
       <p className="max-w-4xl text-sm text-muted-foreground leading-relaxed">
-        A 20 to 80 grade and wins above replacement for every qualified player. Quarterback
-        and running back grades are fitted forecasts of the rest of the season, checked on a
-        held-out season against EPA alone; the info icon on every measure says how it is
-        calculated and how well it repeats.
+        Position-specific grades, projected production, and wins above replacement. Explore each player&apos;s traits or compare two at the same position.
       </p>
 
-      <div className="grid grid-cols-2 gap-4 border-y border-rule-strong py-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 divide-y divide-border border-y border-rule-strong [&>div]:py-3 sm:grid-cols-3 sm:gap-4 sm:divide-y-0">
         <KpiCard
           label="Top graded QB"
           value={topQb?.name ?? "–"}

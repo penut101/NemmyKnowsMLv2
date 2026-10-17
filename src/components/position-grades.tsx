@@ -1,7 +1,7 @@
 "use client";
 
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import type { GradedPlayer, PlayerIndexRow, GradedPlayerTrait } from "@/lib/position-grades";
+import type { GradedPlayer, GradedPlayerTrait, PlayerIndexRow } from "@/lib/position-grades";
 import {
   KIND_LABELS,
   KIND_ORDER,
@@ -19,6 +19,7 @@ import { EMPTY, cn, formatNumber, formatSigned } from "@/lib/utils";
 import { InfoTip } from "@/components/info-tip";
 import { PlayerCell } from "@/components/player-cell";
 import type { TeamLogoSource } from "@/components/team-logo";
+import { PlayerComparisonPicker } from "@/components/player-comparison-picker";
 import { ToggleGroup } from "@/components/toggle-group";
 
 const PAGE_ROWS = 40;
@@ -74,11 +75,11 @@ function TraitRow({
   return (
     <div
       className={cn(
-        "grid grid-cols-[minmax(0,11rem)_1fr_2rem] items-center gap-2 text-xs sm:grid-cols-[minmax(0,15rem)_1fr_2.25rem] sm:gap-2.5",
+        "grid grid-cols-[minmax(0,1fr)_2rem] items-center gap-x-2 gap-y-1 text-xs sm:grid-cols-[minmax(0,15rem)_1fr_2.25rem] sm:gap-2.5",
         dimmed && "text-muted-foreground"
       )}
     >
-      <span className="flex min-w-0 items-center justify-between gap-1.5">
+      <span className="col-span-2 flex min-w-0 items-center justify-between gap-1.5 sm:col-span-1">
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="truncate">{label}</span>
           <InfoTip
@@ -164,7 +165,7 @@ function Headline({
   width: string;
 }) {
   return (
-    <div className={cn("flex flex-col items-end", width)}>
+    <div className={cn("flex min-w-0 flex-col items-start sm:items-end", width)}>
       <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
         {label} <InfoTip text={tip} label={tipLabel} />
       </span>
@@ -205,12 +206,12 @@ function GradeCard({
   }
   return (
     <article className="space-y-2 border-t border-rule-strong pt-3 pb-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+      <div className="flex flex-col gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <span className="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground">{rank}</span>
           <Identity row={row} logo={logo} />
         </div>
-        <div className="flex shrink-0 flex-wrap justify-end gap-3 text-right">
+        <div className={cn("grid gap-3 border-y border-border py-3 text-left sm:flex sm:shrink-0 sm:border-0 sm:py-0 sm:text-right", rated ? "grid-cols-3" : "grid-cols-2")}>
           <Headline
             label="grade"
             tip={rated ? rating.tip : copy.gradeTip}
@@ -221,7 +222,7 @@ function GradeCard({
                 ? "no grade at this position"
                 : `±${formatNumber(player?.uncertainty, 1)} · pct ${row.percentile == null ? EMPTY : Math.round(row.percentile)}`
             }
-            width="w-24 sm:w-28"
+            width="sm:w-24"
           />
           {rated && (
             <Headline
@@ -231,7 +232,7 @@ function GradeCard({
               value={formatSigned(player.rating, 2)}
               sub={`${rating.unit}${player.ratingRange != null ? ` · range ±${formatNumber(player.ratingRange, 0)}` : ""}`}
               positive={player.rating != null && player.rating > 0}
-              width="w-28 sm:w-32"
+              width="sm:w-28"
             />
           )}
           <Headline
@@ -247,17 +248,18 @@ function GradeCard({
                   : `${formatSigned(player.pointsAboveReplacement, 0)} pts`
             }
             positive={player?.war != null && player.war > 0}
-            width="w-20 sm:w-24"
+            width="sm:w-20"
           />
         </div>
       </div>
-      <div className="pl-8">
+      <div className="flex justify-end">
           <button
             type="button"
             onClick={onCompare}
             aria-pressed={compared}
+            aria-label={`Compare ${row.name}`}
             className={cn(
-              "shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "min-h-9 shrink-0 rounded-md border px-3 py-1 font-mono text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               compared
                 ? "border-[var(--brand-highlight)] bg-[var(--brand-highlight)] text-[var(--brand-ink)]"
                 : "border-border text-muted-foreground hover:text-foreground"
@@ -326,14 +328,14 @@ function CompareRow({
   return (
     <div
       className={cn(
-        "grid grid-cols-[1.75rem_1fr_minmax(0,7.5rem)_1fr_1.75rem] items-center gap-1.5 text-xs sm:grid-cols-[2.25rem_1fr_minmax(0,13rem)_1fr_2.25rem] sm:gap-2.5",
+        "grid grid-cols-[1.75rem_1fr_1fr_1.75rem] items-center gap-1.5 text-xs sm:grid-cols-[2.25rem_1fr_minmax(0,13rem)_1fr_2.25rem] sm:gap-2.5",
         dimmed && "text-muted-foreground"
       )}
     >
       <span className="text-left font-mono tabular-nums">{pct(left) == null ? EMPTY : Math.round(pct(left)!)}</span>
       {bar(left, style ? "bg-muted-foreground" : "bg-primary", true)}
-      <span className="flex min-w-0 items-center justify-center gap-1.5">
-        <span className="truncate text-center">{label}</span>
+      <span className="col-span-4 row-start-1 flex min-w-0 items-center justify-center gap-1.5 sm:col-span-1 sm:col-start-3">
+        <span className="text-center">{label}</span>
         <InfoTip
           text={`${tip}${reliability != null ? ` Reliability: ${formatNumber(reliability, 2)}.` : ""}${value(left) || value(right) ? ` Values: left${value(left) || " unavailable"}, right${value(right) || " unavailable"}.` : ""}`}
           label={`What is ${label}?`}
@@ -378,7 +380,7 @@ function ComparePanel({
       { label: "WAR", value: player?.war == null ? EMPTY : formatSigned(player.war, 2), sub: player?.pointsAboveReplacement == null ? "" : `${formatSigned(player.pointsAboveReplacement, 0)} pts` },
     ];
     return (
-      <div className={cn("flex flex-wrap gap-3", align === "right" ? "justify-end text-right" : "text-left")}>
+      <div className={cn("grid gap-3 sm:flex sm:flex-wrap", align === "right" ? "justify-end text-right" : "text-left")}>
         {items.map((item) => (
           <div key={item.label} className={cn("flex flex-col", align === "right" ? "items-end" : "items-start")}>
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{item.label}</span>
@@ -391,9 +393,9 @@ function ComparePanel({
   };
   return (
     <section aria-label="Player comparison" className="space-y-3 border border-rule-strong p-4">
-      <div className="flex items-start justify-between gap-3">
+      <div className="grid grid-cols-2 items-start gap-3">
         <Identity row={rows[0]} logo={logoFor(rows[0].team)} />
-        <div className="flex flex-col items-center gap-1">
+        <div className="col-span-2 row-start-1 flex items-center justify-between gap-2">
           <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
             {rows[0].positionGroup} comparison
           </span>
@@ -405,7 +407,7 @@ function ComparePanel({
             clear
           </button>
         </div>
-        <div className="flex flex-row-reverse">
+        <div className="min-w-0">
           <Identity row={rows[1]} logo={logoFor(rows[1].team)} />
         </div>
       </div>
@@ -414,7 +416,7 @@ function ComparePanel({
         {headline(rows[1], players[1], "right")}
       </div>
       <p className="text-xs text-muted-foreground">
-        Gold bars grow left for {rows[0].name}, blue bars grow right for {rows[1].name}; every bar is the
+        Green bars grow left for {rows[0].name}, blue bars grow right for {rows[1].name}; every bar is the
         player&apos;s percentile among {copy.pool} at {rows[0].positionGroup} this week.
       </p>
       {players[0] && players[1] ? (
@@ -484,6 +486,8 @@ export default function PositionGrades({
       return [...current, athleteId].slice(-2);
     });
   };
+
+  const comparisonPlayers = useMemo(() => index.map((row) => ({ id: row.athleteId, label: `${row.name} · ${row.team} · ${row.positionGroup}`, group: row.positionGroup })), [index]);
 
   const groups = useMemo(() => {
     const names = new Set<string>();
@@ -559,7 +563,9 @@ export default function PositionGrades({
 
   return (
     <div className="space-y-section">
-      <div className="flex flex-wrap items-center gap-3">
+      <PlayerComparisonPicker players={comparisonPlayers} selected={compare} onChange={setCompare} description="Choose two players at the same position." />
+      <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-center">
+        <div className="col-span-2 min-w-0 overflow-x-auto">
         <ToggleGroup
           label="Position"
           options={positions}
@@ -569,11 +575,12 @@ export default function PositionGrades({
             setCompare([]);
           }}
         />
+        </div>
         <select
           aria-label={copy.groupLabel}
           value={group}
           onChange={(e) => setGroup(e.target.value)}
-          className="h-8 border border-input bg-transparent px-2 font-mono text-xs"
+          className="h-10 min-w-0 rounded-md border border-input bg-background px-2 text-sm"
         >
           {groups.map((option) => (
             <option key={option.key} value={option.key}>
@@ -587,7 +594,7 @@ export default function PositionGrades({
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search player or team"
           aria-label="Search player or team"
-          className="h-8 w-56 border border-input bg-transparent px-2 text-sm"
+          className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm sm:w-56"
         />
       </div>
       <p className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">

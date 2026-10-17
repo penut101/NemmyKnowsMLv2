@@ -48,15 +48,10 @@ export default async function MlbPlayersPage() {
       </PageHeader>
 
       <p className="max-w-4xl text-sm text-muted-foreground leading-relaxed">
-        Three numbers per player. The Grade is a 20 to 80 projection of true talent for a full season at his
-        position, built from skill measurements (swing decisions, contact quality, bat speed, pitch
-        characteristics, range, speed) and a shrunk outcome record, with weights fitted to predict a
-        player&apos;s own next season. Trade value prices that projection over his remaining control years at
-        the market rate for a win and subtracts what he is owed. Impact is what he actually produced this
-        season. Every number opens to show what went into it.
+        Projected talent, contract value, and on-field impact. Open a player for traits and season-by-season projections.
       </p>
 
-      <div className="grid grid-cols-2 gap-4 border-y border-rule-strong py-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 divide-y divide-border border-y border-rule-strong [&>div]:py-3 sm:grid-cols-3 sm:gap-4 sm:divide-y-0">
         <KpiCard
           label="Top graded"
           value={top?.player_name ?? "–"}

@@ -1,3 +1,4 @@
+import { PlayerModelPerformance } from "@/components/player-model-performance";
 import { PageHeader, PageShell, PageTitle } from "@/components/page-layout";
 import type { Metadata } from "next";
 import { supabase } from "@/lib/supabase";
@@ -102,6 +103,7 @@ export default async function PerformancePage() {
         <p className="text-muted-foreground">
           {evalRes.error ? "Performance data is temporarily unavailable." : "No evaluation data available yet."}
         </p>
+        <PlayerModelPerformance sport="mlb" />
       </PageShell>
     );
   }
@@ -124,6 +126,7 @@ export default async function PerformancePage() {
       </p>
       {ledger === null && <p role="status" className="text-sm text-muted-foreground">Betting results are temporarily unavailable.</p>}
       <PerformanceTabs
+        playerPerformance={<PlayerModelPerformance sport="mlb" />}
         evaluations={evaluations}
         calibration={calibration}
         edgeBuckets={edgeBuckets}

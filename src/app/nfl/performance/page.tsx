@@ -1,3 +1,4 @@
+import { PlayerModelPerformance } from "@/components/player-model-performance";
 import { PageDescription, PageHeader, PageShell, PageTitle } from "@/components/page-layout";
 import type { Metadata } from "next";
 import { Notice } from "@/components/notice";
@@ -39,6 +40,16 @@ export default async function PerformancePage({
   const params = await searchParams;
   const filters = pickFilters(params);
   const query = pickQuery(filters).toString();
+  if (params.view === "players") {
+    return (
+      <PageShell>
+        <PageTitle>NFL Model Performance</PageTitle>
+        <FootballPerformanceTabs sport="nfl" active="players" query={query}>
+          <PlayerModelPerformance sport="nfl" />
+        </FootballPerformanceTabs>
+      </PageShell>
+    );
+  }
   if (params.view !== "picks") {
     const live = await fetchNflLivePerformance();
     return (

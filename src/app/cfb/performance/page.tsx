@@ -1,3 +1,4 @@
+import { PlayerModelPerformance } from "@/components/player-model-performance";
 import { PageDescription, PageHeader, PageShell, PageTitle } from "@/components/page-layout";
 import type { Metadata } from "next";
 import { Notice } from "@/components/notice";
@@ -35,6 +36,16 @@ export default async function PerformancePage({
   const params = await searchParams;
   const filters = pickFilters(params);
   const query = pickQuery(filters).toString();
+  if (params.view === "players") {
+    return (
+      <PageShell>
+        <PageTitle>College Football Model Performance</PageTitle>
+        <CfbPerformanceTabs active="players" query={query}>
+          <PlayerModelPerformance sport="cfb" />
+        </CfbPerformanceTabs>
+      </PageShell>
+    );
+  }
   if (params.view !== "picks") {
     const live = await fetchLivePerformance();
     return (

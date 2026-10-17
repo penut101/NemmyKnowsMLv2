@@ -27,6 +27,8 @@ const metropolis = localFont({
 
 export const viewport: Viewport = {
   width: "device-width",
+  viewportFit: "cover",
+  themeColor: "#12e57a",
   initialScale: 1,
   maximumScale: 5,
   userScalable: true,

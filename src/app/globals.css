@@ -159,6 +159,7 @@ html.dark {
     @apply bg-background text-foreground;
   }
   html {
+    background-color: var(--brand-surface);
     @apply font-sans;
   }
   h1, h2, h3 {
@@ -193,6 +194,7 @@ html.dark {
 
 @layer components {
   .site-masthead {
+    padding-top: env(safe-area-inset-top, 0px);
     --foreground: var(--brand-ink);
     --muted-foreground: var(--brand-ink);
     --border: rgb(16 60 52 / 35%);
