@@ -46,11 +46,6 @@ export async function POST(request: Request) {
   if (!SPORTS.has(sport)) {
     return NextResponse.json({ error: "unknown schema" }, { status: 400 });
   }
-  // Live snapshots change throughout every game and are served from the CDN
-  // window alone, so their writes must not mark the sport's pages stale.
-  if (sport === "mlb" && body?.table === "live_win_probability") {
-    return NextResponse.json({ revalidated: null });
-  }
   const table = typeof body?.table === "string" ? body.table : "";
   if (table && !/^[a-z_][a-z0-9_]*$/.test(table)) {
     return NextResponse.json({ error: "invalid table" }, { status: 400 });
