@@ -351,7 +351,20 @@ export default function MlbPlayerValues({ index }: { index: PlayerValueIndex[] }
   return (
     <div className="space-y-section">
       <div className="flex flex-wrap items-center gap-3">
-        <ToggleGroup label="Position" options={positions} value={position} onChange={(key) => { setPosition(key); setExpanded(null); }} />
+        {/* Eleven positions overflow a phone, so small screens get one select beside the team select. */}
+        <div className="hidden md:block">
+          <ToggleGroup label="Position" options={positions} value={position} onChange={(key) => { setPosition(key); setExpanded(null); }} />
+        </div>
+        <select
+          aria-label="Position"
+          value={position}
+          onChange={(e) => { setPosition(e.target.value); setExpanded(null); }}
+          className="h-8 border border-input bg-transparent px-2 font-mono text-xs md:hidden"
+        >
+          {positions.map((option) => (
+            <option key={option.key} value={option.key}>{option.label}</option>
+          ))}
+        </select>
         <ToggleGroup label="Sort" options={PRESETS} value={preset} onChange={choosePreset} variant="pill" />
         <select aria-label="Team" value={team} onChange={(e) => setTeam(e.target.value)} className="h-8 border border-input bg-transparent px-2 font-mono text-xs">
           {teams.map((option) => (
@@ -364,7 +377,7 @@ export default function MlbPlayerValues({ index }: { index: PlayerValueIndex[] }
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search player or team"
           aria-label="Search player or team"
-          className="h-8 w-56 border border-input bg-transparent px-2 text-sm"
+          className="h-8 w-full border border-input bg-transparent px-2 text-sm sm:w-56"
         />
       </div>
       <p className="max-w-4xl text-sm text-muted-foreground leading-relaxed">
