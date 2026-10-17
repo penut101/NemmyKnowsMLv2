@@ -1,6 +1,10 @@
+"use client";
+
+import { usePathname } from "next/navigation";
 import { NavigationLink as Link } from "@/components/navigation-link";
 import { HeaderDate } from "@/components/header-date";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { MomentumWordmark } from "@/components/momentum-wordmark";
 
 const links = [
   { href: "/mlb/games", label: "MLB" },
@@ -12,30 +16,38 @@ const links = [
 ];
 
 export function SiteHeader() {
+  const pathname = usePathname();
   return (
-    <header className="relative z-10 border-b border-border bg-background">
-      <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-col items-start gap-1 px-page-gutter pt-3 sm:flex-row sm:items-center sm:justify-between sm:gap-0 sm:py-3">
-        <div className="flex items-baseline gap-3 pb-2 sm:pb-0">
-          <Link href="/" className="font-heading text-lg">
-            Home
+    <header className="site-masthead relative z-10">
+      <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-col gap-3 px-page-gutter pt-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6 sm:py-4">
+        <div className="flex shrink-0 items-center justify-between gap-5">
+          <Link href="/" aria-label="Momentum home" className="rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4">
+            <MomentumWordmark />
           </Link>
-          <HeaderDate />
+          <div className="sm:hidden"><ThemeToggle /></div>
         </div>
         <nav
           aria-label="Primary"
-          className="flex w-full items-center gap-1 overflow-x-auto sm:w-auto sm:overflow-visible"
+          className="flex min-w-0 items-center gap-1 overflow-x-auto sm:gap-2"
         >
-          {links.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="px-3 py-2 font-mono text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:text-primary"
-            >
-              {link.label}
-            </Link>
-          ))}
-          <ThemeToggle />
+          {links.map((link) => {
+            const active = pathname.startsWith(`/${link.href.split("/")[1]}`);
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                aria-current={active ? "true" : undefined}
+                className={`shrink-0 border-b-2 px-3 py-2.5 text-xs font-semibold uppercase tracking-widest transition-colors ${active ? "border-current" : "border-transparent opacity-75 hover:opacity-100"}`}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
         </nav>
+        <div className="hidden shrink-0 items-center gap-4 sm:flex">
+          <div className="hidden lg:block"><HeaderDate /></div>
+          <ThemeToggle />
+        </div>
       </div>
     </header>
   );

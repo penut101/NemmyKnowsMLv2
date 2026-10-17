@@ -65,7 +65,7 @@ export function MetricLineChart({
             position: "insideTopRight",
             fill: theme["muted-foreground"],
             fontSize: 10,
-            fontFamily: "var(--font-oswald)",
+            fontFamily: "var(--font-sans)",
           }}
         />
         <Line

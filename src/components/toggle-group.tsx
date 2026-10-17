@@ -6,20 +6,20 @@ const VARIANTS = {
   underline: {
     group: "flex items-center font-mono text-xs uppercase tracking-wider",
     button: "border-b-2 px-3 py-2 uppercase transition-colors",
-    on: "border-primary text-primary",
+    on: "border-[var(--brand-highlight)] text-primary",
     off: "border-transparent text-muted-foreground hover:text-foreground",
   },
   pill: {
     group: "inline-flex rounded-sm border border-border p-0.5 font-mono text-xs",
     button: "px-3 py-1 transition-colors",
-    on: "bg-primary text-primary-foreground",
+    on: "bg-[var(--brand-highlight)] text-[var(--brand-ink)]",
     off: "text-muted-foreground hover:text-foreground",
   },
   chip: {
     group: "flex flex-wrap gap-1.5",
     button:
       "rounded-md border px-2 py-1 font-mono text-[11px] uppercase tracking-wider transition-colors",
-    on: "border-primary bg-primary text-primary-foreground",
+    on: "border-[var(--brand-highlight)] bg-[var(--brand-highlight)] text-[var(--brand-ink)]",
     off: "border-border text-muted-foreground hover:text-foreground",
   },
 } as const;

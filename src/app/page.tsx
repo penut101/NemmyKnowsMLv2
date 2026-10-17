@@ -276,7 +276,7 @@ function ModelEntry({
         className="group/link flex items-center justify-between gap-4 after:absolute after:inset-0"
       >
         <span className="flex items-baseline gap-3">
-          <span className="font-heading text-lg underline-offset-4 group-hover/link:underline">
+          <span className="font-heading text-xl font-semibold tracking-tight text-primary underline-offset-4 group-hover/link:underline">
             {name}
           </span>
           <StatusBadge live={live} />

@@ -18,7 +18,6 @@ const cfbLinks = [
   { href: "/cfb/draft", label: "Draft" },
   { href: "/cfb/history", label: "History" },
   { href: "/cfb/performance", label: "Performance" },
-  { href: "/about", label: "About" },
 ];
 
 export default function CfbLayout({

@@ -33,15 +33,15 @@ export type ChartTheme = Record<Token, string>;
 
 /** Server render and first paint; mirrors the light palette in globals.css. */
 const FALLBACK: ChartTheme = {
-  grid: "oklch(0.90 0.005 75)",
-  border: "oklch(0.87 0.006 75)",
-  "rule-strong": "oklch(0.35 0.008 60)",
-  "muted-foreground": "oklch(0.48 0.008 60)",
-  foreground: "oklch(0.20 0.008 60)",
-  background: "oklch(0.985 0.005 85)",
-  popover: "oklch(0.995 0.003 85)",
-  primary: "#73510d",
-  "chart-1": "#73510d",
+  grid: "#e1e9e6",
+  border: "#d6e1dd",
+  "rule-strong": "#8ca9a1",
+  "muted-foreground": "#5c6e69",
+  foreground: "#253a37",
+  background: "#f8faf9",
+  popover: "#ffffff",
+  primary: "#137b70",
+  "chart-1": "#137b70",
   "chart-2": "oklch(0.45 0.09 250)",
   "chart-3": "oklch(0.52 0.12 45)",
   "chart-4": "oklch(0.45 0.09 320)",
@@ -87,7 +87,7 @@ export function chartAxisProps(theme: ChartTheme) {
     tick: {
       fill: theme["muted-foreground"],
       fontSize: 11,
-      fontFamily: "var(--font-oswald)",
+      fontFamily: "var(--font-sans)",
     },
     axisLine: false as const,
     tickLine: false as const,
@@ -98,9 +98,9 @@ export function chartTooltipStyle(theme: ChartTheme) {
   return {
     backgroundColor: theme.popover,
     border: `1px solid ${theme.border}`,
-    borderRadius: "2px",
+    borderRadius: "6px",
     color: theme.foreground,
-    fontFamily: "var(--font-oswald)",
+    fontFamily: "var(--font-sans)",
     fontSize: "12px",
     boxShadow: "none",
   };

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
-import { Oswald } from "next/font/google";
+import { Source_Sans_3 } from "next/font/google";
+import localFont from "next/font/local";
 import Script from "next/script";
 import "./globals.css";
 import { SpeedInsights } from "@vercel/speed-insights/next";
@@ -7,10 +8,20 @@ import { SiteAnalytics } from "@/components/site-analytics";
 import { ThemeProvider } from "@/components/theme-provider";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_URL, TWITTER_HANDLE } from "@/lib/site";
 
-// Oswald carries everything: headings, prose, labels and numerals.
-const oswald = Oswald({
-  variable: "--font-oswald",
+const sourceSans = Source_Sans_3({
+  variable: "--font-source-sans",
   subsets: ["latin"],
+  display: "swap",
+});
+
+const metropolis = localFont({
+  src: [
+    { path: "./fonts/Metropolis-Regular.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/Metropolis-Medium.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/Metropolis-SemiBold.woff2", weight: "600", style: "normal" },
+    { path: "./fonts/Metropolis-Bold.woff2", weight: "700", style: "normal" },
+  ],
+  variable: "--font-metropolis",
   display: "swap",
 });
 
@@ -55,7 +66,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${oswald.variable} h-full overflow-x-hidden antialiased`}
+      className={`${sourceSans.variable} ${metropolis.variable} h-full overflow-x-hidden antialiased`}
     >
       <body className="min-h-full flex flex-col overflow-x-hidden">
         <a

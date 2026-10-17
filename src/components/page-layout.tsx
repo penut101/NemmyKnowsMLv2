@@ -24,14 +24,14 @@ export function PageHeader({ className, ...props }: ComponentProps<"header">) {
   return (
     <header
       data-slot="page-header"
-      className={cn("flex flex-wrap items-start justify-between gap-4", className)}
+      className={cn("flex flex-wrap items-start justify-between gap-4 border-l-4 border-[var(--brand-highlight)] py-1 pl-5", className)}
       {...props}
     />
   );
 }
 
 export function PageTitle({ className, ...props }: ComponentProps<"h1">) {
-  return <h1 className={cn("font-heading text-2xl", className)} {...props} />;
+  return <h1 className={cn("font-heading text-3xl font-normal leading-tight tracking-tight text-primary sm:text-4xl", className)} {...props} />;
 }
 
 export function PageDescription({ className, ...props }: ComponentProps<"p">) {

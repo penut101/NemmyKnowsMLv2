@@ -17,7 +17,6 @@ const nflLinks = [
   { href: "/nfl/awards", label: "Awards" },
   { href: "/nfl/history", label: "History" },
   { href: "/nfl/performance", label: "Performance" },
-  { href: "/about", label: "About" },
 ];
 
 export default function NflLayout({

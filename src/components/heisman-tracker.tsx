@@ -361,7 +361,7 @@ function Trajectory({ rows }: { rows: CfbPlayerValue[] }) {
               iconType="plainline"
               itemSorter={null}
               wrapperStyle={{
-                fontFamily: "var(--font-oswald)",
+                fontFamily: "var(--font-sans)",
                 fontSize: 11,
               }}
             />

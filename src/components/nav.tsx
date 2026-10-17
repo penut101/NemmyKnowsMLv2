@@ -2,8 +2,7 @@
 
 import { NavigationLink as Link } from "@/components/navigation-link";
 import { usePathname } from "next/navigation";
-import { HeaderDate } from "@/components/header-date";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { SiteHeader } from "@/components/site-header";
 
 const mlbLinks = [
   { href: "/mlb/methodology", label: "Methodology" },
@@ -11,7 +10,6 @@ const mlbLinks = [
   { href: "/mlb/playoffs", label: "Playoffs" },
   { href: "/mlb/history", label: "History" },
   { href: "/mlb/performance", label: "Performance" },
-  { href: "/about", label: "About" },
 ];
 
 export function Nav({
@@ -22,44 +20,38 @@ export function Nav({
   const pathname = usePathname();
 
   return (
-    <nav
-      aria-label="Primary"
-      className="relative z-10 border-b border-border bg-background"
-    >
-      <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-col items-start gap-1 px-page-gutter pt-3 sm:flex-row sm:items-center sm:justify-between sm:gap-0 sm:pb-0">
-        <div className="flex shrink-0 items-baseline gap-3 whitespace-nowrap pb-2 sm:pb-3">
-          <Link href="/" className="font-heading text-lg">
-            Home
-          </Link>
-          <HeaderDate />
-        </div>
-        <div className="flex w-full min-w-0 items-center gap-0 overflow-x-auto pb-0 sm:w-auto">
-          {links.map((link) => {
-            const isActive =
-              link.href === "/"
-                ? pathname === "/"
-                : pathname.startsWith(link.href);
+    <>
+      <SiteHeader />
+      <nav
+        aria-label="Section"
+        className="relative z-10 border-b border-border bg-background"
+      >
+        <div className="mx-auto w-full max-w-7xl min-w-0 px-page-gutter">
+          <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
+            {links.map((link) => {
+              const isActive =
+                link.href === "/"
+                  ? pathname === "/"
+                  : pathname.startsWith(link.href);
 
-            return (
-              <Link
-                key={link.href}
-                href={link.href}
-                aria-current={isActive ? "page" : undefined}
-                className={`shrink-0 whitespace-nowrap px-3 py-3 font-mono text-xs uppercase tracking-wider transition-colors ${
-                  isActive
-                    ? "border-b-2 border-primary text-primary"
-                    : "border-b-2 border-transparent text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {link.label}
-              </Link>
-            );
-          })}
-          <div className="ml-2 flex items-center">
-            <ThemeToggle />
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  aria-current={isActive ? "page" : undefined}
+                  className={`shrink-0 whitespace-nowrap px-3 py-3.5 text-xs font-semibold tracking-wide transition-colors ${
+                    isActive
+                      ? "border-b-2 border-[var(--brand-highlight)] text-primary"
+                      : "border-b-2 border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {link.label}
+                </Link>
+              );
+            })}
           </div>
         </div>
-      </div>
-    </nav>
+      </nav>
+    </>
   );
 }

@@ -4,18 +4,15 @@
 
 @theme inline {
   --spacing-page-gutter: 1rem;
-  --spacing-page-block: 2rem;
-  --spacing-section: 1.5rem;
+  --spacing-page-block: 2.5rem;
+  --spacing-section: 2rem;
   --spacing-content: 0.75rem;
   --spacing-heading: 0.5rem;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  /* One face sitewide. The mono and heading utilities stay as semantic hooks
-     (numerals and labels, titles) so a role can take its own face again
-     without touching markup. */
-  --font-sans: var(--font-oswald);
-  --font-mono: var(--font-oswald);
-  --font-heading: var(--font-oswald);
+  --font-sans: var(--font-source-sans);
+  --font-mono: var(--font-source-sans);
+  --font-heading: var(--font-metropolis);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -61,29 +58,30 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Light is the primary mode: warm paper ground, warm near-black ink.
-   Surfaces are separated by rules, not fills, so --card matches --background. */
+/* Poleo green carries the brand; deeper teal keeps text and charts readable. */
 :root {
-  --background: oklch(0.985 0.005 85);
-  --foreground: oklch(0.20 0.008 60);
-  --card: oklch(0.985 0.005 85);
-  --card-foreground: oklch(0.20 0.008 60);
-  --popover: oklch(0.995 0.003 85);
-  --popover-foreground: oklch(0.20 0.008 60);
-  /* Brand gold signals selection and availability; green is reserved for performance. */
-  --primary: #73510d;
-  --primary-foreground: oklch(0.985 0.005 85);
-  --secondary: oklch(0.955 0.006 85);
-  --secondary-foreground: oklch(0.20 0.008 60);
-  --muted: oklch(0.955 0.006 85);
-  --muted-foreground: oklch(0.48 0.008 60);
-  --accent: oklch(0.955 0.006 85);
-  --accent-foreground: oklch(0.20 0.008 60);
+  --brand-highlight: #12e57a;
+  --brand-surface: var(--brand-highlight);
+  --brand-ink: #103c34;
+  --background: #f8faf9;
+  --foreground: #253a37;
+  --card: #f8faf9;
+  --card-foreground: #253a37;
+  --popover: #ffffff;
+  --popover-foreground: #253a37;
+  --primary: #137b70;
+  --primary-foreground: #f8faf9;
+  --secondary: #edf3f1;
+  --secondary-foreground: #253a37;
+  --muted: #edf3f1;
+  --muted-foreground: #5c6e69;
+  --accent: #edf3f1;
+  --accent-foreground: #253a37;
   --destructive: oklch(0.52 0.17 25);
-  --border: oklch(0.87 0.006 75);
-  --rule-strong: oklch(0.35 0.008 60);
-  --grid: oklch(0.90 0.005 75);
-  --input: oklch(0.87 0.006 75);
+  --border: #d6e1dd;
+  --rule-strong: #8ca9a1;
+  --grid: #e1e9e6;
+  --input: #d6e1dd;
   --ring: var(--primary);
   --chart-1: var(--primary);
   --chart-2: oklch(0.45 0.09 250);
@@ -97,41 +95,40 @@
   --rating-weak: oklch(0.65 0.21 25 / 48%);
   --accent-blue: oklch(0.45 0.09 250);
   --accent-amber: oklch(0.52 0.10 65);
-  --radius: 0.125rem;
-  --sidebar: oklch(0.985 0.005 85);
-  --sidebar-foreground: oklch(0.20 0.008 60);
+  --radius: 0.5rem;
+  --sidebar: #f8faf9;
+  --sidebar-foreground: #253a37;
   --sidebar-primary: var(--primary);
-  --sidebar-primary-foreground: oklch(0.985 0.005 85);
-  --sidebar-accent: oklch(0.955 0.006 85);
-  --sidebar-accent-foreground: oklch(0.20 0.008 60);
-  --sidebar-border: oklch(0.87 0.006 75);
+  --sidebar-primary-foreground: #f8faf9;
+  --sidebar-accent: #edf3f1;
+  --sidebar-accent-foreground: #253a37;
+  --sidebar-border: #d6e1dd;
   --sidebar-ring: var(--primary);
 }
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Dark mode is a true plate, not a dimmed UI: near-black ground, and the same
-   rules-over-fills rule, so --card again matches --background. */
+/* Keep the same hierarchy on a deep charcoal ground. */
 html.dark {
-  --background: oklch(0.16 0.003 60);
-  --foreground: oklch(0.92 0.004 85);
-  --card: oklch(0.16 0.003 60);
-  --card-foreground: oklch(0.92 0.004 85);
-  --popover: oklch(0.21 0.004 60);
-  --popover-foreground: oklch(0.92 0.004 85);
-  --primary: #d4b66a;
-  --primary-foreground: oklch(0.16 0.003 60);
-  --secondary: oklch(0.22 0.004 60);
-  --secondary-foreground: oklch(0.92 0.004 85);
-  --muted: oklch(0.22 0.004 60);
-  --muted-foreground: oklch(0.66 0.006 75);
-  --accent: oklch(0.22 0.004 60);
-  --accent-foreground: oklch(0.92 0.004 85);
+  --background: #101c1a;
+  --foreground: #ecf3f0;
+  --card: #101c1a;
+  --card-foreground: #ecf3f0;
+  --popover: #1a2d28;
+  --popover-foreground: #ecf3f0;
+  --primary: #70d3bd;
+  --primary-foreground: #101c1a;
+  --secondary: #1c302b;
+  --secondary-foreground: #ecf3f0;
+  --muted: #1c302b;
+  --muted-foreground: #a1b7ae;
+  --accent: #1c302b;
+  --accent-foreground: #ecf3f0;
   --destructive: oklch(0.62 0.19 27);
-  --border: oklch(0.32 0.004 60);
-  --rule-strong: oklch(0.62 0.005 70);
-  --grid: oklch(0.26 0.004 60);
-  --input: oklch(0.32 0.004 60);
+  --border: #304b42;
+  --rule-strong: #668b7e;
+  --grid: #253c34;
+  --input: #304b42;
   --ring: var(--primary);
   --chart-1: var(--primary);
   --chart-2: oklch(0.70 0.11 250);
@@ -144,13 +141,13 @@ html.dark {
   --rating-weak: oklch(0.71 0.17 25 / 38%);
   --accent-blue: oklch(0.70 0.11 250);
   --accent-amber: oklch(0.75 0.11 65);
-  --sidebar: oklch(0.16 0.003 60);
-  --sidebar-foreground: oklch(0.92 0.004 85);
+  --sidebar: #101c1a;
+  --sidebar-foreground: #ecf3f0;
   --sidebar-primary: var(--primary);
-  --sidebar-primary-foreground: oklch(0.16 0.003 60);
-  --sidebar-accent: oklch(0.22 0.004 60);
-  --sidebar-accent-foreground: oklch(0.92 0.004 85);
-  --sidebar-border: oklch(0.32 0.004 60);
+  --sidebar-primary-foreground: #101c1a;
+  --sidebar-accent: #1c302b;
+  --sidebar-accent-foreground: #ecf3f0;
+  --sidebar-border: #304b42;
   --sidebar-ring: var(--primary);
 }
 
@@ -163,6 +160,13 @@ html.dark {
   }
   html {
     @apply font-sans;
+  }
+  h1, h2, h3 {
+    font-weight: 600;
+  }
+  ::selection {
+    background: #12e57a;
+    color: #103c34;
   }
   html, body {
     width: 100%;
@@ -184,5 +188,26 @@ html.dark {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+@layer components {
+  .site-masthead {
+    --foreground: var(--brand-ink);
+    --muted-foreground: var(--brand-ink);
+    --border: rgb(16 60 52 / 35%);
+    background: var(--brand-surface);
+    color: var(--brand-ink);
+    border-bottom: 1px solid rgb(16 60 52 / 15%);
+  }
+
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (min-width: 640px) {
+    :root {
+      --spacing-page-gutter: 1.5rem;
+    }
   }
 }

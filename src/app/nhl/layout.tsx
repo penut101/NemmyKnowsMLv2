@@ -15,7 +15,6 @@ const nhlLinks = [
   { href: "/nhl/schedule", label: "Schedule" },
   { href: "/nhl/history", label: "History" },
   { href: "/nhl/performance", label: "Performance" },
-  { href: "/about", label: "About" },
 ];
 
 export default function NhlLayout({
