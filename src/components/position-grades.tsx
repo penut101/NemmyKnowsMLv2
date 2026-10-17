@@ -1,23 +1,29 @@
 "use client";
 
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import type { CfbGradedPlayer, CfbPlayerIndexRow } from "@/lib/cfb";
-import type { CfbPositionTrait, CfbTeamIdentity } from "@/lib/types";
+import type { GradedPlayer, PlayerIndexRow, PositionTraitRow } from "@/lib/position-grades";
 import {
-  GRADE_TIP,
   POSITION_ORDER,
-  WAR_TIP,
+  SPORT_COPY,
   isUnitRow,
   traitLabel,
+  type GradeSport,
   type PositionGroup,
 } from "@/lib/position-traits";
 import { EMPTY, cn, formatNumber, formatSigned } from "@/lib/utils";
 import { InfoTip } from "@/components/info-tip";
 import { PlayerCell } from "@/components/player-cell";
+import type { TeamLogoSource } from "@/components/team-logo";
 import { ToggleGroup } from "@/components/toggle-group";
 
 const PAGE_ROWS = 40;
 const ALL = "all";
+
+// A team's logos keyed by the same team string the trait rows carry: the
+// school in college football, the franchise abbreviation in the NFL.
+export interface GradeTeam extends TeamLogoSource {
+  team: string;
+}
 
 // Diagonal stripes mark a trait inferred from unit outcomes or teammates
 // rather than counted from the player's own tagged plays.
@@ -27,15 +33,17 @@ const INFERRED_FILL = {
 };
 
 function TraitRow({
+  sport,
   name,
   group,
   trait,
 }: {
+  sport: GradeSport;
   name: string;
   group: string;
-  trait: CfbPositionTrait | undefined;
+  trait: PositionTraitRow | undefined;
 }) {
-  const { label, tip } = traitLabel(name);
+  const { label, tip } = traitLabel(name, sport);
   const inGrade = trait?.in_grade ?? false;
   const inferred = trait?.kind === "inferred";
   const pct = trait?.percentile ?? null;
@@ -43,7 +51,7 @@ function TraitRow({
     ? `${tip} No value for this player yet.`
     : inGrade
       ? tip
-      : `${tip} This trait is shown for context: it carries no weight in the ${group} grade because it was noise from game to game, stayed with the old team when players transferred, or could not be measured.`;
+      : `${tip} This trait is shown for context: it carries no weight in the ${group} grade because it was noise from game to game, stayed with the old team when players moved, or could not be measured.`;
   return (
     <div
       className={cn(
@@ -80,19 +88,13 @@ function TraitRow({
 }
 
 function Identity({
-  athleteId,
-  name,
-  team,
-  games,
+  row,
   logo,
 }: {
-  athleteId: string;
-  name: string;
-  team: string;
-  games: number | null;
-  logo: CfbTeamIdentity | undefined;
+  row: PlayerIndexRow;
+  logo: TeamLogoSource | undefined;
 }) {
-  if (isUnitRow(athleteId)) {
+  if (isUnitRow(row.athleteId)) {
     return (
       <div className="flex items-center gap-2.5">
         <span
@@ -102,42 +104,52 @@ function Identity({
           OL
         </span>
         <div className="min-w-0">
-          <div className="truncate font-medium">{team} offensive line</div>
-          <div className="text-xs text-muted-foreground">unit · {formatNumber(games, 0)} games</div>
+          <div className="truncate font-medium">{row.team} offensive line</div>
+          <div className="text-xs text-muted-foreground">unit · {formatNumber(row.games, 0)} games</div>
         </div>
       </div>
     );
   }
   return (
-    <PlayerCell athleteId={athleteId} name={name} team={team} position={`${formatNumber(games, 0)} games`} logo={logo} />
+    <PlayerCell
+      athleteId={row.athleteId}
+      headshotUrl={row.headshotUrl}
+      name={row.name}
+      team={row.team}
+      position={`${formatNumber(row.games, 0)} games`}
+      logo={logo}
+    />
   );
 }
 
 function GradeCard({
+  sport,
   rank,
   row,
   player,
   traitNames,
   logo,
 }: {
+  sport: GradeSport;
   rank: number;
-  row: CfbPlayerIndexRow;
-  player: CfbGradedPlayer | undefined;
+  row: PlayerIndexRow;
+  player: GradedPlayer | undefined;
   traitNames: string[];
-  logo: CfbTeamIdentity | undefined;
+  logo: TeamLogoSource | undefined;
 }) {
+  const copy = SPORT_COPY[sport];
   const grade = player?.grade ?? row.grade;
   return (
     <article className="space-y-2 border-t border-rule-strong pt-3 pb-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <span className="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground">{rank}</span>
-          <Identity athleteId={row.athleteId} name={row.name} team={row.team} games={row.games} logo={logo} />
+          <Identity row={row} logo={logo} />
         </div>
         <div className="flex shrink-0 gap-3 text-right">
           <div className="flex w-28 flex-col items-end">
             <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-              grade <InfoTip text={GRADE_TIP} label="What is the grade?" />
+              grade <InfoTip text={copy.gradeTip} label="What is the grade?" />
             </span>
             <span className="font-mono text-xl font-bold tabular-nums leading-tight">
               {grade == null ? EMPTY : formatNumber(grade, 1)}
@@ -150,7 +162,7 @@ function GradeCard({
           </div>
           <div className="flex w-24 flex-col items-end">
             <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-              WAR <InfoTip text={WAR_TIP} label="What is wins above replacement?" />
+              WAR <InfoTip text={copy.warTip} label="What is wins above replacement?" />
             </span>
             <span
               className={cn(
@@ -173,7 +185,13 @@ function GradeCard({
       {player && (
         <div className="space-y-1.5">
           {traitNames.map((name) => (
-            <TraitRow key={name} name={name} group={row.positionGroup} trait={player.traits.find((t) => t.trait === name)} />
+            <TraitRow
+              key={name}
+              sport={sport}
+              name={name}
+              group={row.positionGroup}
+              trait={player.traits.find((t) => t.trait === name)}
+            />
           ))}
         </div>
       )}
@@ -182,33 +200,36 @@ function GradeCard({
 }
 
 export default function PositionGrades({
+  sport,
   season,
   index,
   details,
   gradedCounts,
   teams,
 }: {
+  sport: GradeSport;
   season: number;
-  index: CfbPlayerIndexRow[];
-  details: Record<string, CfbGradedPlayer>;
+  index: PlayerIndexRow[];
+  details: Record<string, GradedPlayer>;
   gradedCounts: Record<string, number>;
-  teams: CfbTeamIdentity[];
+  teams: GradeTeam[];
 }) {
+  const copy = SPORT_COPY[sport];
   const positions = POSITION_ORDER.filter((key) => index.some((row) => row.positionGroup === key)).map((key) => ({
     key,
     label: key,
   }));
   const [position, setPosition] = useState<PositionGroup>(positions[0]?.key ?? "QB");
-  const [conference, setConference] = useState<string>(ALL);
+  const [group, setGroup] = useState<string>(ALL);
   const [query, setQuery] = useState("");
   const search = useDeferredValue(query.trim().toLowerCase());
-  const [loaded, setLoaded] = useState<Record<string, CfbGradedPlayer>>(details);
+  const [loaded, setLoaded] = useState<Record<string, GradedPlayer>>(details);
 
-  const conferences = useMemo(() => {
+  const groups = useMemo(() => {
     const names = new Set<string>();
-    for (const row of index) if (row.conference) names.add(row.conference);
-    return [{ key: ALL, label: "All conferences" }, ...[...names].sort().map((name) => ({ key: name, label: name }))];
-  }, [index]);
+    for (const row of index) if (row.group) names.add(row.group);
+    return [{ key: ALL, label: copy.groupLabel }, ...[...names].sort().map((name) => ({ key: name, label: name }))];
+  }, [index, copy.groupLabel]);
   const logoFor = useMemo(() => {
     const byName = new Map(teams.map((t) => [t.team, t] as const));
     return (team: string) => byName.get(team);
@@ -220,9 +241,9 @@ export default function PositionGrades({
       index.filter(
         (row) =>
           (search ? row.name.toLowerCase().includes(search) || row.team.toLowerCase().includes(search) : row.positionGroup === position) &&
-          (conference === ALL || row.conference === conference)
+          (group === ALL || row.group === group)
       ),
-    [index, search, position, conference]
+    [index, search, position, group]
   );
   const visible = matches.slice(0, PAGE_ROWS);
 
@@ -231,14 +252,14 @@ export default function PositionGrades({
     if (missing.length === 0) return;
     const controller = new AbortController();
     const params = new URLSearchParams({ season: String(season), ids: missing.join(",") });
-    fetch(`/cfb/api/player-traits?${params}`, { signal: controller.signal })
+    fetch(`${copy.apiPath}?${params}`, { signal: controller.signal })
       .then((res) => (res.ok ? res.json() : null))
-      .then((body: { players?: Record<string, CfbGradedPlayer> } | null) => {
+      .then((body: { players?: Record<string, GradedPlayer> } | null) => {
         if (body?.players) setLoaded((prev) => ({ ...prev, ...body.players }));
       })
       .catch(() => {});
     return () => controller.abort();
-  }, [visible, loaded, season]);
+  }, [visible, loaded, season, copy.apiPath]);
 
   // The same rows on every card at a position: weighted traits first, then the
   // rest, taken from every loaded player of that position.
@@ -251,8 +272,8 @@ export default function PositionGrades({
       for (const t of player.traits) names.set(t.trait, names.get(t.trait) || t.in_grade);
       byGroup.set(row.positionGroup, names);
     }
-    return (group: string) =>
-      [...(byGroup.get(group) ?? new Map<string, boolean>()).entries()]
+    return (positionGroup: string) =>
+      [...(byGroup.get(positionGroup) ?? new Map<string, boolean>()).entries()]
         .sort((a, b) => Number(b[1]) - Number(a[1]) || a[0].localeCompare(b[0]))
         .map(([name]) => name);
   }, [index, loaded]);
@@ -263,14 +284,14 @@ export default function PositionGrades({
       <div className="flex flex-wrap items-center gap-3">
         <ToggleGroup label="Position" options={positions} value={position} onChange={setPosition} />
         <select
-          aria-label="Conference"
-          value={conference}
-          onChange={(e) => setConference(e.target.value)}
+          aria-label={copy.groupLabel}
+          value={group}
+          onChange={(e) => setGroup(e.target.value)}
           className="h-8 border border-input bg-transparent px-2 font-mono text-xs"
         >
-          {conferences.map((option) => (
+          {groups.map((option) => (
             <option key={option.key} value={option.key}>
-              {option.key === ALL ? "Conference" : option.label}
+              {option.label}
             </option>
           ))}
         </select>
@@ -285,9 +306,9 @@ export default function PositionGrades({
       </div>
       <p className="max-w-4xl text-sm text-muted-foreground leading-relaxed">
         {search
-          ? `${matches.length} player${matches.length === 1 ? "" : "s"} match “${query.trim()}”${conference === ALL ? "" : ` in the ${conference}`}, best grade first.`
-          : `Top ${visible.length} of ${matches.length} ${conference === ALL ? "" : `${conference} `}${position}, ${graded} graded this week.`}{" "}
-        Every bar is a percentile among qualified FBS players at the position this week: gold bars are counted
+          ? `${matches.length} player${matches.length === 1 ? "" : "s"} match “${query.trim()}”${group === ALL ? "" : ` in the ${group}`}, best grade first.`
+          : `Top ${visible.length} of ${matches.length} ${group === ALL ? "" : `${group} `}${position}, ${graded} graded this week.`}{" "}
+        Every bar is a percentile among {copy.pool}{" "}at the position this week: gold bars are counted
         from the player&apos;s own tagged plays or box score, striped blue bars are inferred from unit outcomes
         or teammates, and dimmed traits carry no weight in the grade.
       </p>
@@ -296,7 +317,15 @@ export default function PositionGrades({
       ) : (
         <div className="grid grid-cols-1 gap-x-8 lg:grid-cols-2">
           {visible.map((row, i) => (
-            <GradeCard key={row.athleteId} rank={i + 1} row={row} player={loaded[row.athleteId]} traitNames={traitNamesFor(row.positionGroup)} logo={logoFor(row.team)} />
+            <GradeCard
+              key={row.athleteId}
+              sport={sport}
+              rank={i + 1}
+              row={row}
+              player={loaded[row.athleteId]}
+              traitNames={traitNamesFor(row.positionGroup)}
+              logo={logoFor(row.team)}
+            />
           ))}
         </div>
       )}

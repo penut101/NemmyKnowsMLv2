@@ -1,4 +1,5 @@
-import { buildGradedPlayers, fetchPlayerTraitRows } from "@/lib/cfb";
+import { fetchPlayerTraitRows } from "@/lib/cfb";
+import { buildGradedPlayers } from "@/lib/position-grades";
 
 // Rows for up to forty players of one season, for players the grades page did
 // not render on the server (search hits and filtered lists). Each distinct id

@@ -83,7 +83,14 @@ export default async function PlayersPage() {
         />
       </div>
 
-      <PositionGrades season={season} index={index} details={details} gradedCounts={gradedCounts} teams={[...teams.values()]} />
+      <PositionGrades
+        sport="cfb"
+        season={season}
+        index={index}
+        details={details}
+        gradedCounts={gradedCounts}
+        teams={[...teams.values()]}
+      />
     </PageShell>
   );
 }

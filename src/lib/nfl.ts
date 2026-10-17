@@ -1,8 +1,21 @@
 import { cache } from "react";
 import { supabaseNfl } from "@/lib/supabase";
 import type { FootballLivePerformance } from "@/lib/football-performance";
+import {
+  EMPTY_GRADES,
+  ID_CHUNK,
+  INDEX_COLUMNS,
+  PAGE,
+  buildGradedPlayers,
+  chunk,
+  rankIndex,
+  toIndexRow,
+  type IndexRow,
+  type PositionGrades,
+} from "@/lib/position-grades";
 import type {
   NflPerformanceMetric,
+  NflPositionTrait,
   NflSeasonWinTotal,
   NflTeamIdentity,
   NflTeamRating,
@@ -167,3 +180,68 @@ export async function fetchNflLivePerformance(): Promise<FootballLivePerformance
     latestKickoff: kickoffRes.data?.[0]?.start_date ?? null,
   };
 }
+
+// Player grades: the latest published week of nfl.position_traits, in the same
+// shape as the college page (lib/position-grades). The index carries every
+// graded player; the full rows of the top of each position come with it and
+// the rest load on demand through /nfl/api/player-traits.
+async function fetchGradeIndex(season: number): Promise<IndexRow[]> {
+  const rows: IndexRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const res = await supabaseNfl
+      .from("position_traits")
+      .select(INDEX_COLUMNS)
+      .eq("season", season)
+      .eq("trait", "grade")
+      .order("athlete_id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (res.error) {
+      console.error("nfl position traits index fetch failed:", res.error.message);
+      return rows;
+    }
+    rows.push(...((res.data ?? []) as IndexRow[]));
+    if ((res.data?.length ?? 0) < PAGE) return rows;
+  }
+}
+
+export async function fetchNflPlayerTraitRows(season: number, ids: string[]): Promise<NflPositionTrait[]> {
+  const parts = await Promise.all(
+    chunk(ids, ID_CHUNK).map((part) =>
+      supabaseNfl
+        .from("position_traits")
+        .select("*")
+        .eq("season", season)
+        .in("athlete_id", part)
+        .limit(PAGE),
+    ),
+  );
+  return parts.flatMap((res) => (res.data ?? []) as NflPositionTrait[]);
+}
+
+export const fetchNflPositionGrades = cache(async (): Promise<PositionGrades> => {
+  const latestRes = await supabaseNfl
+    .from("position_traits")
+    .select("season, week, as_of, model_version")
+    .eq("trait", "grade")
+    .order("season", { ascending: false })
+    .order("week", { ascending: false })
+    .limit(1);
+  const latest = latestRes.data?.[0];
+  if (latestRes.error || !latest) return EMPTY_GRADES;
+
+  const [gradeRows, { ratings }] = await Promise.all([fetchGradeIndex(latest.season), fetchLatestRatings()]);
+  const divisionOf = new Map(ratings.map((r) => [r.team_abbr, r.division] as const));
+  const { index, topIds, gradedCounts } = rankIndex(
+    gradeRows.map((row) => toIndexRow(row, divisionOf.get(row.team ?? "") ?? null)),
+  );
+  const details = buildGradedPlayers(await fetchNflPlayerTraitRows(latest.season, topIds));
+  return {
+    season: latest.season,
+    week: latest.week,
+    asOf: latest.as_of,
+    modelVersion: latest.model_version,
+    index,
+    details,
+    gradedCounts,
+  };
+});

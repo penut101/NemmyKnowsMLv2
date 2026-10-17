@@ -1,5 +1,6 @@
 import { PageDescription, PageHeader, PageSection, PageShell, PageTitle } from "@/components/page-layout";
 import { NavigationLink } from "@/components/navigation-link";
+import { NFL_PLAYER_SECTIONS, PlayerSectionTabs } from "@/components/player-section-tabs";
 import type { Metadata } from "next";
 import { AWARDS, type AwardKey } from "@/lib/nfl-awards-types";
 import { fetchAwards, TRAJECTORY_LINES } from "@/lib/nfl-awards";
@@ -31,6 +32,7 @@ export default async function AwardsPage({ searchParams }: {
       <PageTitle>NFL MVP and Awards Tracker</PageTitle>
       <PageDescription className="max-w-2xl">Award forecasts alongside on-field performance. Follow the leaders, see what drives their rankings, and revisit each weekly snapshot.</PageDescription>
     </div>{meta && <LastUpdated timestamp={meta.as_of} schedule="Updates after completed weekly games" />}</PageHeader>
+    <PlayerSectionTabs sections={NFL_PLAYER_SECTIONS} />
     <nav aria-label="NFL awards" className="flex flex-wrap border-b border-rule-strong font-mono text-xs uppercase tracking-wider">
       {(Object.keys(AWARDS) as AwardKey[]).map((key) => <NavigationLink prefetch={true} scroll={false} key={key} href={query(key, season, week)} aria-current={award === key ? "page" : undefined}
         className={`border-b-2 px-2 py-2 transition-colors sm:px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${award === key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{key}</NavigationLink>)}

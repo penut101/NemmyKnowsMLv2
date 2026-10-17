@@ -1,9 +1,11 @@
-// Display vocabulary for cfb.position_traits. The names are what a fan reads
-// on the card; the one-sentence explanations open from the info icon. The
-// trait keys are the backend's and must stay in step with momentumcfb's
-// position_traits_v1 report.
+// Display vocabulary for the position_traits tables of both football sports.
+// The names are what a fan reads on the card; the one-sentence explanations
+// open from the info icon. The trait keys are the backends' and must stay in
+// step with momentumcfb's and momentumnfl's position_traits_v1 reports.
 
-export const POSITION_ORDER = ["QB", "RB", "WR", "TE", "OL", "DL", "LB", "DB"] as const;
+export type GradeSport = "cfb" | "nfl";
+
+export const POSITION_ORDER = ["QB", "RB", "WR", "TE", "OL", "DL", "LB", "DB", "P"] as const;
 export type PositionGroup = (typeof POSITION_ORDER)[number];
 
 export const GRADE_TIP =
@@ -11,6 +13,19 @@ export const GRADE_TIP =
 
 export const WAR_TIP =
   "Wins above replacement: his points above a replacement-level player at his position (credited plays, opponent adjusted, shrunk toward the position), converted to wins with each game's leverage from the pregame projection. Defensive credit covers only tagged disruptions, so defensive WAR is undercounted.";
+
+const NFL_GRADE_TIP =
+  "A 20 to 80 scouting grade. His traits combined with weights set on 2016 to 2024 by how reliably each trait repeats from game to game, how much of it travels with a player who changes teams, and, where it predicts better, a fit to his own next-season EPA credit. 50 is the average qualified NFL player at the position this week and 10 points is one standard deviation. The ± is the noise at his game count.";
+
+const NFL_WAR_TIP =
+  "Wins above replacement: his opponent-adjusted EPA credit on competitive plays above the replacement level at his position, converted to wins with each game's leverage from the pregame projection. Defensive credit covers tagged disruptions and tackles on stops, never coverage, so defensive WAR is undercounted.";
+
+// Copy that differs between the sports: who the percentile pool is, and how
+// the grade and WAR explain themselves.
+export const SPORT_COPY: Record<GradeSport, { pool: string; gradeTip: string; warTip: string; apiPath: string; groupLabel: string }> = {
+  cfb: { pool: "qualified FBS players", gradeTip: GRADE_TIP, warTip: WAR_TIP, apiPath: "/cfb/api/player-traits", groupLabel: "Conference" },
+  nfl: { pool: "qualified NFL players", gradeTip: NFL_GRADE_TIP, warTip: NFL_WAR_TIP, apiPath: "/nfl/api/player-traits", groupLabel: "Division" },
+};
 
 export const TRAIT_LABELS: Record<string, { label: string; tip: string }> = {
   "epa.credit": {
@@ -150,10 +165,85 @@ export const TRAIT_LABELS: Record<string, { label: string; tip: string }> = {
     label: "Line yards",
     tip: "Adjusted line yards per carry, the line's share of rushing yards, adjusted for the defense faced. Unit rating.",
   },
+  "p.punt_average": {
+    label: "Punt distance",
+    tip: "Yards per punt above the league average through the previous week.",
+  },
+  "p.net": {
+    label: "Net punting",
+    tip: "Gross yards less return yards and 20 for each touchback, per punt.",
+  },
+  "p.fair_catch_share": {
+    label: "Fair catches",
+    tip: "Share of his punts fair caught: the closest the data gets to hang time.",
+  },
+  "p.no_return_share": {
+    label: "No return",
+    tip: "Share of his punts the returner never ran back: fair caught, downed, out of bounds or a touchback.",
+  },
 };
 
-export function traitLabel(trait: string): { label: string; tip: string } {
-  return TRAIT_LABELS[trait] ?? { label: trait, tip: "" };
+// NFL-only traits, and NFL wording where the same trait is built from a
+// different feed (quarterback hits rather than hurries, no player value v4).
+const NFL_TRAIT_LABELS: Record<string, { label: string; tip: string }> = {
+  "epa.credit": {
+    label: "EPA credit",
+    tip: "His credited competitive plays valued by expected points added, adjusted for the opponent through the previous week, per credited game. The passer and receiver split a pass, a rusher owns a carry, and a defender shares a play he was tagged on.",
+  },
+  "qb.accuracy": {
+    label: "Accuracy",
+    tip: "Completion percentage over expected per throw, from the feed's expected completion model, adjusted for the defense faced.",
+  },
+  "qb.legs": {
+    label: "Rushing",
+    tip: "Success rate on scrambles and designed runs above what each situation usually produces, adjusted for the defense.",
+  },
+  "rec.yac_over_expected": {
+    label: "Yards after catch",
+    tip: "Yards after the catch above the feed's expectation for each reception, adjusted for the defense faced.",
+  },
+  "rec.target_share": {
+    label: "Target share",
+    tip: "His share of the team's competitive targets in the games he played.",
+  },
+  "rec.value_per_target": { label: "Value per target", tip: "Adjusted EPA per target." },
+  "def.havoc": {
+    label: "Havoc",
+    tip: "Tackles for loss, forced fumbles, passes defended and interceptions per game, adjusted for the offense faced.",
+  },
+  "def.pass_rush": {
+    label: "Pass rush",
+    tip: "Sacks weighted by the win probability each one swung, plus quarterback hits priced at the median sack, per game.",
+  },
+  "def.finishing": {
+    label: "Finishing",
+    tip: "Sacks as a share of sacks plus quarterback hits: how often pressure becomes a sack.",
+  },
+  "def.stops": {
+    label: "Stops",
+    tip: "Tackles, tackles for loss and sacks on plays the offense lost expected points on, per game, adjusted for the offense faced. A tackle after a long gain is not a stop.",
+  },
+  "def.coverage": {
+    label: "Coverage plays",
+    tip: "Passes defended and interceptions per game, adjusted for the offense faced.",
+  },
+  "def.ball_production": {
+    label: "Ball production",
+    tip: "Interceptions and passes defended per game, adjusted for the offense faced.",
+  },
+  "def.impact": {
+    label: "With vs without",
+    tip: "Expected points per play the defense allowed in games he played versus games he missed, shrunk toward zero. Inferred; needs at least one absence.",
+  },
+  "ol.protection": {
+    label: "Protection",
+    tip: "Sacks and quarterback hits allowed against what the league rate would predict for the team's dropbacks, adjusted for the defense faced. Unit rating.",
+  },
+};
+
+export function traitLabel(trait: string, sport: GradeSport = "cfb"): { label: string; tip: string } {
+  const base = TRAIT_LABELS[trait] ?? { label: trait, tip: "" };
+  return sport === "nfl" ? (NFL_TRAIT_LABELS[trait] ?? base) : base;
 }
 
 export const UNIT_PREFIX = "unit:";

@@ -4,22 +4,32 @@ import { usePathname } from "next/navigation";
 import { NavigationLink as Link } from "@/components/navigation-link";
 import { cn } from "@/lib/utils";
 
-// The three player pages under the one Players nav entry. Links rather than a
-// tablist: each is its own route with its own data and metadata.
-const SECTIONS = [
+// The player pages under one Players nav entry. Links rather than a tablist:
+// each is its own route with its own data and metadata.
+export const CFB_PLAYER_SECTIONS = [
   { href: "/cfb/players", label: "Grades" },
   { href: "/cfb/heisman", label: "Heisman" },
   { href: "/cfb/draft", label: "Draft" },
 ] as const;
+export const NFL_PLAYER_SECTIONS = [
+  { href: "/nfl/players", label: "Grades" },
+  { href: "/nfl/awards", label: "Awards" },
+] as const;
 
-export function PlayerSectionTabs({ className }: { className?: string }) {
+export function PlayerSectionTabs({
+  sections = CFB_PLAYER_SECTIONS,
+  className,
+}: {
+  sections?: readonly { href: string; label: string }[];
+  className?: string;
+}) {
   const pathname = usePathname();
   return (
     <nav
       aria-label="Player pages"
       className={cn("flex flex-wrap items-center font-mono text-xs uppercase tracking-wider", className)}
     >
-      {SECTIONS.map((section) => {
+      {sections.map((section) => {
         const active = pathname.startsWith(section.href);
         return (
           <Link

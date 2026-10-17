@@ -204,6 +204,7 @@ export type NflPerformanceMetric = Narrow<
   Tables<"nfl", "performance_metrics">,
   { prediction_source: CfbPredictionSource }
 >;
+export type NflPositionTrait = Tables<"nfl", "position_traits">;
 
 // ---------------------------------------------------------------------------
 // NHL (nhl schema)
