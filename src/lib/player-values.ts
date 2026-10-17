@@ -11,13 +11,13 @@ export const GRADE_TIP =
   "Projected talent on a 20 to 80 scale, relative to his position. 50 is average; the range reflects uncertainty.";
 
 export const TRADE_VALUE_TIP =
-  "Projected value over his remaining control years, minus salary. Future seasons are discounted 8 percent per year. The range reflects sampling uncertainty only; it excludes uncertainty in aging, playing time, and the price of a win.";
+  "Estimated value of projected fWAR over his remaining control years, minus contract costs. Future seasons are discounted 8 percent per year. Actual trades also depend on team needs and negotiation.";
 
 export const MARKET_VALUE_TIP =
-  "Estimated market value of next season’s projected wins. Shown when no team-control years remain.";
+  "Estimated market salary for next season’s projected production and pitching role. Shown when no team-control years remain.";
 
 export const IMPACT_TIP =
-  "Wins above replacement from his completed season: batting or pitching, plus fielding and baserunning.";
+  "FanGraphs wins above replacement (fWAR) from his completed season.";
 
 export const OUTLOOK_TIP =
   "Projected wins, salary, and surplus for each remaining control year. Faded seasons show free agency.";
@@ -26,7 +26,7 @@ export const PLAYING_TIME_TIP =
   "Expected full-season plate appearances or batters faced, adjusted for recent workload and injuries.";
 
 export const PRICE_TIP =
-  "The price per win is fitted from free-agent contracts signed since 2024.";
+  "Market salaries are calibrated to real contracts and pitching roles. Future arbitration salaries use historical agreements.";
 
 export const PANEL_LABELS: Record<string, string> = {
   batting: "Batting",
