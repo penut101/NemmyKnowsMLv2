@@ -23,6 +23,7 @@ export interface PositionTraitRow {
   kind: string | null;
   in_grade: boolean;
   uncertainty: number | null;
+  reliability?: number | null;
   points_above_replacement: number | null;
 }
 
@@ -35,6 +36,11 @@ export interface GradedPlayer {
   grade: number | null;
   gradePercentile: number | null;
   uncertainty: number | null;
+  // The fitted forecast behind a rated position's grade, in its own units
+  // (EPA per dropback for a passer, EPA per game for a back), with the
+  // out-of-sample range of outcomes.
+  rating: number | null;
+  ratingRange: number | null;
   war: number | null;
   warPercentile: number | null;
   pointsAboveReplacement: number | null;
@@ -107,6 +113,7 @@ export function buildGradedPlayers(rows: PositionTraitRow[]): Record<string, Gra
   const out: Record<string, GradedPlayer> = {};
   for (const [athleteId, list] of byAthlete) {
     const grade = list.find((r) => r.trait === "grade") ?? null;
+    const rating = list.find((r) => r.trait === "rating") ?? null;
     const war = list.find((r) => r.trait === "war") ?? null;
     const first = grade ?? list[0];
     out[athleteId] = {
@@ -118,11 +125,13 @@ export function buildGradedPlayers(rows: PositionTraitRow[]): Record<string, Gra
       grade: grade?.value ?? null,
       gradePercentile: grade?.percentile ?? null,
       uncertainty: grade?.uncertainty ?? null,
+      rating: rating?.value ?? null,
+      ratingRange: rating?.uncertainty ?? null,
       war: war?.value ?? null,
       warPercentile: war?.percentile ?? null,
       pointsAboveReplacement: war?.points_above_replacement ?? null,
       traits: list
-        .filter((r) => r.trait !== "grade" && r.trait !== "war")
+        .filter((r) => r.trait !== "grade" && r.trait !== "war" && r.trait !== "rating")
         .sort((a, b) => Number(b.in_grade) - Number(a.in_grade) || a.trait.localeCompare(b.trait)),
     };
   }
