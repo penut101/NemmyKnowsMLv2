@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { PageDescription, PageHeader, PageSection, PageShell, PageTitle } from "@/components/page-layout";
 import { IntentLink as Link } from "@/components/navigation-link";
 import { HomeFeatureSlot } from "@/components/home-feature-slot";
@@ -288,7 +289,6 @@ function ModelEntry({
       <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
         {description}
       </p>
-      {children}
       {links.length > 0 && (
         <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1">
           {links.map((link) => (
@@ -300,6 +300,12 @@ function ModelEntry({
               {link.label}
             </Link>
           ))}
+        </div>
+      )}
+      {children && (
+        <div className="mt-4 text-xs text-muted-foreground">
+          <h3 className="font-mono uppercase tracking-wider">Forecast accuracy</h3>
+          {children}
         </div>
       )}
     </div>
@@ -322,7 +328,7 @@ function ModelStats({ forecast, markets, period, spreadLabel = "Spreads" }: {
   spreadLabel?: string;
 }) {
   return (
-    <div className="mt-4 border-t border-border pt-4">
+    <div className="mt-2">
       {forecast && (
         <div>
           <dl className="grid grid-cols-3 gap-x-3">
@@ -336,18 +342,18 @@ function ModelStats({ forecast, markets, period, spreadLabel = "Spreads" }: {
             ))}
           </dl>
           <p className="mt-2 font-mono text-xs text-muted-foreground">
-            {forecast.sample} · Lower is better
+            {forecast.sample} · {period}
           </p>
         </div>
       )}
-      <p className="mt-1 font-mono text-xs text-muted-foreground">{period}</p>
+      {!forecast && <p className="text-xs text-muted-foreground">{period}</p>}
       {markets.length > 0 && (
         <details className="relative z-10 mt-3 text-xs text-muted-foreground">
           <summary className="w-fit cursor-pointer rounded-sm py-1 focus-visible:outline-2 focus-visible:outline-offset-4">
-            Betting record & ROI
+            Prediction results
           </summary>
           <table className="mt-2 w-full text-xs tabular-nums">
-            <caption className="sr-only">Betting results by market</caption>
+            <caption className="sr-only">Prediction results by market</caption>
             <thead className="border-b border-border text-muted-foreground">
               <tr>
                 <th scope="col" className="pb-2 text-left font-normal">Market</th>
@@ -395,21 +401,33 @@ function FootballStats({ headline }: { headline: FootballHeadline }) {
   );
 }
 
-export default async function Home() {
+async function MlbStats() {
+  const [markets, forecast] = await Promise.all([getMlbHeadline(), getMlbForecast()]);
+  return forecast || markets ? (
+    <ModelStats forecast={forecast} markets={markets ?? []} period="Updated nightly" spreadLabel="Run lines" />
+  ) : <p className="mt-3">Forecast performance is temporarily unavailable.</p>;
+}
+
+async function SportStats({ load }: { load: () => Promise<FootballHeadline | null> }) {
+  const headline = await load();
+  return headline ? <FootballStats headline={headline} /> : <p className="mt-3">Forecast performance is temporarily unavailable.</p>;
+}
+
+async function TodayPicks() {
   const today = siteDate();
-  const [mlb, mlbForecast, cfb, nfl, nhl, daily, feature] = await Promise.all([
-    getMlbHeadline(),
-    getMlbForecast(),
-    getCfbHeadline(),
-    getNflHeadline(),
-    getNhlHeadline(),
-    fetchDailyPicks(today),
-    fetchHomeFeature(),
-  ]);
+  const daily = await fetchDailyPicks(today);
   const dateLabel = new Date(`${today}T12:00:00Z`).toLocaleDateString(
     "en-US",
     { timeZone: SITE_TIME_ZONE, weekday: "long", month: "short", day: "numeric" },
   );
+  return <DailyPicks sports={daily} dateLabel={dateLabel} />;
+}
+
+async function FeaturedAnalysis() {
+  return <HomeFeatureSlot feature={await fetchHomeFeature()} />;
+}
+
+export default function Home() {
   const latestPosts = posts.slice(0, 2);
 
   return (
@@ -442,9 +460,7 @@ export default async function Home() {
               Ren&eacute; N&uacute;&ntilde;ez
             </PageTitle>
             <PageDescription>
-              Data Analyst. I build sports forecasting models and evaluate their
-              accuracy, calibration, and performance against the market in public.
-              Explore player grades and team ratings behind the forecasts.
+              Data Analyst. I build player ratings, team ratings, and sports forecasts.
             </PageDescription>
             <ContactLine className="mt-heading text-xs text-muted-foreground" />
           </div>
@@ -453,20 +469,8 @@ export default async function Home() {
         <div className="flex min-w-0 flex-col gap-section">
           <PageSection>
             <h2 className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-              Forecast quality
+              Explore the models
             </h2>
-            <div className="grid gap-4 text-sm text-muted-foreground sm:grid-cols-2">
-              <p>
-                <strong className="font-semibold text-foreground">Market comparisons.</strong>{" "}
-                How close are the forecasts to the results, and how do they compare
-                with closing lines? Lower forecast error is better.
-              </p>
-              <p>
-                <strong className="font-semibold text-foreground">Calibration.</strong>{" "}
-                Do outcomes match the probabilities? Teams given a 60% chance
-                should win about 60% of the time. Explore the evaluations below.
-              </p>
-            </div>
             {/* Entries are separated by rules, not enclosed in boxes. */}
             <div className="divide-y divide-border border-y border-rule-strong">
               <ModelEntry
@@ -474,62 +478,75 @@ export default async function Home() {
                 name="MLB"
                 live
                 cta="Explore players"
-                description="Hierarchical Bayesian model simulating every game one plate appearance at a time."
-                links={[{ href: "/mlb/performance", label: "Accuracy & calibration" }]}
+                description="Hitter and pitcher ratings, projected production, and player value."
+                links={[
+                  { href: "/mlb/performance", label: "Accuracy & calibration" },
+                  { href: "/mlb/playoffs", label: "Playoff outlook" },
+                ]}
               >
-                {(mlbForecast || mlb) && (
-                  <ModelStats
-                    forecast={mlbForecast}
-                    markets={mlb ?? []}
-                    period="Updated nightly"
-                    spreadLabel="Run lines"
-                  />
-                )}
+                <Suspense fallback={<p className="mt-3">Loading forecast performance...</p>}>
+                  <MlbStats />
+                </Suspense>
               </ModelEntry>
 
               <ModelEntry
                 href={SPORT_HOME.cfb}
                 name="CFB"
-                live={cfb?.live ?? null}
+                live={null}
                 cta="Explore ratings"
-                description="Weekly spread, total, and moneyline predictions with frozen lines, built on power ratings for every Division 1 program."
+                description="Player and unit ratings across Division 1, with Heisman and draft outlooks."
                 links={[
-                  { href: "/cfb/performance", label: "Model vs. market" },
+                  { href: "/cfb/ratings", label: "Team ratings" },
+                  { href: "/cfb/players", label: "Player ratings" },
                   { href: "/cfb/heisman", label: "Heisman tracker" },
+                  { href: "/cfb/performance", label: "Model vs. market" },
                 ]}
               >
-                {cfb && <FootballStats headline={cfb} />}
+                <Suspense fallback={<p className="mt-3">Loading forecast performance...</p>}>
+                  <SportStats load={getCfbHeadline} />
+                </Suspense>
               </ModelEntry>
 
               <ModelEntry
                 href={SPORT_HOME.nfl}
                 name="NFL"
-                live={nfl?.live ?? null}
+                live={null}
                 cta="Explore ratings"
-                description="Bayesian power ratings for all 32 teams from drive-level EPA, with weekly spread and total projections priced against the market."
+                description="Player grades, team strength, and season and awards projections."
                 links={[
-                  { href: "/nfl/performance", label: "Model vs. market" },
+                  { href: "/nfl/ratings", label: "Team ratings" },
+                  { href: "/nfl/players", label: "Player ratings" },
                   { href: "/nfl/season-wins", label: "Season win projections" },
                   { href: "/nfl/awards", label: "Awards tracker" },
+                  { href: "/nfl/performance", label: "Model vs. market" },
                 ]}
               >
-                {nfl && <FootballStats headline={nfl} />}
+                <Suspense fallback={<p className="mt-3">Loading forecast performance...</p>}>
+                  <SportStats load={getNflHeadline} />
+                </Suspense>
               </ModelEntry>
 
               <ModelEntry
                 href={SPORT_HOME.nhl}
                 name="NHL"
-                live={nhl?.live ?? null}
+                live={null}
                 cta="Explore ratings"
-                description="Poisson goal model from last-25-game shot-quality windows, priced daily against the NHL partner sportsbooks with frozen moneyline and total picks."
-                links={[{ href: "/nhl/performance", label: "Accuracy & calibration" }]}
+                description="Team strength through shot quality, expected goals, and attack and defense ratings."
+                links={[
+                  { href: "/nhl/ratings", label: "Team ratings" },
+                  { href: "/nhl/performance", label: "Accuracy & calibration" },
+                ]}
               >
-                {nhl && <FootballStats headline={nhl} />}
+                <Suspense fallback={<p className="mt-3">Loading forecast performance...</p>}>
+                  <SportStats load={getNhlHeadline} />
+                </Suspense>
               </ModelEntry>
             </div>
           </PageSection>
 
-          <DailyPicks sports={daily} dateLabel={dateLabel} />
+          <Suspense fallback={<p className="text-xs text-muted-foreground">Loading today&apos;s predictions...</p>}>
+            <TodayPicks />
+          </Suspense>
 
           <PageSection>
             <div className="flex items-baseline justify-between gap-4">
@@ -571,7 +588,9 @@ export default async function Home() {
           </PageSection>
         </div>
 
-        <HomeFeatureSlot feature={feature} />
+        <Suspense fallback={<p className="text-sm text-muted-foreground">Loading featured analysis...</p>}>
+          <FeaturedAnalysis />
+        </Suspense>
       </PageShell>
     </>
   );

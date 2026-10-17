@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import { PageSection } from "@/components/page-layout";
 import { IntentLink as Link } from "@/components/navigation-link";
 import { Kickoff } from "@/components/kickoff-cells";
@@ -29,101 +30,104 @@ export function DailyPicks({
 }) {
   return (
     <PageSection aria-labelledby="today-heading">
-      <div className="flex items-baseline justify-between gap-4">
-        <h2
-          id="today-heading"
-          className="font-mono text-xs uppercase tracking-wider text-muted-foreground"
-        >
-          Today&apos;s predictions
-        </h2>
-        <span className="font-mono text-xs text-muted-foreground">
-          {dateLabel}
-        </span>
-      </div>
-      <LocalKickoffs>
-        <div className="divide-y divide-border border-y border-rule-strong">
-          {sports.map((sport) => {
-            const pickCount = sport.games.reduce(
-              (total, game) => total + game.picks.length,
-              0,
-            );
-            return (
-              <div key={sport.sport} className="py-4">
-                <div className="flex items-baseline justify-between gap-4">
-                  <div className="flex items-baseline gap-3">
+      <details className="group/picks">
+        <summary className="flex cursor-pointer items-center justify-between gap-4 rounded-sm py-2 focus-visible:outline-2 focus-visible:outline-offset-4">
+          <h2
+            id="today-heading"
+            className="font-mono text-xs uppercase tracking-wider text-muted-foreground"
+          >
+            Today&apos;s predictions
+          </h2>
+          <span className="flex items-center gap-3 text-muted-foreground">
+            <span className="font-mono text-xs">{dateLabel}</span>
+            <ChevronDown aria-hidden="true" className="size-4 shrink-0 transition-transform group-open/picks:rotate-180" />
+          </span>
+        </summary>
+        <LocalKickoffs>
+          <div className="divide-y divide-border border-y border-rule-strong">
+            {sports.map((sport) => {
+              const pickCount = sport.games.reduce(
+                (total, game) => total + game.picks.length,
+                0,
+              );
+              return (
+                <div key={sport.sport} className="py-4">
+                  <div className="flex items-baseline justify-between gap-4">
+                    <div className="flex items-baseline gap-3">
+                      <Link
+                        href={sport.href}
+                        className="font-heading text-base hover:underline underline-offset-4"
+                      >
+                        {sport.name}
+                      </Link>
+                      {sport.games.length > 0 && (
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {plural(pickCount, "prediction")} across{" "}
+                          {sport.games.length} of {plural(sport.gameCount, "game")}
+                        </span>
+                      )}
+                    </div>
                     <Link
                       href={sport.href}
-                      className="font-heading text-base hover:underline underline-offset-4"
+                      className="font-mono text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
                     >
-                      {sport.name}
+                      All &rarr;
                     </Link>
-                    {sport.games.length > 0 && (
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {plural(pickCount, "prediction")} across{" "}
-                        {sport.games.length} of {plural(sport.gameCount, "game")}
-                      </span>
-                    )}
                   </div>
-                  <Link
-                    href={sport.href}
-                    className="font-mono text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    All &rarr;
-                  </Link>
+                  {sport.games.length === 0 ? (
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {emptyMessage(sport)}
+                    </p>
+                  ) : (
+                    <ul className="mt-3 space-y-3">
+                      {sport.games.map((game) => (
+                        <li key={game.key} className="flex gap-4">
+                          <span className="w-16 shrink-0 pt-0.5 font-mono text-xs text-muted-foreground tabular-nums">
+                            <Kickoff start={game.start} part="time" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold">
+                              {game.away_team}{" "}
+                              <span className="font-normal text-muted-foreground">
+                                at
+                              </span>{" "}
+                              {game.home_team}
+                            </p>
+                            <ul className="mt-1 space-y-0.5">
+                              {game.picks.map((pick) => (
+                                <li
+                                  key={pick.market}
+                                  className="flex items-baseline justify-between gap-3 text-xs"
+                                >
+                                  <span className="flex min-w-0 items-baseline gap-2">
+                                    <span className="w-16 shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                                      {MARKET_LABELS[pick.market]}
+                                    </span>
+                                    <span className="truncate font-medium">
+                                      {pick.label}
+                                    </span>
+                                  </span>
+                                  <span className="shrink-0 font-mono tabular-nums">
+                                    {formatOdds(pick.price)}
+                                    <span className="text-muted-foreground">
+                                      {" "}
+                                      · {formatPct(pick.probability)}
+                                    </span>
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
-                {sport.games.length === 0 ? (
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    {emptyMessage(sport)}
-                  </p>
-                ) : (
-                  <ul className="mt-3 space-y-3">
-                    {sport.games.map((game) => (
-                      <li key={game.key} className="flex gap-4">
-                        <span className="w-16 shrink-0 pt-0.5 font-mono text-xs text-muted-foreground tabular-nums">
-                          <Kickoff start={game.start} part="time" />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-semibold">
-                            {game.away_team}{" "}
-                            <span className="font-normal text-muted-foreground">
-                              at
-                            </span>{" "}
-                            {game.home_team}
-                          </p>
-                          <ul className="mt-1 space-y-0.5">
-                            {game.picks.map((pick) => (
-                              <li
-                                key={pick.market}
-                                className="flex items-baseline justify-between gap-3 text-xs"
-                              >
-                                <span className="flex min-w-0 items-baseline gap-2">
-                                  <span className="w-16 shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                                    {MARKET_LABELS[pick.market]}
-                                  </span>
-                                  <span className="truncate font-medium">
-                                    {pick.label}
-                                  </span>
-                                </span>
-                                <span className="shrink-0 font-mono tabular-nums">
-                                  {formatOdds(pick.price)}
-                                  <span className="text-muted-foreground">
-                                    {" "}
-                                    · {formatPct(pick.probability)}
-                                  </span>
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </LocalKickoffs>
+              );
+            })}
+          </div>
+        </LocalKickoffs>
+      </details>
     </PageSection>
   );
 }
