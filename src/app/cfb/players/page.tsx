@@ -55,11 +55,9 @@ export default async function PlayersPage() {
       <PlayerSectionTabs />
 
       <p className="max-w-4xl text-sm text-muted-foreground leading-relaxed">
-        Two numbers per player, both his own. The grade is a 20 to 80 scouting number
-        built from named traits at his position, each adjusted for the opponents he
-        faced, with the weights chosen by how well the traits predict a player&apos;s own
-        next season. Wins above replacement is what his credited plays were worth,
-        converted to wins with the leverage of the games he played in.
+        Position-specific grades and wins above replacement. Explore the traits
+        behind each grade, see additional context, or compare two players at the
+        same position.
       </p>
 
       <div className="grid grid-cols-3 gap-3 border-y border-rule-strong [&>div]:py-3 sm:gap-4">

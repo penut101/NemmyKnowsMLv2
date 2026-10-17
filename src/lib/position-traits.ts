@@ -273,6 +273,23 @@ export const KIND_LABELS: Record<MeasureKind, { label: string; tip: string }> = 
   },
 };
 
+// CFB publishes whether a trait contributes to the grade, but does not publish
+// the NFL charting-based quality, processing, role, style and noise taxonomy.
+export const CFB_SECTION_ORDER = ["grade_inputs", "context"] as const;
+export type TraitSection = MeasureKind | (typeof CFB_SECTION_ORDER)[number];
+
+export const TRAIT_SECTION_LABELS: Record<TraitSection, { label: string; tip: string }> = {
+  ...KIND_LABELS,
+  grade_inputs: {
+    label: "Grade inputs",
+    tip: "Traits used in this position’s published grade. Striped bars are inferred from teammates or unit results.",
+  },
+  context: {
+    label: "More context",
+    tip: "Additional stats that do not contribute to this position’s grade. Not being graded does not by itself mean a stat is unreliable.",
+  },
+};
+
 export const RATING_LABELS: Record<string, { label: string; unit: string; tip: string }> = {
   QB: {
     label: "Forecast",

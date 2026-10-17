@@ -5,7 +5,8 @@ import { ChevronDown } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import type { GradedPlayer, GradedPlayerTrait, PlayerIndexRow } from "@/lib/position-grades";
 import {
-  KIND_LABELS,
+  CFB_SECTION_ORDER,
+  TRAIT_SECTION_LABELS,
   KIND_ORDER,
   POSITION_ORDER,
   RATING_LABELS,
@@ -14,7 +15,7 @@ import {
   isUnitRow,
   traitLabel,
   type GradeSport,
-  type MeasureKind,
+  type TraitSection,
   type PositionGroup,
 } from "@/lib/position-traits";
 import { EMPTY, cn, formatNumber, formatSigned } from "@/lib/utils";
@@ -44,7 +45,7 @@ const INFERRED_FILL = {
 // kind each belongs to so the card can head each section once.
 interface TraitLine {
   name: string;
-  kind: MeasureKind | null;
+  kind: TraitSection | null;
 }
 
 function TraitRow({
@@ -193,7 +194,7 @@ function GradeCard({
   const grade = player?.grade ?? row.grade;
   const rating = RATING_LABELS[row.positionGroup];
   const rated = rating != null && player?.rating != null;
-  const sections: { kind: MeasureKind | null; names: string[] }[] = [];
+  const sections: { kind: TraitSection | null; names: string[] }[] = [];
   for (const line of lines) {
     const last = sections[sections.length - 1];
     if (last && last.kind === line.kind) last.names.push(line.name);
@@ -263,7 +264,7 @@ function GradeCard({
       {player && (
         <Accordion.Root multiple className="space-y-2">
           {sections.map((section) => {
-            const label = section.kind ? KIND_LABELS[section.kind].label : "Attributes";
+            const label = section.kind ? TRAIT_SECTION_LABELS[section.kind].label : "Attributes";
             const traits = section.names.map((name) => (
               <TraitRow
                 key={name}
@@ -274,9 +275,9 @@ function GradeCard({
               />
             ));
             const info = section.kind && (
-              <InfoTip text={KIND_LABELS[section.kind].tip} label={`What are ${label} measures?`} />
+              <InfoTip text={TRAIT_SECTION_LABELS[section.kind].tip} label={`What are ${label} measures?`} />
             );
-            return sport === "nfl" ? (
+            return (
               <Accordion.Item key={section.kind ?? "traits"} value={section.kind ?? "traits"} className="border-t border-border">
                 <div className="flex items-center gap-2">
                   <Accordion.Header className="min-w-0 flex-1">
@@ -292,16 +293,6 @@ function GradeCard({
                   {traits}
                 </Accordion.Panel>
               </Accordion.Item>
-            ) : (
-              <div key={section.kind ?? "traits"} className="space-y-1.5">
-                {section.kind && (
-                  <div className="flex items-center gap-1.5 pt-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                    {label}
-                    {info}
-                  </div>
-                )}
-                {traits}
-              </div>
             );
           })}
         </Accordion.Root>
@@ -379,7 +370,7 @@ function ComparePanel({
 }) {
   const copy = SPORT_COPY[sport];
   const rating = RATING_LABELS[rows[0].positionGroup];
-  const sections: { kind: MeasureKind | null; names: string[] }[] = [];
+  const sections: { kind: TraitSection | null; names: string[] }[] = [];
   for (const line of lines) {
     const last = sections[sections.length - 1];
     if (last && last.kind === line.kind) last.names.push(line.name);
@@ -440,8 +431,8 @@ function ComparePanel({
             <div key={section.kind ?? "traits"} className="space-y-1.5">
               {section.kind && (
                 <div className="flex items-center justify-center gap-1.5 pt-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                  {KIND_LABELS[section.kind].label}
-                  <InfoTip text={KIND_LABELS[section.kind].tip} label={`What are ${KIND_LABELS[section.kind].label} measures?`} />
+                  {TRAIT_SECTION_LABELS[section.kind].label}
+                  <InfoTip text={TRAIT_SECTION_LABELS[section.kind].tip} label={`What are ${TRAIT_SECTION_LABELS[section.kind].label} measures?`} />
                 </div>
               )}
               {section.names.map((name) => (
@@ -545,10 +536,10 @@ export default function PositionGrades({
 
   // The same rows on every card at a position, taken from every loaded player
   // of that position. A fitted rating's measures sit in sections by kind,
-  // weighted measures first, then the most reliable; the older traits sit
-  // weighted first, then alphabetical.
+  // weighted measures first, then the most reliable. CFB groups the published
+  // grade inputs separately from the remaining descriptive stats.
   const linesFor = useMemo(() => {
-    const byGroup = new Map<string, Map<string, { inGrade: boolean; kind: MeasureKind | null; reliability: number }>>();
+    const byGroup = new Map<string, Map<string, { inGrade: boolean; kind: TraitSection | null; reliability: number }>>();
     for (const row of index) {
       const player = loaded[row.athleteId];
       if (!player) continue;
@@ -565,8 +556,13 @@ export default function PositionGrades({
     }
     return (positionGroup: string): TraitLine[] =>
       [...(byGroup.get(positionGroup) ?? new Map()).entries()]
+        .map(([name, meta]): [string, { inGrade: boolean; kind: TraitSection | null; reliability: number }] => [
+          name,
+          { ...meta, kind: sport === "cfb" ? (meta.inGrade ? "grade_inputs" : "context") : meta.kind },
+        ])
         .sort(([a, x], [b, y]) => {
-          const kindRank = (k: MeasureKind | null) => (k == null ? -1 : KIND_ORDER.indexOf(k));
+          const order: readonly TraitSection[] = sport === "cfb" ? CFB_SECTION_ORDER : KIND_ORDER;
+          const kindRank = (k: TraitSection | null) => (k == null ? -1 : order.indexOf(k));
           return (
             kindRank(x.kind) - kindRank(y.kind) ||
             Number(y.inGrade) - Number(x.inGrade) ||
@@ -575,7 +571,7 @@ export default function PositionGrades({
           );
         })
         .map(([name, meta]) => ({ name, kind: meta.kind }));
-  }, [index, loaded]);
+  }, [index, loaded, sport]);
   const graded = gradedCounts[position] ?? 0;
 
   return (
@@ -619,7 +615,7 @@ export default function PositionGrades({
           ? `${matches.length} player${matches.length === 1 ? "" : "s"} match “${query.trim()}”${group === ALL ? "" : ` in the ${group}`}, best grade first`
           : `Top ${visible.length} of ${matches.length} ${group === ALL ? "" : `${group} `}${position} · ${graded} graded this week`}
         <InfoTip
-          text={`Percentiles among ${copy.pool} at the position this week. Solid: directly measured. Striped: inferred. Grey: style, not quality. Dimmed: not graded. The r shows consistency between odd and even games.`}
+          text={`Percentiles among ${copy.pool} at the position this week. ${sport === "cfb" ? "Grade inputs contribute to the rating; More context does not. Solid bars use recorded plays or stats; striped bars are inferred from teammates or unit results. Dimmed: not graded." : "Solid: directly measured. Striped: inferred. Grey: style, not quality. Dimmed: not graded. The r shows consistency between odd and even games."}`}
           label="How to read the bars"
         />
       </p>
