@@ -18,7 +18,7 @@ import {
 import { EMPTY, cn, formatNumber, formatSigned } from "@/lib/utils";
 import { InfoTip } from "@/components/info-tip";
 import { PlayerCell } from "@/components/player-cell";
-import type { TeamLogoSource } from "@/components/team-logo";
+import { TeamLogo, type TeamLogoSource } from "@/components/team-logo";
 import { PlayerComparisonPicker } from "@/components/player-comparison-picker";
 import { ToggleGroup } from "@/components/toggle-group";
 
@@ -122,12 +122,7 @@ function Identity({ row, logo }: { row: PlayerIndexRow; logo: TeamLogoSource | u
   if (isUnitRow(row.athleteId)) {
     return (
       <div className="flex items-center gap-2.5">
-        <span
-          aria-hidden="true"
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border bg-muted font-mono text-xs text-muted-foreground"
-        >
-          OL
-        </span>
+        <TeamLogo team={logo} name={row.team} className="h-9 w-9" />
         <div className="min-w-0">
           <div className="truncate font-medium">{row.team} offensive line</div>
           <div className="text-xs text-muted-foreground">unit · {formatNumber(row.games, 0)} games</div>
