@@ -210,7 +210,7 @@ function GradeCard({
           <span className="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground">{rank}</span>
           <Identity row={row} logo={logo} />
         </div>
-        <div className="flex shrink-0 flex-wrap justify-end gap-3 pl-8 text-right sm:pl-0">
+        <div className="flex shrink-0 flex-wrap justify-end gap-3 text-right">
           <Headline
             label="grade"
             tip={rated ? rating.tip : copy.gradeTip}
