@@ -181,6 +181,8 @@ function GradeCard({
   player,
   lines,
   logo,
+  compared,
+  onCompare,
 }: {
   sport: GradeSport;
   rank: number;
@@ -188,6 +190,8 @@ function GradeCard({
   player: GradedPlayer | undefined;
   lines: TraitLine[];
   logo: TeamLogoSource | undefined;
+  compared: boolean;
+  onCompare: () => void;
 }) {
   const copy = SPORT_COPY[sport];
   const grade = player?.grade ?? row.grade;
@@ -247,6 +251,21 @@ function GradeCard({
           />
         </div>
       </div>
+      <div className="pl-8">
+          <button
+            type="button"
+            onClick={onCompare}
+            aria-pressed={compared}
+            className={cn(
+              "shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              compared
+                ? "border-[var(--brand-highlight)] bg-[var(--brand-highlight)] text-[var(--brand-ink)]"
+                : "border-border text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {compared ? "comparing" : "compare"}
+          </button>
+      </div>
       {player && (
         <div className="space-y-2">
           {sections.map((section) => (
@@ -271,6 +290,159 @@ function GradeCard({
         </div>
       )}
     </article>
+  );
+}
+
+// Two players of one position side by side: the same measure rows as the
+// cards, one bar growing left for the first player and one growing right for
+// the second, percentiles at the edges.
+function CompareRow({
+  sport,
+  name,
+  left,
+  right,
+}: {
+  sport: GradeSport;
+  name: string;
+  left: PositionTraitRow | undefined;
+  right: PositionTraitRow | undefined;
+}) {
+  const { label, tip } = traitLabel(name, sport);
+  const sample = left ?? right;
+  const kind = isMeasureKind(sample?.kind) ? sample.kind : null;
+  const style = kind === "style" || kind === "role";
+  const dimmed = kind != null ? kind === "noise" : !(sample?.in_grade ?? false);
+  const reliability = sample?.reliability ?? null;
+  const pct = (t: PositionTraitRow | undefined) => t?.percentile ?? null;
+  const bar = (t: PositionTraitRow | undefined, color: string, fromRight: boolean) => (
+    <span className={cn("flex h-1.5 overflow-hidden rounded-[1px] bg-grid", fromRight && "justify-end")}>
+      <span
+        className={cn("block h-full", color, dimmed && "opacity-40")}
+        style={{ width: `${pct(t) ?? 0}%`, ...(t?.kind === "inferred" ? INFERRED_FILL : {}) }}
+      />
+    </span>
+  );
+  const value = (t: PositionTraitRow | undefined) => (t?.value == null ? "" : ` (${formatNumber(t.value, 3)})`);
+  return (
+    <div
+      className={cn(
+        "grid grid-cols-[2.25rem_1fr_minmax(0,13rem)_1fr_2.25rem] items-center gap-2.5 text-xs",
+        dimmed && "text-muted-foreground"
+      )}
+    >
+      <span className="text-left font-mono tabular-nums">{pct(left) == null ? EMPTY : Math.round(pct(left)!)}</span>
+      {bar(left, style ? "bg-muted-foreground" : "bg-primary", true)}
+      <span className="flex min-w-0 items-center justify-center gap-1.5">
+        <span className="truncate text-center">{label}</span>
+        <InfoTip
+          text={`${tip}${reliability != null ? ` Game-to-game reliability ${formatNumber(reliability, 2)}.` : ""}${value(left) || value(right) ? ` Raw values: left${value(left) || " none"}, right${value(right) || " none"}.` : ""}`}
+          label={`What is ${label}?`}
+        />
+      </span>
+      {bar(right, style ? "bg-muted-foreground/70" : "bg-accent-blue", false)}
+      <span className="text-right font-mono tabular-nums">{pct(right) == null ? EMPTY : Math.round(pct(right)!)}</span>
+    </div>
+  );
+}
+
+function ComparePanel({
+  sport,
+  rows,
+  players,
+  lines,
+  logoFor,
+  onClear,
+}: {
+  sport: GradeSport;
+  rows: [PlayerIndexRow, PlayerIndexRow];
+  players: [GradedPlayer | undefined, GradedPlayer | undefined];
+  lines: TraitLine[];
+  logoFor: (team: string) => TeamLogoSource | undefined;
+  onClear: () => void;
+}) {
+  const copy = SPORT_COPY[sport];
+  const rating = RATING_LABELS[rows[0].positionGroup];
+  const sections: { kind: MeasureKind | null; names: string[] }[] = [];
+  for (const line of lines) {
+    const last = sections[sections.length - 1];
+    if (last && last.kind === line.kind) last.names.push(line.name);
+    else sections.push({ kind: line.kind, names: [line.name] });
+  }
+  const headline = (row: PlayerIndexRow, player: GradedPlayer | undefined, align: "left" | "right") => {
+    const grade = player?.grade ?? row.grade;
+    const items = [
+      { label: "grade", value: grade == null ? EMPTY : formatNumber(grade, 1), sub: grade == null ? "" : `±${formatNumber(player?.uncertainty, 1)} · pct ${row.percentile == null ? EMPTY : Math.round(row.percentile)}` },
+      ...(rating && player?.rating != null
+        ? [{ label: rating.label, value: formatSigned(player.rating, 2), sub: rating.unit }]
+        : []),
+      { label: "WAR", value: player?.war == null ? EMPTY : formatSigned(player.war, 2), sub: player?.pointsAboveReplacement == null ? "" : `${formatSigned(player.pointsAboveReplacement, 0)} pts` },
+    ];
+    return (
+      <div className={cn("flex flex-wrap gap-3", align === "right" ? "justify-end text-right" : "text-left")}>
+        {items.map((item) => (
+          <div key={item.label} className={cn("flex flex-col", align === "right" ? "items-end" : "items-start")}>
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{item.label}</span>
+            <span className="font-mono text-lg font-bold tabular-nums leading-tight">{item.value}</span>
+            <span className="font-mono text-[11px] tabular-nums text-muted-foreground">{item.sub}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+  return (
+    <section aria-label="Player comparison" className="space-y-3 border border-rule-strong p-4">
+      <div className="flex items-start justify-between gap-3">
+        <Identity row={rows[0]} logo={logoFor(rows[0].team)} />
+        <div className="flex flex-col items-center gap-1">
+          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            {rows[0].positionGroup} comparison
+          </span>
+          <button
+            type="button"
+            onClick={onClear}
+            className="rounded-sm border border-border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            clear
+          </button>
+        </div>
+        <div className="flex flex-row-reverse">
+          <Identity row={rows[1]} logo={logoFor(rows[1].team)} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4 border-y border-rule-strong py-3">
+        {headline(rows[0], players[0], "left")}
+        {headline(rows[1], players[1], "right")}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Gold bars grow left for {rows[0].name}, blue bars grow right for {rows[1].name}; every bar is the
+        player&apos;s percentile among {copy.pool} at {rows[0].positionGroup} this week.
+      </p>
+      {players[0] && players[1] ? (
+        <div className="space-y-2">
+          {sections.map((section) => (
+            <div key={section.kind ?? "traits"} className="space-y-1.5">
+              {section.kind && (
+                <div className="flex items-center justify-center gap-1.5 pt-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  {KIND_LABELS[section.kind].label}
+                  <InfoTip text={KIND_LABELS[section.kind].tip} label={`What are ${KIND_LABELS[section.kind].label} measures?`} />
+                </div>
+              )}
+              {section.names.map((name) => (
+                <CompareRow
+                  key={name}
+                  sport={sport}
+                  name={name}
+                  left={players[0]?.traits.find((t) => t.trait === name)}
+                  right={players[1]?.traits.find((t) => t.trait === name)}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">loading</p>
+      )}
+    </section>
   );
 }
 
@@ -299,6 +471,19 @@ export default function PositionGrades({
   const [query, setQuery] = useState("");
   const search = useDeferredValue(query.trim().toLowerCase());
   const [loaded, setLoaded] = useState<Record<string, GradedPlayer>>(details);
+  // Up to two players of one position to set side by side; picking a player at
+  // another position starts a new pair.
+  const [compare, setCompare] = useState<string[]>([]);
+  const byId = useMemo(() => new Map(index.map((row) => [row.athleteId, row] as const)), [index]);
+  const toggleCompare = (athleteId: string) => {
+    setCompare((current) => {
+      if (current.includes(athleteId)) return current.filter((id) => id !== athleteId);
+      const first = current[0] ? byId.get(current[0]) : undefined;
+      const picked = byId.get(athleteId);
+      if (!first || !picked || first.positionGroup !== picked.positionGroup) return [athleteId];
+      return [...current, athleteId].slice(-2);
+    });
+  };
 
   const groups = useMemo(() => {
     const names = new Set<string>();
@@ -323,7 +508,8 @@ export default function PositionGrades({
   const visible = matches.slice(0, PAGE_ROWS);
 
   useEffect(() => {
-    const missing = visible.filter((row) => !loaded[row.athleteId]).map((row) => row.athleteId);
+    const wanted = [...visible.map((row) => row.athleteId), ...compare];
+    const missing = [...new Set(wanted)].filter((id) => !loaded[id]);
     if (missing.length === 0) return;
     const controller = new AbortController();
     const params = new URLSearchParams({ season: String(season), ids: missing.join(",") });
@@ -334,7 +520,7 @@ export default function PositionGrades({
       })
       .catch(() => {});
     return () => controller.abort();
-  }, [visible, loaded, season, copy.apiPath]);
+  }, [visible, compare, loaded, season, copy.apiPath]);
 
   // The same rows on every card at a position, taken from every loaded player
   // of that position. A fitted rating's measures sit in sections by kind,
@@ -405,6 +591,21 @@ export default function PositionGrades({
         or teammates, grey bars rank a style trait rather than merit, and dimmed lines carry no weight in the grade.
         The r beside a measure is how well it repeats from a player&apos;s odd games to his even games.
       </p>
+      {compare.length === 2 && byId.get(compare[0]) && byId.get(compare[1]) && (
+        <ComparePanel
+          sport={sport}
+          rows={[byId.get(compare[0])!, byId.get(compare[1])!]}
+          players={[loaded[compare[0]], loaded[compare[1]]]}
+          lines={linesFor(byId.get(compare[0])!.positionGroup)}
+          logoFor={logoFor}
+          onClear={() => setCompare([])}
+        />
+      )}
+      {compare.length === 1 && (
+        <p className="text-xs text-muted-foreground">
+          {byId.get(compare[0])?.name} selected. Pick another {byId.get(compare[0])?.positionGroup} to compare, or search for one.
+        </p>
+      )}
       {visible.length === 0 ? (
         <p className="text-sm text-muted-foreground">No players match.</p>
       ) : (
@@ -418,6 +619,8 @@ export default function PositionGrades({
               player={loaded[row.athleteId]}
               lines={linesFor(row.positionGroup)}
               logo={logoFor(row.team)}
+              compared={compare.includes(row.athleteId)}
+              onCompare={() => toggleCompare(row.athleteId)}
             />
           ))}
         </div>
