@@ -151,7 +151,6 @@ function Headline({
   value,
   sub,
   positive,
-  width,
 }: {
   label: string;
   tip: string;
@@ -159,10 +158,9 @@ function Headline({
   value: string;
   sub: string;
   positive?: boolean;
-  width: string;
 }) {
   return (
-    <div className={cn("flex min-w-0 flex-col items-start sm:items-end", width)}>
+    <div className="flex min-w-0 flex-col items-start sm:items-center">
       <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
         {label} <InfoTip text={tip} label={tipLabel} />
       </span>
@@ -208,7 +206,7 @@ function GradeCard({
           <span className="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground">{rank}</span>
           <Identity row={row} logo={logo} />
         </div>
-        <div className={cn("grid gap-3 border-y border-border py-3 text-left sm:flex sm:shrink-0 sm:border-0 sm:py-0 sm:text-right", rated ? "grid-cols-3" : "grid-cols-2")}>
+        <div className={cn("grid gap-3 border-y border-border py-3 text-left sm:border-0 sm:py-0 sm:text-center", rated ? "grid-cols-3" : "grid-cols-2")}>
           <Headline
             label="grade"
             tip={rated ? rating.tip : copy.gradeTip}
@@ -219,7 +217,6 @@ function GradeCard({
                 ? "no grade at this position"
                 : `±${formatNumber(player?.uncertainty, 1)} · pct ${row.percentile == null ? EMPTY : Math.round(row.percentile)}`
             }
-            width="sm:w-24"
           />
           {rated && (
             <Headline
@@ -229,7 +226,6 @@ function GradeCard({
               value={formatSigned(player.rating, 2)}
               sub={`${rating.unit}${player.ratingRange != null ? ` · range ±${formatNumber(player.ratingRange, 0)}` : ""}`}
               positive={player.rating != null && player.rating > 0}
-              width="sm:w-28"
             />
           )}
           <Headline
@@ -245,7 +241,6 @@ function GradeCard({
                   : `${formatSigned(player.pointsAboveReplacement, 0)} pts`
             }
             positive={player?.war != null && player.war > 0}
-            width="sm:w-20"
           />
         </div>
       </div>
@@ -496,8 +491,10 @@ export default function PositionGrades({
   // Up to two players of one position to set side by side; picking a player at
   // another position starts a new pair.
   const [compare, setCompare] = useState<string[]>([]);
+  const [compareOpen, setCompareOpen] = useState(false);
   const byId = useMemo(() => new Map(index.map((row) => [row.athleteId, row] as const)), [index]);
   const toggleCompare = (athleteId: string) => {
+    if (!compare.includes(athleteId)) setCompareOpen(true);
     setCompare((current) => {
       if (current.includes(athleteId)) return current.filter((id) => id !== athleteId);
       const first = current[0] ? byId.get(current[0]) : undefined;
@@ -583,7 +580,7 @@ export default function PositionGrades({
 
   return (
     <div className="space-y-section">
-      <PlayerComparisonPicker players={comparisonPlayers} selected={compare} onChange={setCompare} description="Choose two players at the same position." />
+      <PlayerComparisonPicker players={comparisonPlayers} selected={compare} onChange={setCompare} description="Choose two players at the same position." disclosure={{ open: compareOpen, onOpenChange: setCompareOpen }} />
       <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-center">
         <div className="col-span-2 min-w-0 overflow-x-auto">
         <ToggleGroup

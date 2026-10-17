@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "@/lib/utils";
 import { InfoTip } from "@/components/info-tip";
 
 interface KpiCardProps {
@@ -7,20 +8,21 @@ interface KpiCardProps {
   value: string;
   sub?: string;
   tooltip?: string;
+  compact?: boolean;
 }
 
-export function KpiCard({ label, value, sub, tooltip }: KpiCardProps) {
+export function KpiCard({ label, value, sub, tooltip, compact = false }: KpiCardProps) {
   return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-xs uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <span className={cn("uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1", compact ? "text-[10px] sm:text-xs" : "text-xs")}>
         {label}
         {tooltip && <InfoTip text={tooltip} />}
       </span>
-      <span className="font-mono font-bold tabular-nums text-base">
+      <span className={cn("font-mono font-bold tabular-nums", compact ? "text-sm sm:text-base" : "text-base")}>
         {value}
       </span>
       {sub && (
-        <span className="font-mono text-xs text-muted-foreground tabular-nums">
+        <span className={cn("font-mono text-muted-foreground tabular-nums", compact ? "text-[11px] sm:text-xs" : "text-xs")}>
           {sub}
         </span>
       )}

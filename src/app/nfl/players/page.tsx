@@ -65,23 +65,26 @@ export default async function NflPlayersPage() {
         Position-specific grades, projected production, and wins above replacement. Explore each player&apos;s traits or compare two at the same position.
       </p>
 
-      <div className="grid grid-cols-1 divide-y divide-border border-y border-rule-strong [&>div]:py-3 sm:grid-cols-3 sm:gap-4 sm:divide-y-0">
+      <div className="grid grid-cols-3 gap-3 border-y border-rule-strong [&>div]:py-3 sm:gap-4">
         <KpiCard
-          label="Top graded QB"
+          compact
+          label="Top QB"
           value={topQb?.name ?? "–"}
           sub={topQb ? `${topQb.team} · ${formatNumber(topQb.grade, 1)} grade` : "no graded quarterbacks"}
           tooltip={copy.gradeTip}
         />
         <KpiCard
+          compact
           label="WAR leader"
           value={warLeader?.name ?? "–"}
           sub={warLeader ? `${warLeader.team} · ${formatSigned(warLeader.war, 2)} wins` : "no credited plays"}
           tooltip={`${copy.warTip} Leader in the initial player list.`}
         />
         <KpiCard
-          label="Graded players"
+          compact
+          label="Graded"
           value={formatNumber(gradedTotal, 0)}
-          sub="qualified NFL players this week"
+          sub="qualified this week"
           tooltip="Requires the week’s minimum games played (up to six) and the traits needed for the position’s grade."
         />
       </div>

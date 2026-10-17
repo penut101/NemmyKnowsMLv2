@@ -430,6 +430,7 @@ export default function MlbPlayerValues({ index }: { index: PlayerValueIndex[] }
   const [query, setQuery] = useState("");
   const search = useDeferredValue(query.trim().toLowerCase());
   const [compare, setCompare] = useState<string[]>([]);
+  const [compareOpen, setCompareOpen] = useState(false);
   const comparisonPlayers = useMemo(() => index.map((row) => ({ id: String(row.player_id), label: `${row.player_name ?? row.player_id} · ${row.team || "FA"} · ${row.position_group}`, group: PITCHER_GROUPS.has(row.position_group) ? row.position_group : "batter" })), [index]);
   const comparedRows = compare.map((id) => index.find((row) => String(row.player_id) === id)).filter((row): row is PlayerValueIndex => row != null);
   const [expanded, setExpanded] = useState<number | null>(null);
@@ -490,7 +491,7 @@ export default function MlbPlayerValues({ index }: { index: PlayerValueIndex[] }
 
   return (
     <div className="min-w-0 space-y-section">
-      <PlayerComparisonPicker players={comparisonPlayers} selected={compare} onChange={setCompare} description="Compare any two batters, two starting pitchers, or two relievers." />
+      <PlayerComparisonPicker players={comparisonPlayers} selected={compare} onChange={setCompare} description="Compare two batters, starters, or relievers." disclosure={{ open: compareOpen, onOpenChange: setCompareOpen }} />
       {comparedRows.length === 2 && <MlbComparison rows={[comparedRows[0], comparedRows[1]]} loaded={loaded} />}
       <div className="flex flex-wrap items-center gap-3">
         {/* Eleven positions overflow a phone, so small screens get one select beside the team select. */}
