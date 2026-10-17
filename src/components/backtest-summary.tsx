@@ -25,24 +25,24 @@ export function BacktestKpis({
         label="Model MAE"
         value={formatNumber(overall.modelMae, 2)}
         sub="points"
-        tooltip="Mean absolute error of the model's projected home margin against the actual margin."
+        tooltip="Average distance between predicted and actual home margin, in points. Lower is better."
       />
       <KpiCard
         label="Market MAE"
         value={formatNumber(overall.marketMae, 2)}
         sub="points"
-        tooltip="Mean absolute error of the closing spread against the actual margin."
+        tooltip="Average distance between the closing spread and actual margin, in points. Lower is better."
       />
       <KpiCard
         label="Gap to market"
         value={formatSigned(overall.modelMae - overall.marketMae, 2)}
         sub="points (lower is better)"
-        tooltip="Model MAE minus market MAE. Positive means the closing line is still more accurate than the model."
+        tooltip="Model error minus market error. Positive means the closing line was more accurate."
       />
       <KpiCard
         label="Model closer"
         value={formatPct(overall.modelBeatsMarket)}
-        tooltip="Share of games where the model's margin was strictly closer to the result than the closing spread."
+        tooltip="Share of games where the model’s margin was closer to the actual margin than the closing spread. Ties excluded."
       />
     </div>
   );

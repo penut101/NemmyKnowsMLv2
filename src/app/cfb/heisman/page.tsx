@@ -71,7 +71,7 @@ export default async function HeismanPage() {
           label="Value leader"
           value={valueLeader.athlete_name}
           sub={`${valueLeader.team} · ${formatNumber(valueLeader.value_above_replacement, 1)} pts above replacement`}
-          tooltip="Highest opponent-adjusted EPA above a positional replacement through the latest completed week."
+          tooltip="Most opponent-adjusted points above replacement through the latest completed week."
         />
         <KpiCard
           label="Voter favorite"
@@ -81,19 +81,19 @@ export default async function HeismanPage() {
               ? `${favorite.team} · ${formatPct(favorite.predicted_share, 0)} of the vote`
               : "board not built yet"
           }
-          tooltip="Candidate with the highest predicted vote share from the ballot model, using stats to date, team record, and poll rank."
+          tooltip="Highest predicted vote share, based on current stats, team record and poll rank."
         />
         <KpiCard
           label="Favorite's value rank"
           value={favoriteValueRank != null ? `#${favoriteValueRank}` : "–"}
           sub="on the value board"
-          tooltip="Where the voter favorite sits on the value board. A low number means the model and the voters agree."
+          tooltip="The predicted voter favorite’s rank by player value. Rank 1 means both models agree."
         />
         <KpiCard
           label="Ballot model backtest"
           value={seasonsValidated > 0 ? `${winnersHit} of ${seasonsValidated}` : "–"}
           sub="winners called, expanding-window"
-          tooltip="Each past season is scored using only earlier seasons and information available through the evaluated week."
+          tooltip="Historical winner predictions using only prior seasons and information available that week."
         />
       </div>
 

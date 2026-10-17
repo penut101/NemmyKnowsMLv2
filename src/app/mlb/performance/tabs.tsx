@@ -108,12 +108,12 @@ export function PerformanceTabs({
           <KpiCard
             label="Brier"
             value={formatNumber(latest?.brier_score, 3)}
-            tooltip="Mean squared error of probabilistic predictions vs binary outcomes. Lower is better; 0.25 is the coin-flip baseline."
+            tooltip="Average squared error of win probabilities. Lower is better; a coin flip scores 0.25."
           />
           <KpiCard
             label="MAE"
             value={formatNumber(latest?.mae, 3)}
-            tooltip="Mean absolute error of expected runs vs actual runs. Lower is better; ~2.5 is typical for MLB run prediction."
+            tooltip="Average distance between predicted and actual runs. Lower is better."
           />
           <KpiCard
             label="Pick Acc"
@@ -123,17 +123,17 @@ export function PerformanceTabs({
           <KpiCard
             label="ROI"
             value={formatPct(liveKpis?.roi)}
-            tooltip="Profit per dollar risked. ROI = total P&L ÷ total stakes. 13% ROI means 13¢ profit per $1 staked, on average - not 13% of your bankroll."
+            tooltip="Net profit divided by total stakes. A 13% ROI means 13¢ profit per $1 risked."
           />
           <KpiCard
             label="Sharpe"
             value={formatNumber(liveKpis?.sharpe, 2)}
-            tooltip="Risk-adjusted return: mean daily P&L ÷ std dev of daily P&L. >1 is good, >2 excellent."
+            tooltip="Average daily profit divided by its day-to-day variability. Higher means more return for the variability."
           />
           <KpiCard
             label="Max DD"
             value={liveKpis?.max_drawdown != null ? `${formatSigned(liveKpis.max_drawdown, 2)}u` : EMPTY}
-            tooltip="Worst peak-to-trough decline of cumulative P&L, in units. With flat 1u stake sizing (no compounding), drawdown is reported in absolute units rather than as a % of equity - a Kelly-style % would misrepresent a non-compounding strategy."
+            tooltip="Largest drop from a cumulative profit peak, in units. Stakes use a fixed base without compounding."
           />
         </div>
 
@@ -215,28 +215,28 @@ export function PerformanceTabs({
           <KpiCard
             label="ROI"
             value={formatPct(liveKpis?.roi)}
-            tooltip="Profit per dollar risked. ROI = total P&L ÷ total stakes. 13% ROI means the model returns 13¢ profit on every $1 staked, on average. Independent of bankroll size."
+            tooltip="Net profit divided by total stakes. A 13% ROI means 13¢ profit per $1 risked."
           />
           <KpiCard
             label="Sharpe"
             value={formatNumber(liveKpis?.sharpe, 2)}
-            tooltip="Risk-adjusted return: mean daily P&L ÷ std dev of daily P&L. Higher is better. >1 is good, >2 is excellent."
+            tooltip="Average daily profit divided by its day-to-day variability. Higher means more return for the variability."
           />
           <KpiCard
             label="Sortino"
             value={formatNumber(liveKpis.sortino, 2)}
-            tooltip="Like Sharpe but penalizes only downside volatility. Better metric for asymmetric strategies (gambling, where upside variance is fine)."
+            tooltip="Average daily profit relative to downside variability. Higher means better returns for the downside risk."
           />
           <KpiCard
             label="Max Drawdown"
             value={liveKpis?.max_drawdown != null ? `${formatSigned(liveKpis.max_drawdown, 2)}u` : EMPTY}
-            tooltip="Worst peak-to-trough decline of cumulative P&L, in units. Stakes are flat fractions of a fixed 1u base (no compounding), so reporting drawdown as a % of running equity (the Kelly-style metric) would be misleading."
+            tooltip="Largest drop from a cumulative profit peak, in units. Stakes use a fixed base without compounding."
           />
           <KpiCard
             label="P&L"
             value={`${formatSigned(liveKpis.net_profit_units, 2)}u`}
             sub={`${formatNumber(liveKpis.total_staked_units, 2)}u staked`}
-            tooltip="Net profit in units. 1 unit = your chosen bankroll size - if your bankroll is $100, 1u = $100. Stakes shown below are TOTAL summed across all bets in the window, not a single bet. Bankroll never compounds; each bet is sized as a fraction of a fixed 1u."
+            tooltip="Net profit in units of the fixed starting bankroll. Total stakes sum all bets in the period; returns do not compound."
           />
           <KpiCard
             label="Favorites"
@@ -252,7 +252,7 @@ export function PerformanceTabs({
             label="Run Line"
             value={formatPct(liveKpis?.roi_run_line)}
             sub={`(${liveKpis.run_line_bets_correct}-${liveKpis.n_run_line - liveKpis.run_line_bets_correct})`}
-            tooltip="Run-line bet ROI. Computed from the same ledger as the headline ROI; bets sized via quarter-Kelly on the model's cover probability vs. book spread odds."
+            tooltip="Net profit divided by total run-line stakes, using quarter-Kelly bet sizing."
           />
           <KpiCard label="Avg Line" value={formatOdds(liveKpis.avg_ml_line)} />
           <KpiCard

@@ -5,12 +5,13 @@ import { NavigationLink as Link } from "@/components/navigation-link";
 import { HeaderDate } from "@/components/header-date";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { MomentumWordmark } from "@/components/momentum-wordmark";
+import { SPORT_HOME } from "@/lib/site";
 
 const links = [
-  { href: "/mlb/players", label: "MLB" },
-  { href: "/cfb/ratings", label: "CFB" },
-  { href: "/nfl/ratings", label: "NFL" },
-  { href: "/nhl/ratings", label: "NHL" },
+  { href: SPORT_HOME.mlb, label: "MLB" },
+  { href: SPORT_HOME.cfb, label: "CFB" },
+  { href: SPORT_HOME.nfl, label: "NFL" },
+  { href: SPORT_HOME.nhl, label: "NHL" },
   { href: "/blog", label: "Blog" },
   { href: "/about", label: "About" },
 ];

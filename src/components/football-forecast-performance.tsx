@@ -187,36 +187,36 @@ export function FootballForecastPerformance({
                 label="Games graded"
                 value={String(livePure.games ?? 0)}
                 sub={`${livePure.games_with_market ?? 0} with a closing line`}
-                tooltip="Completed games with a projection published before kickoff and a final score. The second number is how many also have a closing spread."
+                tooltip="Finished games with a pregame forecast. The smaller count shows those with a closing spread."
               />
               <KpiCard
                 label="Model MAE"
                 value={formatNumber(livePublished?.margin_mae, 2)}
                 sub="points"
-                tooltip="Mean absolute error of the published market-informed home margin against the actual margin."
+                tooltip="Average error of the published, market-informed home margin, in points. Lower is better."
               />
               <KpiCard
                 label="Market MAE"
                 value={formatNumber(liveClosing?.margin_mae, 2)}
                 sub="points"
-                tooltip="Mean absolute error of the closing spread against the actual margin, on the games that have one."
+                tooltip="Average closing-spread error in points, for games with a closing line. Lower is better."
               />
               <KpiCard
                 label="Gap to market"
                 value={formatSigned(livePublished?.model_minus_market_mae, 2)}
                 sub="points (lower is better)"
-                tooltip="Model MAE minus market MAE on the games that have a closing spread. Positive means the closing line is more accurate than the model."
+                tooltip="Model error minus closing-spread error on the same games. Positive means the market was more accurate."
               />
               <KpiCard
                 label="Model closer"
                 value={formatPct(livePublished?.closer_than_market_share)}
-                tooltip="Share of games with a closing spread where the published margin was strictly closer to the result."
+                tooltip="Share of games where the published margin was closer to the actual margin than the closing spread. Ties excluded."
               />
               <KpiCard
                 label="80% coverage"
                 value={formatPct(livePublished?.coverage_80, 0)}
                 sub="target 80%"
-                tooltip="Share of actual margins that landed inside the published line's 80% interval, built with the dispersion picks are priced with. Well above 80% means the interval is too wide; well below means too narrow."
+                tooltip="Share of results inside the published 80% range. Target: 80%. Much higher suggests overly wide ranges; much lower suggests overly narrow ranges."
               />
             </div>
 

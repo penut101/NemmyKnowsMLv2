@@ -9,3 +9,10 @@ export const SOCIAL_LINKS = [
   { label: "LinkedIn", value: "linkedin.com/in/renenunezg", href: "https://linkedin.com/in/renenunezg" },
   { label: "Twitter", value: TWITTER_HANDLE, href: "https://twitter.com/nunezanalytics" },
 ] as const;
+
+export const SPORT_HOME = {
+  mlb: "/mlb/players",
+  cfb: "/cfb/ratings",
+  nfl: "/nfl/ratings",
+  nhl: "/nhl/ratings",
+} as const;

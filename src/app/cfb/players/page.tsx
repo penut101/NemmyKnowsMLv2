@@ -73,13 +73,13 @@ export default async function PlayersPage() {
           label="WAR leader"
           value={warLeader?.name ?? "–"}
           sub={warLeader ? `${warLeader.team} · ${formatSigned(warLeader.war, 2)} wins` : "no credited plays"}
-          tooltip={`${WAR_TIP} Leader among the players shown on the server-rendered page.`}
+          tooltip={`${WAR_TIP} Leader in the initial player list.`}
         />
         <KpiCard
           label="Graded players"
           value={formatNumber(gradedTotal, 0)}
           sub="qualified FBS players this week"
-          tooltip="A player qualifies once he has played enough games for the week (up to six) and has values for the traits that carry his position's grade."
+          tooltip="Requires the week’s minimum games played (up to six) and the traits needed for the position’s grade."
         />
       </div>
 

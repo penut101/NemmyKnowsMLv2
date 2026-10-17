@@ -73,7 +73,7 @@ export default async function MlbPlayersPage() {
           label="Graded players"
           value={formatNumber(graded.length, 0)}
           sub={`of ${index.length} on 40-man rosters`}
-          tooltip="A player is graded once his season-equivalent sample reaches 100 plate appearances or batters faced across the last three seasons."
+          tooltip="Requires a season-equivalent sample of 100 plate appearances or batters faced across the last three seasons."
         />
       </div>
 

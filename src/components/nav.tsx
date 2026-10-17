@@ -5,12 +5,12 @@ import { usePathname } from "next/navigation";
 import { SiteHeader } from "@/components/site-header";
 
 const mlbLinks = [
-  { href: "/mlb/methodology", label: "Methodology" },
+  { href: "/mlb/players", label: "Players" },
   { href: "/mlb/games", label: "Games" },
   { href: "/mlb/playoffs", label: "Playoffs" },
-  { href: "/mlb/players", label: "Players" },
   { href: "/mlb/history", label: "History" },
   { href: "/mlb/performance", label: "Performance" },
+  { href: "/mlb/methodology", label: "Methodology" },
 ];
 
 export function Nav({

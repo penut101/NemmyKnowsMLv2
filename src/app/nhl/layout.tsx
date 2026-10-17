@@ -9,12 +9,12 @@ export const metadata: Metadata = {
 };
 
 const nhlLinks = [
-  { href: "/nhl/methodology", label: "Methodology" },
-  { href: "/nhl/games", label: "Games" },
   { href: "/nhl/ratings", label: "Ratings" },
+  { href: "/nhl/games", label: "Games" },
   { href: "/nhl/schedule", label: "Schedule" },
   { href: "/nhl/history", label: "History" },
   { href: "/nhl/performance", label: "Performance" },
+  { href: "/nhl/methodology", label: "Methodology" },
 ];
 
 export default function NhlLayout({

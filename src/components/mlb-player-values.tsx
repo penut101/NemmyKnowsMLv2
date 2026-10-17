@@ -14,7 +14,6 @@ import {
   PRICE_TIP,
   TRADE_VALUE_TIP,
   formatMillions,
-  inputLabel,
   traitLabel,
 } from "@/lib/player-values";
 import { mlbTeamIdentity } from "@/lib/mlb-teams";
@@ -112,18 +111,12 @@ function GradeBar({ grade }: { grade: number | null }) {
 function TraitRow({ trait }: { trait: PlayerTrait }) {
   const { label, tip } = traitLabel(trait.trait);
   const physical = trait.kind === "physical";
-  const inputs = trait.inputs
-    .map(([name, weight, value, pct]) => {
-      const meta = inputLabel(name);
-      return `${meta.label}${weight > 0 ? ` (weight ${weight.toFixed(2)})` : ""}: ${formatNumber(value, Math.abs(value) < 1 ? 3 : 1)}${pct == null ? "" : `, ${Math.round(pct)}th pct`}`;
-    })
-    .join("; ");
   const detail = trait.grade == null
     ? `${tip} Not enough data for this player.`
     : trait.in_grade
       ? tip
-      : `${tip} Shown for context: it carries no weight in the Grade.`;
-  const text = `${detail}${inputs ? ` Inputs: ${inputs}.` : ""}${trait.sample ? ` Sample ${trait.sample}.` : ""}${trait.grade != null ? ` Band ${formatNumber(trait.grade_low, 0)} to ${formatNumber(trait.grade_high, 0)}.` : ""}`;
+      : `${tip} Not used in the grade.`;
+  const text = `${detail}${trait.grade != null ? ` Grade range: ${formatNumber(trait.grade_low, 0)} to ${formatNumber(trait.grade_high, 0)}.` : ""}`;
   return (
     <div className={cn("grid grid-cols-[9rem_1fr_2.5rem] items-center gap-2.5 text-xs", !trait.in_grade && "text-muted-foreground")}>
       <span className="flex min-w-0 items-center gap-1.5">
@@ -162,10 +155,6 @@ function PlayerCard({ row, detail }: { row: PlayerValueIndex; detail: PlayerDeta
   const head = headlineValue(row);
   const pitcher = PITCHER_GROUPS.has(row.position_group);
   const panels = pitcher ? ["arsenal", "results", "durability"] : ["batting", "fielding"];
-  const tip = detail?.tip ?? {};
-  const components = graded
-    ? ` Components: projected ${formatNumber(tip.projected_runs as number, 1)} runs above average per full season, positional ${formatSigned(tip.positional_adjustment as number, 1)}, replacement ${formatNumber(tip.replacement_runs as number, 1)}, playing time ${formatNumber(tip.playing_time as number, 0)}, ${formatNumber(tip.runs_per_win as number, 2)} runs per win, price ${formatMillions(tip.price_per_win_musd as number)} per win (${tip.price_source ?? ""}), discount ${tip.discount ?? ""}.`
-    : "";
   return (
     <div className="space-y-4 py-3">
       <div className="flex flex-wrap gap-x-6 gap-y-1 font-mono text-[11px] text-muted-foreground">
@@ -182,7 +171,7 @@ function PlayerCard({ row, detail }: { row: PlayerValueIndex; detail: PlayerDeta
       <div className="grid grid-cols-3 gap-3">
         <div>
           <div className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-            Grade <InfoTip text={`${GRADE_TIP}${components}`} label="What is the Grade?" />
+            Grade <InfoTip text={GRADE_TIP} label="What is the Grade?" />
           </div>
           <div className="font-mono text-2xl font-bold tabular-nums text-primary">{graded ? formatNumber(row.grade, 0) : EMPTY}</div>
           <div className="font-mono text-[11px] text-muted-foreground">

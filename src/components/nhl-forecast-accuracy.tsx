@@ -113,7 +113,7 @@ function MarketComparison({
             4,
           )}
           sub="lower is better"
-          tooltip="Model log loss minus market log loss. Positive means the closing moneyline predicted winners better than the model."
+          tooltip="Model log loss minus closing-market log loss. Positive means the market predicted winners better."
         />
         <KpiCard
           label="Model total MAE"
@@ -134,7 +134,7 @@ function MarketComparison({
             2,
           )}
           sub="goals"
-          tooltip="Model total MAE minus the closing total's MAE. Positive means the closing total was closer to the goals scored."
+          tooltip="Model total error minus closing-total error. Positive means the market was closer to the goals scored."
         />
       </div>
       {blended && (
@@ -243,30 +243,30 @@ export async function NhlForecastAccuracy({
               label="Log loss"
               value={formatNumber(overall.log_loss, 4)}
               sub="coin flip 0.693"
-              tooltip="Mean negative log likelihood of the home win probability. Lower is better."
+              tooltip="Win-probability error that penalizes confident mistakes heavily. Lower is better."
             />
             <KpiCard
               label="Brier"
               value={formatNumber(overall.brier, 4)}
               sub="coin flip 0.250"
-              tooltip="Mean squared error of the home win probability against the result."
+              tooltip="Average squared error of home-win probabilities. Lower is better; a coin flip scores 0.25."
             />
             <KpiCard
               label="Accuracy"
               value={formatPct(overall.accuracy)}
-              tooltip="Share of games where the side the model favored won."
+              tooltip="Share of games won by the model’s favorite."
             />
             <KpiCard
               label="Total MAE"
               value={formatNumber(overall.total_mae, 2)}
               sub="goals"
-              tooltip="Mean absolute error of the model total against the goals scored, including overtime and the shootout goal."
+              tooltip="Average total-goal error, including overtime and the shootout goal. Lower is better."
             />
             <KpiCard
               label="Total bias"
               value={formatSigned(overall.total_bias, 2)}
               sub="goals"
-              tooltip="Model total minus actual total, averaged. Negative means the model runs low."
+              tooltip="Average predicted minus actual goals. Negative means the model predicts too few."
             />
           </div>
           {accuracy.by_season.length > 1 && (

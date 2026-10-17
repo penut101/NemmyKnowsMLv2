@@ -88,7 +88,7 @@ export function PickKpis({
       <KpiCard
         label="Win rate"
         value={unavailable ? missing : formatPct(metric?.win_rate)}
-        tooltip="Wins divided by wins plus losses. Pushes and voids are excluded."
+        tooltip="Wins divided by wins plus losses. Excludes pushes and voids."
       />
       <KpiCard
         label="Net profit"
@@ -98,7 +98,7 @@ export function PickKpis({
       <KpiCard
         label="ROI"
         value={unavailable ? missing : formatPct(metric?.roi)}
-        tooltip="Net profit divided by stakes on settled picks, including returned pushes. Pending and void picks are excluded. Uses the recorded odds."
+        tooltip="Profit divided by settled stakes at recorded odds. Includes pushes; excludes pending and void picks."
       />
       <KpiCard
         label="Picks settled"
@@ -112,7 +112,7 @@ export function PickKpis({
       <KpiCard
         label="Average EV"
         value={unavailable ? missing : formatPct(metric?.average_ev)}
-        tooltip="Average expected profit per unit at recommendation time across all recommended picks, including pending picks. This is a forecast, not realized profit."
+        tooltip="Average expected profit per unit when recommended, including pending picks. A forecast, not realized profit."
       />
     </div>
   );

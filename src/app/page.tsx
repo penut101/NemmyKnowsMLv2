@@ -24,7 +24,7 @@ import { fetchDailyPicks } from "@/lib/daily-picks-fetch";
 import { DailyPicks } from "@/components/daily-picks";
 import { posts } from "./blog/posts";
 import { JsonLd } from "@/components/json-ld";
-import { SITE_DESCRIPTION, SITE_NAME, SITE_URL, SOCIAL_LINKS } from "@/lib/site";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_URL, SOCIAL_LINKS, SPORT_HOME } from "@/lib/site";
 
 export const revalidate = 3600;
 
@@ -433,10 +433,10 @@ export default async function Home() {
             {/* Entries are separated by rules, not enclosed in boxes. */}
             <div className="divide-y divide-border border-y border-rule-strong">
               <ModelEntry
-                href="/mlb/games"
+                href={SPORT_HOME.mlb}
                 name="MLB"
                 live
-                cta="View today's slate"
+                cta="Explore players"
                 description="Hierarchical Bayesian model simulating every game one plate appearance at a time."
               >
                 {mlb && (
@@ -450,10 +450,10 @@ export default async function Home() {
               </ModelEntry>
 
               <ModelEntry
-                href="/cfb/predictions"
+                href={SPORT_HOME.cfb}
                 name="CFB"
                 live={cfb?.live ?? null}
-                cta="View predictions"
+                cta="Explore ratings"
                 description="Weekly spread, total, and moneyline predictions with frozen lines, built on power ratings for every Division 1 program."
                 links={[{ href: "/cfb/heisman", label: "Heisman tracker" }]}
               >
@@ -461,10 +461,10 @@ export default async function Home() {
               </ModelEntry>
 
               <ModelEntry
-                href="/nfl/predictions"
+                href={SPORT_HOME.nfl}
                 name="NFL"
                 live={nfl?.live ?? null}
-                cta="View predictions"
+                cta="Explore ratings"
                 description="Bayesian power ratings for all 32 teams from drive-level EPA, with weekly spread and total projections priced against the market."
                 links={[
                   { href: "/nfl/season-wins", label: "Season win projections" },
@@ -475,10 +475,10 @@ export default async function Home() {
               </ModelEntry>
 
               <ModelEntry
-                href="/nhl/games"
+                href={SPORT_HOME.nhl}
                 name="NHL"
                 live={nhl?.live ?? null}
-                cta="View today's slate"
+                cta="Explore ratings"
                 description="Poisson goal model from last-25-game shot-quality windows, priced daily against the NHL partner sportsbooks with frozen moneyline and total picks."
               >
                 {nhl && <FootballStats headline={nhl} />}

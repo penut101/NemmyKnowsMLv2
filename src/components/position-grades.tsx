@@ -66,10 +66,10 @@ function TraitRow({
   const detail = trait == null
     ? `${tip} No value for this player yet.`
     : kind != null
-      ? `${tip}${reliability != null ? ` Game-to-game reliability ${formatNumber(reliability, 2)}.` : ""}${inGrade ? " Carries weight in the rating." : style ? " Shown as a trait, not ranked by merit." : noise ? " Shown for reference only; it does not repeat." : " Carries no weight in the rating."}`
+      ? `${tip}${inGrade ? " Used in the grade." : style ? " Higher is not necessarily better." : noise ? " Unreliable across games; not graded." : " Not used in the grade."}`
       : inGrade
         ? tip
-        : `${tip} This trait is shown for context: it carries no weight in the ${group} grade because it was noise from game to game, stayed with the old team when players moved, or could not be measured.`;
+        : `${tip} Not used in the ${group} grade.`;
   const dimmed = kind != null ? noise : !inGrade;
   return (
     <div
@@ -82,7 +82,7 @@ function TraitRow({
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="truncate">{label}</span>
           <InfoTip
-            text={`${detail}${trait?.value != null ? ` Raw value ${formatNumber(trait.value, 3)}.` : ""}`}
+            text={`${detail}${trait?.value != null ? ` Value: ${formatNumber(trait.value, 3)}.` : ""}`}
             label={`What is ${label}?`}
           />
         </span>
@@ -335,7 +335,7 @@ function CompareRow({
       <span className="flex min-w-0 items-center justify-center gap-1.5">
         <span className="truncate text-center">{label}</span>
         <InfoTip
-          text={`${tip}${reliability != null ? ` Game-to-game reliability ${formatNumber(reliability, 2)}.` : ""}${value(left) || value(right) ? ` Raw values: left${value(left) || " none"}, right${value(right) || " none"}.` : ""}`}
+          text={`${tip}${reliability != null ? ` Reliability: ${formatNumber(reliability, 2)}.` : ""}${value(left) || value(right) ? ` Values: left${value(left) || " unavailable"}, right${value(right) || " unavailable"}.` : ""}`}
           label={`What is ${label}?`}
         />
       </span>
@@ -595,7 +595,7 @@ export default function PositionGrades({
           ? `${matches.length} player${matches.length === 1 ? "" : "s"} match “${query.trim()}”${group === ALL ? "" : ` in the ${group}`}, best grade first`
           : `Top ${visible.length} of ${matches.length} ${group === ALL ? "" : `${group} `}${position} · ${graded} graded this week`}
         <InfoTip
-          text={`Every bar is a percentile among ${copy.pool} at the position this week. Gold bars are counted from the player's own tagged plays or box score, striped blue bars are inferred from unit outcomes or teammates, grey bars rank a style trait rather than merit, and dimmed lines carry no weight in the grade. The r beside a measure is how well it repeats from a player's odd games to his even games.`}
+          text={`Percentiles among ${copy.pool} at the position this week. Solid: directly measured. Striped: inferred. Grey: style, not quality. Dimmed: not graded. The r shows consistency between odd and even games.`}
           label="How to read the bars"
         />
       </p>

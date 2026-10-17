@@ -9,16 +9,14 @@ export const metadata: Metadata = {
 };
 
 const nflLinks = [
-  { href: "/nfl/methodology", label: "Methodology" },
   { href: "/nfl/ratings", label: "Ratings" },
-  { href: "/nfl/schedule", label: "Schedule" },
-  { href: "/nfl/predictions", label: "Predictions" },
-  { href: "/nfl/season-wins", label: "Season Wins" },
-  // Grades and the awards tracker are two views of the same players: one nav
-  // entry, with a tab row on each page.
   { href: "/nfl/players", label: "Players", match: ["/nfl/players", "/nfl/awards"] },
+  { href: "/nfl/predictions", label: "Predictions" },
+  { href: "/nfl/schedule", label: "Schedule" },
+  { href: "/nfl/season-wins", label: "Season Wins" },
   { href: "/nfl/history", label: "History" },
   { href: "/nfl/performance", label: "Performance" },
+  { href: "/nfl/methodology", label: "Methodology" },
 ];
 
 export default function NflLayout({
