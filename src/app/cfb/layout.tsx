@@ -13,9 +13,9 @@ const cfbLinks = [
   { href: "/cfb/ratings", label: "Ratings" },
   { href: "/cfb/schedule", label: "Schedule" },
   { href: "/cfb/predictions", label: "Predictions" },
-  { href: "/cfb/heisman", label: "Heisman" },
-  { href: "/cfb/players", label: "Players" },
-  { href: "/cfb/draft", label: "Draft" },
+  // Grades, the Heisman tracker and the draft board are three views of the
+  // same players: one nav entry, with a tab row on each of the three pages.
+  { href: "/cfb/players", label: "Players", match: ["/cfb/players", "/cfb/heisman", "/cfb/draft"] },
   { href: "/cfb/history", label: "History" },
   { href: "/cfb/performance", label: "Performance" },
 ];

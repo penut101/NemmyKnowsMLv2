@@ -3,7 +3,7 @@
 // trait keys are the backend's and must stay in step with momentumcfb's
 // position_traits_v1 report.
 
-export const POSITION_ORDER = ["QB", "RB", "WR", "TE", "OL", "DL", "LB", "DB", "K", "P"] as const;
+export const POSITION_ORDER = ["QB", "RB", "WR", "TE", "OL", "DL", "LB", "DB"] as const;
 export type PositionGroup = (typeof POSITION_ORDER)[number];
 
 export const GRADE_TIP =
@@ -150,11 +150,6 @@ export const TRAIT_LABELS: Record<string, { label: string; tip: string }> = {
     label: "Line yards",
     tip: "Adjusted line yards per carry, the line's share of rushing yards, adjusted for the defense faced. Unit rating.",
   },
-  "k.field_goal": {
-    label: "Field goals over expected",
-    tip: "Field goals made above what kicks of those distances usually make.",
-  },
-  "p.punt_average": { label: "Punt distance", tip: "Yards per punt above the league average." },
 };
 
 export function traitLabel(trait: string): { label: string; tip: string } {

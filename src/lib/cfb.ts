@@ -273,10 +273,6 @@ export const fetchHeismanTracker = cache(async (): Promise<CfbHeismanTracker> =>
 export const GRADE_ROWS = 40;
 const ID_CHUNK = 50;
 const PAGE = 1000;
-// A position whose only trait earned no grade weight (kickers: field goals
-// over expected are noise game to game) is listed by that trait instead.
-const PRIMARY_TRAIT: Record<string, string> = { K: "k.field_goal", P: "p.punt_average" };
-
 export interface CfbGradedPlayer {
   athleteId: string;
   name: string;
@@ -428,14 +424,6 @@ export const fetchPositionGrades = cache(async (): Promise<CfbPositionGrades> =>
   const index = gradeRows.map((row) => toIndex(row, row.value));
   const gradedCounts: Record<string, number> = {};
   for (const row of index) gradedCounts[row.positionGroup] = (gradedCounts[row.positionGroup] ?? 0) + 1;
-
-  // Positions with no grade are listed by their primary trait.
-  for (const [group, trait] of Object.entries(PRIMARY_TRAIT)) {
-    if (gradedCounts[group]) continue;
-    const rows = await fetchTraitRows(latest.season, trait);
-    const groupRows = rows.filter((row) => row.position_group === group);
-    index.push(...groupRows.map((row) => toIndex(row, null)));
-  }
 
   const rank = (a: CfbPlayerIndexRow, b: CfbPlayerIndexRow) =>
     (b.grade ?? -Infinity) - (a.grade ?? -Infinity) || (b.percentile ?? -1) - (a.percentile ?? -1);

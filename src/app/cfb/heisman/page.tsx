@@ -1,4 +1,5 @@
 import { PageDescription, PageHeader, PageShell, PageTitle } from "@/components/page-layout";
+import { PlayerSectionTabs } from "@/components/player-section-tabs";
 import type { Metadata } from "next";
 import { fetchHeismanTracker, fetchTeams } from "@/lib/cfb";
 import { formatNumber, formatPct } from "@/lib/utils";
@@ -54,6 +55,7 @@ export default async function HeismanPage() {
           schedule="Updates after each Monday refresh"
         />
       </PageHeader>
+      <PlayerSectionTabs />
 
       <p className="max-w-4xl text-sm text-muted-foreground leading-relaxed">
         A weekly Heisman Trophy forecast in two boards that are meant to

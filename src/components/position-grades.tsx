@@ -257,12 +257,23 @@ export default function PositionGrades({
         .map(([name]) => name);
   }, [index, loaded]);
   const graded = gradedCounts[position] ?? 0;
-  const ungraded = graded === 0;
 
   return (
     <div className="space-y-section">
       <div className="flex flex-wrap items-center gap-3">
         <ToggleGroup label="Position" options={positions} value={position} onChange={setPosition} />
+        <select
+          aria-label="Conference"
+          value={conference}
+          onChange={(e) => setConference(e.target.value)}
+          className="h-8 border border-input bg-transparent px-2 font-mono text-xs"
+        >
+          {conferences.map((option) => (
+            <option key={option.key} value={option.key}>
+              {option.key === ALL ? "Conference" : option.label}
+            </option>
+          ))}
+        </select>
         <input
           type="search"
           value={query}
@@ -272,13 +283,10 @@ export default function PositionGrades({
           className="h-8 w-56 border border-input bg-transparent px-2 text-sm"
         />
       </div>
-      <ToggleGroup label="Conference" options={conferences} value={conference} onChange={setConference} variant="chip" />
       <p className="max-w-4xl text-sm text-muted-foreground leading-relaxed">
         {search
           ? `${matches.length} player${matches.length === 1 ? "" : "s"} match “${query.trim()}”${conference === ALL ? "" : ` in the ${conference}`}, best grade first.`
-          : ungraded
-            ? `${position} carries no grade: its one trait is noise from game to game, so there is nothing stable to combine. Players are ordered by that trait's percentile instead.`
-            : `Top ${visible.length} of ${matches.length} ${conference === ALL ? "" : `${conference} `}${position}, ${graded} graded this week.`}{" "}
+          : `Top ${visible.length} of ${matches.length} ${conference === ALL ? "" : `${conference} `}${position}, ${graded} graded this week.`}{" "}
         Every bar is a percentile among qualified FBS players at the position this week: gold bars are counted
         from the player&apos;s own tagged plays or box score, striped blue bars are inferred from unit outcomes
         or teammates, and dimmed traits carry no weight in the grade.

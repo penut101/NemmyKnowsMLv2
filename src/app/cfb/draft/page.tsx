@@ -5,6 +5,7 @@ import {
   PageTitle,
   PageDescription,
 } from "@/components/page-layout";
+import { PlayerSectionTabs } from "@/components/player-section-tabs";
 import { LastUpdated } from "@/components/last-updated";
 import DraftWorkspace from "@/components/draft-workspace";
 import { fetchDraft, fetchPlayerPage } from "@/lib/draft-server";
@@ -44,6 +45,7 @@ export default async function DraftPage() {
           />
         )}
       </PageHeader>
+      <PlayerSectionTabs />
       {data ? (
         <DraftWorkspace
           data={data}

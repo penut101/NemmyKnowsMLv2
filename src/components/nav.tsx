@@ -15,7 +15,7 @@ const mlbLinks = [
 export function Nav({
   links = mlbLinks,
 }: {
-  links?: { href: string; label: string }[];
+  links?: { href: string; label: string; match?: string[] }[];
 }) {
   const pathname = usePathname();
 
@@ -32,7 +32,7 @@ export function Nav({
               const isActive =
                 link.href === "/"
                   ? pathname === "/"
-                  : pathname.startsWith(link.href);
+                  : (link.match ?? [link.href]).some((prefix) => pathname.startsWith(prefix));
 
               return (
                 <Link

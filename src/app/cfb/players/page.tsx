@@ -1,4 +1,5 @@
 import { PageDescription, PageHeader, PageShell, PageTitle } from "@/components/page-layout";
+import { PlayerSectionTabs } from "@/components/player-section-tabs";
 import type { Metadata } from "next";
 import { fetchPositionGrades, fetchTeams } from "@/lib/cfb";
 import { formatNumber, formatSigned } from "@/lib/utils";
@@ -51,6 +52,7 @@ export default async function PlayersPage() {
         </div>
         <LastUpdated timestamp={grades.asOf} schedule="Updates after each Monday refresh" />
       </PageHeader>
+      <PlayerSectionTabs />
 
       <p className="max-w-4xl text-sm text-muted-foreground leading-relaxed">
         Two numbers per player, both his own. The grade is a 20 to 80 scouting number
