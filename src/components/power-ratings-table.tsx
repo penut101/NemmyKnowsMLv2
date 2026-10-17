@@ -1,5 +1,7 @@
 "use client";
 
+import { formatSiteTimestamp } from "@/lib/site-time";
+
 import { useMemo, useState, type ReactNode } from "react";
 import { ratingHeatmap } from "@/lib/rating-heatmap";
 import { RatingsHeatmapLegend } from "@/components/ratings-heatmap-legend";
@@ -269,7 +271,7 @@ function RatingDetails({ row, market }: { row: PowerRatingRow; market: MarketStr
                 : `${market.games ?? "Unknown"} earlier games with closing lines this season.`}{" "}
               Season win totals and moneylines are not included.
             </p>
-            {market.asOf && <p className="text-xs">Forecast as of {new Date(market.asOf).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })} UTC.</p>}
+            {market.asOf && <p className="text-xs">Forecast as of {formatSiteTimestamp(market.asOf)}.</p>}
           </>
         )}
         <p className="text-xs">

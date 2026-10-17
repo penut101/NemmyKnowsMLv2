@@ -1,3 +1,6 @@
+import { SITE_TIME_ZONE } from "./site-time.ts";
+export { SITE_TIME_ZONE } from "./site-time.ts";
+
 import { pickLabel, type PickMarket } from "./football-picks.ts";
 
 // One day of recommended picks across every model, normalized so the home
@@ -33,17 +36,15 @@ export type DailySport = {
   unavailable: boolean;
 };
 
-// The site's day is the Pacific calendar date the MLB pipeline already keys
-// on, so a 7 PM Pacific first pitch and a Sunday night kickoff stay on the
-// day a US reader expects.
-export const SITE_TIME_ZONE = "America/Los_Angeles";
-
 const MARKET_ORDER: Record<DailyMarket, number> = {
   h2h: 0,
   spreads: 1,
   totals: 2,
 };
 
+// The site's day is the Pacific calendar date the MLB pipeline already keys
+// on, so a 7 PM Pacific first pitch and a Sunday night kickoff stay on the
+// day a US reader expects.
 export function siteDate(now = new Date()): string {
   return now.toLocaleDateString("en-CA", { timeZone: SITE_TIME_ZONE });
 }

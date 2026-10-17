@@ -10,7 +10,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { useVisitorTimeZone } from "@/components/use-visitor-timezone";
+import { formatSiteTimestamp } from "@/lib/site-time";
 import { pickLabel, pickReason, pickQualification, pickResearchContext, usesKeyNumberSpread, usesPairedMoneylineBlend, type WeeklyPick } from "@/lib/football-picks";
 import type { FootballLeague } from "@/lib/football-slates";
 import { breakEvenProbability } from "@/lib/pick-pricing";
@@ -59,17 +59,8 @@ function PickDetailsContent({
   const blendedMoneyline = usesPairedMoneylineBlend(pick);
   const keySpread = usesKeyNumberSpread(pick);
   const blendedTotal = pick.market === "totals" && ["cfb-picks-v10", "cfb-picks-v11"].includes(pick.policy_version);
-  const timeZone = useVisitorTimeZone("UTC");
-  const dateFormat = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZoneName: "short",
-  });
   const timestamp = (value: string | null) =>
-    value ? dateFormat.format(new Date(value)) : "Not recorded";
+    value ? formatSiteTimestamp(value) : "Not recorded";
   const margin = pick.model_home_margin;
   const marginLabel =
     margin == null

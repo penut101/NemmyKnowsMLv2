@@ -80,6 +80,11 @@ const models = [
     href: "/nfl/methodology",
     body: "Bayesian power ratings from drive-level EPA with QB and rest adjustments, backtested from 2016 with untouched holdout seasons.",
   },
+  {
+    name: "NHL",
+    href: "/nhl/methodology",
+    body: "Shot-quality team ratings and a Poisson goal model, with attack and defense strengths, home and road splits, and public evaluation of win probabilities against the market.",
+  },
 ];
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -126,7 +131,7 @@ export default function AboutPage() {
             Data Analyst in the San Diego&ndash;Tijuana area, with a
             background in behavioral neuroscience research, municipal government, and
             production statistical systems. Outside work I build probabilistic
-            forecasting models for MLB, college football, and the NFL, publish their
+            forecasting models for MLB, college football, the NFL, and the NHL, publish their
             numbers before the games start, and grade them against the closing line in
             public. The betting market is the benchmark because it is the sharpest
             public probability estimate available, not because the goal is a betting

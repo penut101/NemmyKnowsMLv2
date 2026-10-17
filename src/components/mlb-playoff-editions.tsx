@@ -1,5 +1,7 @@
 "use client";
 
+import { SITE_TIME_ZONE } from "@/lib/site-time";
+
 import { useState } from "react";
 import { MlbPlayoffBracket } from "@/components/mlb-playoff-bracket";
 import { ViewTabs, ViewTabPanel } from "@/components/view-tabs";
@@ -53,7 +55,7 @@ export function MlbPlayoffEditions({
                 month: "short",
                 day: "numeric",
                 year: "numeric",
-                timeZone: "America/New_York",
+                timeZone: SITE_TIME_ZONE,
               })}
               .
             </p>

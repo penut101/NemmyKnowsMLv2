@@ -1,18 +1,13 @@
-"use client";
+import type { ReactNode } from "react";
+import { SITE_TIME_LABEL } from "@/lib/site-time";
 
-import { useRef, type ReactNode } from "react";
-import { useVisitorKickoffs } from "@/components/use-visitor-timezone";
-
-// Shows server-rendered kickoffs in the visitor's zone and says which zone.
 export function LocalKickoffs({ children }: { children: ReactNode }) {
-  const container = useRef<HTMLDivElement>(null);
-  const clock = useVisitorKickoffs(container, children);
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        Times shown in {clock.zone()}.
+        Times shown in {SITE_TIME_LABEL}.
       </p>
-      <div ref={container}>{children}</div>
+      <div>{children}</div>
     </div>
   );
 }

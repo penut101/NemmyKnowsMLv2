@@ -1,5 +1,7 @@
 "use client";
 
+import { SITE_TIME_ZONE } from "@/lib/site-time";
+
 import { useSyncExternalStore } from "react";
 
 function subscribe(onChange: () => void) {
@@ -13,6 +15,7 @@ function subscribe(onChange: () => void) {
 
 function localDate() {
   return new Date().toLocaleDateString("en-US", {
+    timeZone: SITE_TIME_ZONE,
     month: "short",
     day: "numeric",
   });

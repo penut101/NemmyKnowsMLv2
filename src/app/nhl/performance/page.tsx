@@ -1,3 +1,4 @@
+import { formatSiteTimestamp } from "@/lib/site-time";
 import { PageDescription, PageHeader, PageShell, PageTitle } from "@/components/page-layout";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -101,7 +102,7 @@ export default async function PerformancePage({
                 : "These are observed results, not a guarantee of future returns."}
               {metric.last_graded_at && (
                 <span className="block mt-1 text-xs">
-                  Last graded: {new Date(metric.last_graded_at).toISOString().replace("T", " ").slice(0, 16)} UTC
+                  Last graded: {formatSiteTimestamp(metric.last_graded_at)}
                 </span>
               )}
             </p>

@@ -1,3 +1,4 @@
+import { formatSiteTimestamp } from "@/lib/site-time";
 import { PlayerModelPerformance } from "@/components/player-model-performance";
 import { PageDescription, PageHeader, PageShell, PageTitle } from "@/components/page-layout";
 import type { Metadata } from "next";
@@ -119,11 +120,7 @@ export default async function PerformancePage({
               {metric.last_graded_at && (
                 <span className="block mt-1 text-xs">
                   Last graded:{" "}
-                  {new Date(metric.last_graded_at)
-                    .toISOString()
-                    .replace("T", " ")
-                    .slice(0, 16)}{" "}
-                  UTC
+                  {formatSiteTimestamp(metric.last_graded_at)}
                 </span>
               )}
             </p>

@@ -1,5 +1,7 @@
 "use client";
 
+import { SITE_TIME_ZONE } from "@/lib/site-time";
+
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { chartAxisProps, chartTooltipStyle, useChartTheme } from "@/lib/chart-theme";
 import {
@@ -72,7 +74,7 @@ export default function NhlLiveProbabilityContent({ gameId, away, home }: {
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          {data.abstract_state === "Final" ? "Final result" : `Latest update: ${new Date(data.fetched_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}`}
+          {data.abstract_state === "Final" ? "Final result" : `Latest update: ${new Date(data.fetched_at).toLocaleTimeString([], { timeZone: SITE_TIME_ZONE, timeZoneName: "short", hour: "numeric", minute: "2-digit", second: "2-digit" })}`}
           {data.abstract_state === "Live" && !stale && !error && " · Refreshes while open"}
         </p>
       </>}

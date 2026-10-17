@@ -1,5 +1,7 @@
 "use client";
 
+import { SITE_TIME_ZONE } from "@/lib/site-time";
+
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { chartAxisProps, chartTooltipStyle, useChartTheme } from "@/lib/chart-theme";
 import { liveProbabilitySettled, liveProbabilityStale, parseLiveProbability } from "@/lib/mlb-live-probability";
@@ -63,7 +65,7 @@ export default function LiveProbabilityContent({ gamePk, away, home }: { gamePk:
         </div>
         {!!data.history_omitted && <p className="text-xs text-muted-foreground">Some plays are missing from the chart.</p>}
         <p className="text-xs text-muted-foreground">
-          {data.abstract_state === "Final" ? "Final result" : `Latest feed: ${new Date(data.source_timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}`}
+          {data.abstract_state === "Final" ? "Final result" : `Latest feed: ${new Date(data.source_timestamp).toLocaleTimeString([], { timeZone: SITE_TIME_ZONE, timeZoneName: "short", hour: "numeric", minute: "2-digit", second: "2-digit" })}`}
           {data.abstract_state !== "Final" && !stale && !error && " · Refreshes while open"}
         </p>
       </>}

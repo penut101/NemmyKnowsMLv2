@@ -1,3 +1,4 @@
+import { SITE_TIME_ZONE } from "@/lib/site-time";
 import { Fragment } from "react";
 import { TeamLogo } from "@/components/team-logo";
 import { TableCell, TableRow } from "@/components/ui/table";
@@ -23,8 +24,6 @@ export type NhlMatchup = {
   decisionsUnavailable: boolean;
   live: NhlLiveGame | null;
 };
-
-const SITE_TIME_ZONE = "America/Los_Angeles";
 
 function startLabel(start: string): string {
   return (

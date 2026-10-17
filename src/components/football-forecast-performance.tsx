@@ -1,3 +1,4 @@
+import { formatSiteTimestamp } from "@/lib/site-time";
 import type { ReactNode } from "react";
 import { Notice } from "@/components/notice";
 import type {
@@ -22,14 +23,7 @@ function fmtDate(value: string | null): string {
   if (!value) return "unknown";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "unknown";
-  return d.toLocaleString("en-US", {
-    timeZone: "America/New_York",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZoneName: "short",
-  });
+  return formatSiteTimestamp(value);
 }
 
 const SOURCE_LABELS: Record<CfbPredictionSource, string> = {

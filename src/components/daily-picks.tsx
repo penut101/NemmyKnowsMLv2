@@ -19,7 +19,7 @@ function emptyMessage(sport: DailySport) {
 }
 
 // Every model's recommended predictions for the site's day. Kickoffs are rendered
-// in Eastern and rewritten into the visitor's zone by LocalKickoffs.
+// in Pacific, matching the site day used to select these games.
 export function DailyPicks({
   sports,
   dateLabel,

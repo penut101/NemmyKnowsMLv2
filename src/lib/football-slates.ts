@@ -14,7 +14,7 @@ export type FootballSlate<T> = {
 
 // A slate is one clock hour: every game that kicks off within it, so a 12:30
 // or 12:45 straggler sits with the noon games. Hours are cut on the league's
-// own clock (Eastern) so a visitor's timezone changes labels but never
+// own clock (Eastern) so the display timezone changes labels but never
 // membership; a slate's start is its first kickoff. NFL evening slates carry
 // their broadcast name.
 const BROADCAST: Record<FootballLeague, boolean> = { nfl: true, cfb: false };
@@ -115,19 +115,7 @@ export function footballSlateClock(timeZone: string) {
     minute: "2-digit",
     timeZoneName: "short",
   });
-  const zoneName = (style: "long" | "short", at: number) =>
-    new Intl.DateTimeFormat("en-US", { ...options, timeZoneName: style })
-      .formatToParts(at)
-      .find((part) => part.type === "timeZoneName")?.value;
   return {
-    // "Pacific Daylight Time (PDT)" rather than the raw IANA id. Zones whose
-    // short form is only a GMT offset, most of Europe in en-US, keep it since
-    // the offset is still the clearest disambiguator for a reader there.
-    zone: (at: number = Date.now()) => {
-      const long = zoneName("long", at) ?? timeZone.replaceAll("_", " ");
-      const short = zoneName("short", at);
-      return short && short !== long ? `${long} (${short})` : long;
-    },
     title: (slate: Pick<FootballSlate<unknown>, "start" | "broadcast">) => {
       if (slate.start == null) return "Kickoff TBD";
       if (slate.broadcast) return slate.broadcast;

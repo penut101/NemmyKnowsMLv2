@@ -20,7 +20,7 @@ export function FootballComparisonForecast({
           <p className="mt-1 text-xs text-muted-foreground">
             {game.season} · Week {game.week}
             {game.kickoff &&
-              ` · ${formatKickoff.day(game.kickoff)} ${formatKickoff.time(game.kickoff)} ET`}
+              ` · ${formatKickoff.day(game.kickoff)} ${formatKickoff.time(game.kickoff)} PT`}
           </p>
         </div>
         {game.neutralSite && (

@@ -1,16 +1,13 @@
 import { footballSlateClock } from "@/lib/football-slates";
+import { SITE_TIME_ZONE } from "@/lib/site-time";
 
-// Helpers shared by the CFB and NFL sections: both quote lines for the home
-// team and anchor kickoffs to Eastern time.
-
-export const LEAGUE_TIME_ZONE = "America/New_York";
-
-const eastern = footballSlateClock(LEAGUE_TIME_ZONE);
+// Schedule grouping uses league time; every displayed kickoff uses Pacific.
+export const siteKickoffClock = footballSlateClock(SITE_TIME_ZONE);
 
 export const formatKickoff = {
-  day: eastern.day,
-  time: eastern.time,
-  hour: eastern.hour,
+  day: siteKickoffClock.day,
+  time: siteKickoffClock.time,
+  hour: siteKickoffClock.hour,
 } as const;
 
 // A home line like -7.5 means the home team is favored by 7.5.

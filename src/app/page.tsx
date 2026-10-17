@@ -336,7 +336,7 @@ function ModelStats({ forecast, markets, period, spreadLabel = "Spreads" }: {
             ))}
           </dl>
           <p className="mt-2 font-mono text-xs text-muted-foreground">
-            {forecast.sample}
+            {forecast.sample} · Lower is better
           </p>
         </div>
       )}
@@ -344,10 +344,10 @@ function ModelStats({ forecast, markets, period, spreadLabel = "Spreads" }: {
       {markets.length > 0 && (
         <details className="relative z-10 mt-3 text-xs text-muted-foreground">
           <summary className="w-fit cursor-pointer rounded-sm py-1 focus-visible:outline-2 focus-visible:outline-offset-4">
-            Prediction results
+            Betting record & ROI
           </summary>
           <table className="mt-2 w-full text-xs tabular-nums">
-            <caption className="sr-only">Prediction results by market</caption>
+            <caption className="sr-only">Betting results by market</caption>
             <thead className="border-b border-border text-muted-foreground">
               <tr>
                 <th scope="col" className="pb-2 text-left font-normal">Market</th>
@@ -442,8 +442,9 @@ export default async function Home() {
               Ren&eacute; N&uacute;&ntilde;ez
             </PageTitle>
             <PageDescription>
-              Data Analyst. I build probabilistic forecasting
-              models for sports and benchmark them against the market in public.
+              Data Analyst. I build sports forecasting models and evaluate their
+              accuracy, calibration, and performance against the market in public.
+              Explore player grades and team ratings behind the forecasts.
             </PageDescription>
             <ContactLine className="mt-heading text-xs text-muted-foreground" />
           </div>
@@ -452,8 +453,20 @@ export default async function Home() {
         <div className="flex min-w-0 flex-col gap-section">
           <PageSection>
             <h2 className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-              Models
+              Forecast quality
             </h2>
+            <div className="grid gap-4 text-sm text-muted-foreground sm:grid-cols-2">
+              <p>
+                <strong className="font-semibold text-foreground">Market comparisons.</strong>{" "}
+                How close are the forecasts to the results, and how do they compare
+                with closing lines? Lower forecast error is better.
+              </p>
+              <p>
+                <strong className="font-semibold text-foreground">Calibration.</strong>{" "}
+                Do outcomes match the probabilities? Teams given a 60% chance
+                should win about 60% of the time. Explore the evaluations below.
+              </p>
+            </div>
             {/* Entries are separated by rules, not enclosed in boxes. */}
             <div className="divide-y divide-border border-y border-rule-strong">
               <ModelEntry
@@ -462,11 +475,12 @@ export default async function Home() {
                 live
                 cta="Explore players"
                 description="Hierarchical Bayesian model simulating every game one plate appearance at a time."
+                links={[{ href: "/mlb/performance", label: "Accuracy & calibration" }]}
               >
-                {mlb && (
+                {(mlbForecast || mlb) && (
                   <ModelStats
                     forecast={mlbForecast}
-                    markets={mlb}
+                    markets={mlb ?? []}
                     period="Updated nightly"
                     spreadLabel="Run lines"
                   />
@@ -479,7 +493,10 @@ export default async function Home() {
                 live={cfb?.live ?? null}
                 cta="Explore ratings"
                 description="Weekly spread, total, and moneyline predictions with frozen lines, built on power ratings for every Division 1 program."
-                links={[{ href: "/cfb/heisman", label: "Heisman tracker" }]}
+                links={[
+                  { href: "/cfb/performance", label: "Model vs. market" },
+                  { href: "/cfb/heisman", label: "Heisman tracker" },
+                ]}
               >
                 {cfb && <FootballStats headline={cfb} />}
               </ModelEntry>
@@ -491,6 +508,7 @@ export default async function Home() {
                 cta="Explore ratings"
                 description="Bayesian power ratings for all 32 teams from drive-level EPA, with weekly spread and total projections priced against the market."
                 links={[
+                  { href: "/nfl/performance", label: "Model vs. market" },
                   { href: "/nfl/season-wins", label: "Season win projections" },
                   { href: "/nfl/awards", label: "Awards tracker" },
                 ]}
@@ -504,6 +522,7 @@ export default async function Home() {
                 live={nhl?.live ?? null}
                 cta="Explore ratings"
                 description="Poisson goal model from last-25-game shot-quality windows, priced daily against the NHL partner sportsbooks with frozen moneyline and total picks."
+                links={[{ href: "/nhl/performance", label: "Accuracy & calibration" }]}
               >
                 {nhl && <FootballStats headline={nhl} />}
               </ModelEntry>

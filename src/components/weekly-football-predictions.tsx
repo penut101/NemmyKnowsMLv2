@@ -9,9 +9,9 @@ import { Notice } from "@/components/notice";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { teamColor } from "@/lib/team-colors";
 import { ToggleGroup } from "@/components/toggle-group";
-import { useVisitorTimeZone } from "@/components/use-visitor-timezone";
+import { siteKickoffClock as clock } from "@/lib/football";
+import { SITE_TIME_LABEL } from "@/lib/site-time";
 import {
-  footballSlateClock,
   groupFootballSlates,
   type FootballLeague,
 } from "@/lib/football-slates";
@@ -67,8 +67,6 @@ export function WeeklyFootballPredictions({
   const [slateId, setSlateId] = useState("all");
   const [query, setQuery] = useState("");
   const needle = query.trim().toLowerCase();
-  const timeZone = useVisitorTimeZone("UTC");
-  const clock = useMemo(() => footballSlateClock(timeZone), [timeZone]);
   const liveRefs = useMemo(
     () =>
       games.map((game) => {
@@ -143,7 +141,7 @@ export function WeeklyFootballPredictions({
           noun="games"
         />
         <div className="space-y-1 text-xs text-muted-foreground">
-          <p>Times shown in {clock.zone()}.</p>
+          <p>Times shown in {SITE_TIME_LABEL}.</p>
           <p>
             {league === "cfb"
               ? "Win probabilities follow each pick's recorded pricing policy. Moneylines under v9/v10 retain 20% model weight; v10 spreads use a 20% model/history margin blend with football key numbers. Exploratory picks are labeled. Pushes are listed separately."
@@ -199,7 +197,6 @@ export function WeeklyFootballPredictions({
                 key={game.game_id}
                 game={game}
                 league={league}
-                clock={clock}
                 live={live.get(liveKey(league, game.game_id))}
               />
             ))}
@@ -213,12 +210,10 @@ export function WeeklyFootballPredictions({
 function GamePredictions({
   game,
   league,
-  clock,
   live,
 }: {
   game: WeeklyGame & { gamePickCount: number };
   league: FootballLeague;
-  clock: ReturnType<typeof footballSlateClock>;
   live: LiveGame | undefined;
 }) {
   const rows = game.rows;

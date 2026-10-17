@@ -1,5 +1,7 @@
 "use client";
 
+import { SITE_TIME_ZONE } from "@/lib/site-time";
+
 import { useMemo, useState } from "react";
 import { ArrowRight, Shuffle, Trophy } from "lucide-react";
 import {
@@ -378,7 +380,7 @@ export function MlbPlayoffBracket({
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
-    timeZone: "America/New_York",
+    timeZone: SITE_TIME_ZONE,
   });
   return (
     <>
@@ -510,7 +512,7 @@ export function MlbPlayoffBracket({
           How the model builds this bracket
         </summary>
         <p className="mt-4">
-          Snapshot: {stamp} ET. Model: {forecast.model_version}. Training
+          Snapshot: {stamp} PT. Model: {forecast.model_version}. Training
           through {forecast.training_max_date}.{" "}
           {forecast.n_sims.toLocaleString()} simulations per game scenario.
         </p>
