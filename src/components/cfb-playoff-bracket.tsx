@@ -35,15 +35,13 @@ export function CfbPlayoffBracket({
         key={seed}
         onClick={() => onTeam(team.id)}
         aria-label={`${team.team}, seed ${seed}, ${playoffPercent(team.playoff)} playoff chance`}
-        className="grid min-h-12 w-full grid-cols-[12px_minmax(0,1fr)_auto] items-center gap-1 px-2 py-2 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring sm:grid-cols-[18px_minmax(0,1fr)_auto] sm:gap-2 sm:px-3"
+        className="grid min-h-16 sm:min-h-12 w-full grid-cols-[12px_minmax(0,1fr)] items-center gap-1 px-2 py-2 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring sm:grid-cols-[18px_minmax(0,1fr)_auto] sm:gap-2 sm:px-3"
       >
         <span className="text-[10px] tabular-nums text-muted-foreground">
           {seed}
         </span>
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="hidden sm:inline-flex">
-            <TeamLogo team={identities[team.id]} name={team.team} />
-          </span>
+        <span className="flex min-w-0 items-center gap-1 sm:gap-2">
+          <TeamLogo team={identities[team.id]} name={team.team} className="size-4 sm:size-5" />
           <span className="min-w-0 text-[11px] font-semibold leading-tight sm:text-sm">
             {team.team}
             {bye && (
@@ -53,7 +51,7 @@ export function CfbPlayoffBracket({
             )}
           </span>
         </span>
-        <span className="text-[10px] font-semibold tabular-nums text-primary sm:text-xs">
+        <span className="col-start-2 pl-5 text-[10px] font-semibold tabular-nums text-primary sm:col-start-auto sm:pl-0 sm:text-xs">
           {playoffPercent(team.playoff)}
         </span>
       </button>
@@ -95,7 +93,7 @@ export function CfbPlayoffBracket({
             {PATHS.map(([h, a, b]) => (
               <div key={b} className="rounded-lg border border-border bg-card">
                 {line(b, true)}
-                <div className="flex min-h-12 items-center border-t border-border px-3 text-[10px] text-muted-foreground sm:text-xs">
+                <div className="flex min-h-16 sm:min-h-12 items-center border-t border-border px-3 text-[10px] text-muted-foreground sm:text-xs">
                   Winner of {h} vs. {a}
                 </div>
               </div>

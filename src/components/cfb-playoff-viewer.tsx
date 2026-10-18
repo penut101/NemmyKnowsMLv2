@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TeamLogo } from "@/components/team-logo";
+import { TeamLogo, type TeamLogoSource } from "@/components/team-logo";
 import {
   CfbPlayoffBracket,
   type PlayoffIdentities,
@@ -19,21 +19,24 @@ function Metric({
   label,
   value,
   detail,
+  identity,
 }: {
   label: string;
   value: string;
   detail: string;
+  identity?: TeamLogoSource;
 }) {
   return (
-    <div className="min-w-0 rounded-lg border border-border bg-card p-4">
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+    <div className="flex min-w-0 flex-col items-center gap-1 py-3 text-center">
+      <p className="text-[10px] uppercase tracking-wider text-muted-foreground sm:text-xs">
         {label}
       </p>
-      <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <p className="text-sm font-semibold sm:text-base">{detail}</p>
-        <p className="text-2xl font-semibold tabular-nums text-primary">
-          {value}
-        </p>
+      <p className="font-mono text-base font-bold tabular-nums text-primary sm:text-xl">
+        {value}
+      </p>
+      <div className="flex flex-wrap items-center justify-center gap-1 text-[11px] text-muted-foreground sm:text-xs">
+        {identity && <TeamLogo team={identity} name={detail} className="size-4" />}
+        <span>{detail}</span>
       </div>
     </div>
   );
@@ -53,9 +56,7 @@ function TeamButton({
       onClick={() => onTeam(team.id)}
       className="flex max-w-full items-center gap-1.5 text-left font-semibold hover:text-primary focus-visible:outline-2 focus-visible:outline-ring sm:gap-2"
     >
-      <span className="hidden sm:inline-flex">
-        <TeamLogo team={identities[team.id]} name={team.team} />
-      </span>
+      <TeamLogo team={identities[team.id]} name={team.team} className="size-4 sm:size-5" />
       <span>
         {team.ap_rank && (
           <span className="mr-1 text-[9px] font-normal text-muted-foreground">
@@ -142,12 +143,12 @@ export function CfbPlayoffViewer({
           </TabsTrigger>
         </TabsList>
         <TabsContent value="bracket" className="min-w-0 space-y-8">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-3 gap-3 border-y border-rule-strong sm:gap-4">
             {(
               [
-                ["Best playoff chance", "playoff"],
+                ["Playoff leader", "playoff"],
                 ["Bye favorite", "bye"],
-                ["National title favorite", "champion"],
+                ["Title favorite", "champion"],
               ] as const
             ).map(([label, key]) => {
               const t = best(teams, key);
@@ -156,6 +157,7 @@ export function CfbPlayoffViewer({
                   key={key}
                   label={label}
                   detail={t.team}
+                  identity={identities[t.id]}
                   value={playoffPercent(t[key])}
                 />
               );
@@ -192,9 +194,9 @@ export function CfbPlayoffViewer({
               aria-label="Filter teams"
             >
               {[
-                ["contenders", "Contenders"],
+                ["contenders", "In the mix"],
                 ["all", "All teams"],
-                ["field", "Projected field"],
+                ["field", "Bracket teams"],
               ].map(([value, label]) => (
                 <button
                   type="button"
@@ -207,6 +209,13 @@ export function CfbPlayoffViewer({
                 </button>
               ))}
             </div>
+            <p className="text-xs text-muted-foreground" aria-live="polite">
+              {filter === "contenders"
+                ? "Teams with at least a 1% playoff chance, plus every AP-ranked team."
+                : filter === "field"
+                  ? "The 12 teams in the bracket above, one possible simulated field."
+                  : "Every team in the forecast, including those with less than a 1% playoff chance."}
+            </p>
             <p className="text-xs text-muted-foreground">
               AP ranks are shown beside team names. Select a team to explore its
               remaining schedule.
@@ -294,7 +303,7 @@ export function CfbPlayoffViewer({
               </select>
             </label>
           </div>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-3 gap-3 border-y border-rule-strong sm:gap-4">
             <Metric
               label={
                 independent ? "Teams in the race" : "Conference title favorite"
@@ -304,6 +313,7 @@ export function CfbPlayoffViewer({
                   ? "Independents"
                   : best(members, "conference_champion").team
               }
+              identity={independent ? undefined : identities[best(members, "conference_champion").id]}
               value={
                 independent
                   ? String(members.length)
@@ -320,6 +330,7 @@ export function CfbPlayoffViewer({
             <Metric
               label="Best playoff chance"
               detail={best(members, "playoff").team}
+              identity={identities[best(members, "playoff").id]}
               value={playoffPercent(best(members, "playoff").playoff)}
             />
           </div>
