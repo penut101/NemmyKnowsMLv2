@@ -13,6 +13,7 @@ const cfbLinks = [
   { href: "/cfb/players", label: "Players", match: ["/cfb/players", "/cfb/heisman", "/cfb/draft"] },
   { href: "/cfb/predictions", label: "Predictions" },
   { href: "/cfb/schedule", label: "Schedule" },
+  { href: "/cfb/playoffs", label: "Playoffs" },
   { href: "/cfb/history", label: "History" },
   { href: "/cfb/performance", label: "Performance" },
   { href: "/cfb/methodology", label: "Methodology" },
