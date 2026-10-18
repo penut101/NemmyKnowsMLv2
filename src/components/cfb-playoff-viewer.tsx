@@ -1,7 +1,8 @@
 "use client";
 import { useMemo, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TeamLogo, type TeamLogoSource } from "@/components/team-logo";
+import { PlayoffMetric as Metric, PlayoffTeamFilter, type PlayoffFilter } from "./football-playoff-summary";
+import { TeamLogo } from "@/components/team-logo";
 import {
   CfbPlayoffBracket,
   type PlayoffIdentities,
@@ -15,32 +16,6 @@ import {
   type CfbPlayoffTeam,
 } from "@/lib/cfb-playoffs";
 
-function Metric({
-  label,
-  value,
-  detail,
-  identity,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  identity?: TeamLogoSource;
-}) {
-  return (
-    <div className="flex min-w-0 flex-col items-center gap-1 py-3 text-center">
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground sm:text-xs">
-        {label}
-      </p>
-      <p className="font-mono text-base font-bold tabular-nums text-primary sm:text-xl">
-        {value}
-      </p>
-      <div className="flex flex-wrap items-center justify-center gap-1 text-[11px] text-muted-foreground sm:text-xs">
-        {identity && <TeamLogo team={identity} name={detail} className="size-4" />}
-        <span>{detail}</span>
-      </div>
-    </div>
-  );
-}
 function TeamButton({
   team,
   identities,
@@ -80,7 +55,7 @@ export function CfbPlayoffViewer({
 }) {
   const forecast = useMemo(() => decodeCfbPlayoffs(payload), [payload]);
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState("contenders");
+  const [filter, setFilter] = useState<PlayoffFilter>("contenders");
   const [conference, setConference] = useState("SEC");
   const [selected, setSelected] = useState<number | null>(null);
   const field = new Set(payload.bracket.map((s) => s.team_id));
@@ -188,34 +163,13 @@ export function CfbPlayoffViewer({
                 />
               </label>
             </div>
-            <div
-              className="flex flex-wrap gap-2"
-              role="group"
-              aria-label="Filter teams"
-            >
-              {[
-                ["contenders", "In the mix"],
-                ["all", "All teams"],
-                ["field", "Bracket teams"],
-              ].map(([value, label]) => (
-                <button
-                  type="button"
-                  key={value}
-                  aria-pressed={filter === value}
-                  onClick={() => setFilter(value)}
-                  className={`rounded-full border px-3 py-1.5 text-xs ${filter === value ? "border-primary bg-primary text-primary-foreground" : "border-border text-muted-foreground hover:bg-muted"}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground" aria-live="polite">
-              {filter === "contenders"
+            <PlayoffTeamFilter value={filter} onChange={setFilter} description={
+              filter === "contenders"
                 ? "Teams with at least a 1% playoff chance, plus every AP-ranked team."
                 : filter === "field"
                   ? "The 12 teams in the bracket above, one possible simulated field."
-                  : "Every team in the forecast, including those with less than a 1% playoff chance."}
-            </p>
+                  : "Every team in the forecast, including those with less than a 1% playoff chance."
+            } />
             <p className="text-xs text-muted-foreground">
               AP ranks are shown beside team names. Select a team to explore its
               remaining schedule.

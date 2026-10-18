@@ -14,6 +14,8 @@ import type {
   NflPlayoffTeam,
   NflPlayoffMetric,
 } from "@/lib/nfl-playoffs";
+import { NflPlayoffBracket } from "./nfl-playoff-bracket";
+import { PlayoffMetric, PlayoffTeamFilter, type PlayoffFilter } from "./football-playoff-summary";
 const cell = "px-1.5 py-3 text-right tabular-nums sm:px-4";
 const record = (t: NflPlayoffTeam) =>
   `${t.wins}-${t.losses}${t.ties ? `-${t.ties}` : ""}`;
@@ -25,6 +27,8 @@ export function NflPlayoffViewer({
   identities: Record<string, TeamLogoSource>;
 }) {
   const [conference, setConference] = useState("AFC");
+  const [filter, setFilter] = useState<PlayoffFilter>("all");
+  const field = new Set(payload.bracket.map((slot) => slot.team_id));
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [metric, setMetric] = useState<NflPlayoffMetric>("playoff");
@@ -44,7 +48,7 @@ export function NflPlayoffViewer({
   );
   const chosen = selected ? byId.get(selected) : null;
   const sb = payload.path.find((g) => g.round === "Super Bowl")!;
-  function teamButton(id: string, small = false) {
+  function teamButton(id: string) {
     const t = byId.get(id)!;
     return (
       <button
@@ -58,7 +62,7 @@ export function NflPlayoffViewer({
           name={t.team}
           className="size-5 shrink-0"
         />
-        <span className={small ? "text-xs" : "text-xs sm:text-sm"}>
+        <span className="text-xs sm:text-sm">
           <span className="sm:hidden">{id}</span>
           <span className="hidden sm:inline">{t.team}</span>
         </span>
@@ -164,6 +168,16 @@ export function NflPlayoffViewer({
           <TabsTrigger value="divisions">Division races</TabsTrigger>
         </TabsList>
         <TabsContent value="bracket" className="min-w-0 space-y-6">
+          <div className="grid grid-cols-3 gap-3 border-y border-rule-strong sm:gap-4">
+            {([
+              ["Playoff leader", "playoff"],
+              ["Bye favorite", "bye"],
+              ["Title favorite", "champion"],
+            ] as const).map(([label, key]) => {
+              const leader = payload.teams.reduce((a, b) => a[key] >= b[key] ? a : b);
+              return <PlayoffMetric key={key} label={label} value={playoffPercent(leader[key])} detail={leader.id} identity={identities[leader.id]} />;
+            })}
+          </div>
           <div>
             <h2 className="font-heading text-2xl">The projected path</h2>
             <p className="mt-1 max-w-3xl text-xs leading-relaxed text-muted-foreground">
@@ -173,87 +187,7 @@ export function NflPlayoffViewer({
               opponents meeting.
             </p>
           </div>
-          <div className="grid gap-6 xl:grid-cols-2">
-            {(["AFC", "NFC"] as const).map((conf) => (
-              <section
-                key={conf}
-                aria-label={`${conf} projected bracket`}
-                className="min-w-0 rounded-xl border border-border bg-card p-3 sm:p-5"
-              >
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                  <h3 className="font-heading text-2xl text-primary">{conf}</h3>
-                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                    <span>No. 1 · Bye</span>
-                    {teamButton(
-                      payload.bracket.find(
-                        (s) => s.conference === conf && s.seed === 1,
-                      )!.team_id,
-                      true,
-                    )}
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
-                  {(["Wild Card", "Divisional", "Conference"] as const).map(
-                    (round) => (
-                      <div
-                        key={round}
-                        className={`min-w-0 ${round === "Conference" ? "col-span-2 sm:col-span-1" : ""}`}
-                      >
-                        <h4 className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                          {round}
-                        </h4>
-                        <div className="flex h-[calc(100%-28px)] flex-col justify-around gap-3">
-                          {payload.path
-                            .filter(
-                              (g) => g.conference === conf && g.round === round,
-                            )
-                            .map((g) => (
-                              <div
-                                key={`${g.home}-${g.away}`}
-                                className="divide-y divide-border rounded-md border border-border bg-background"
-                              >
-                                {[g.home, g.away].map((id, i) => (
-                                  <div
-                                    key={id}
-                                    className={`flex min-h-12 items-center gap-1.5 px-2 py-2 ${g.winner === id ? "bg-primary/5" : ""}`}
-                                  >
-                                    <span className="w-3 shrink-0 text-[10px] text-muted-foreground">
-                                      {i === 0 ? g.home_seed : g.away_seed}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => setSelected(id)}
-                                      aria-label={`Explore ${byId.get(id)!.team}`}
-                                      className="flex min-w-0 flex-1 items-center gap-1 text-xs font-semibold hover:text-primary"
-                                    >
-                                      <TeamLogo
-                                        team={identities[id]}
-                                        name={byId.get(id)!.team}
-                                        className="hidden size-5 shrink-0 sm:block"
-                                      />
-                                      {id}
-                                    </button>
-                                    <span
-                                      className={`text-[10px] tabular-nums ${g.winner === id ? "font-semibold text-primary" : "text-muted-foreground"}`}
-                                    >
-                                      {playoffPercent(
-                                        i === 0
-                                          ? g.home_win_probability
-                                          : 1 - g.home_win_probability,
-                                      )}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            ))}
-                        </div>
-                      </div>
-                    ),
-                  )}
-                </div>
-              </section>
-            ))}
-          </div>
+          <NflPlayoffBracket payload={payload} byId={byId} identities={identities} onTeam={setSelected} />
           <section
             aria-label="Projected Super Bowl"
             className="rounded-xl border border-primary/30 bg-primary/5 p-5 sm:p-7"
@@ -297,13 +231,19 @@ export function NflPlayoffViewer({
               />
             </label>
           </div>
+          <PlayoffTeamFilter value={filter} onChange={setFilter} description={
+            filter === "contenders" ? "Teams with at least a 1% playoff chance."
+              : filter === "field" ? "The 14 teams in the projected bracket, one possible playoff field."
+                : "All 32 teams, including those with less than a 1% playoff chance."
+          } />
           <p className="text-xs text-muted-foreground">
             Select a team for seed odds and its remaining schedule. Select a
             column to sort.
           </p>
           {table(
             teams.filter((t) =>
-              `${t.team} ${t.id}`.toLowerCase().includes(query.toLowerCase()),
+              (filter === "all" || (filter === "field" ? field.has(t.id) : t.playoff >= 0.01)) &&
+              `${t.team} ${t.id}`.toLowerCase().includes(query.trim().toLowerCase()),
             ),
           )}
         </TabsContent>
@@ -500,7 +440,8 @@ export function NflPlayoffViewer({
                       className="flex items-center justify-between gap-3 py-3 text-xs"
                     >
                       <div>
-                        <p className="font-semibold">
+                        <p className="flex items-center gap-2 font-semibold">
+                          <TeamLogo team={identities[opponent.id]} name={opponent.team} className="size-4" />
                           {g.neutral ? "vs." : home ? "vs." : "at"}{" "}
                           {opponent.team}
                         </p>
