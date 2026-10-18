@@ -14,6 +14,7 @@ const nflLinks = [
   { href: "/nfl/predictions", label: "Predictions" },
   { href: "/nfl/schedule", label: "Schedule" },
   { href: "/nfl/season-wins", label: "Season Wins" },
+  { href: "/nfl/playoffs", label: "Playoffs" },
   { href: "/nfl/history", label: "History" },
   { href: "/nfl/performance", label: "Performance" },
   { href: "/nfl/methodology", label: "Methodology" },
