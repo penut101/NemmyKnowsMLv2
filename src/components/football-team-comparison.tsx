@@ -65,9 +65,13 @@ function TeamPicker<T extends RatingRow>({
   onChange: (row: T) => void;
 }) {
   const inputId = useId();
+  const sortedRows = useMemo(
+    () => [...rows].sort((a, b) => a.team.localeCompare(b.team)),
+    [rows],
+  );
   return (
     <Combobox.Root
-      items={rows}
+      items={sortedRows}
       value={selected}
       onValueChange={(row) => {
         if (row) onChange(row);
@@ -431,7 +435,7 @@ export function FootballTeamComparison<T extends RatingRow, U extends UnitRow>({
             <option value="" disabled>
               Choose a published game, or compare any two teams below
             </option>
-            {projections.games.map((item) => (
+            {[...projections.games].sort((a, b) => a.awayTeam.localeCompare(b.awayTeam) || a.homeTeam.localeCompare(b.homeTeam)).map((item) => (
               <option key={item.gameId} value={item.gameId}>
                 {item.awayTeam} {item.neutralSite ? "vs" : "at"} {item.homeTeam}
                 {item.neutralSite ? " (neutral)" : ""}

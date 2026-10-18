@@ -335,8 +335,8 @@ export default function DraftWorkspace({
                 value={mode}
                 onChange={(e) => save(e.target.value as MockMode, {})}
               >
-                <option value="needs">Ranking + team needs</option>
                 <option value="value">Best available</option>
+                <option value="needs">Ranking + team needs</option>
               </select>
             </label>
             <label>
@@ -520,7 +520,7 @@ export default function DraftWorkspace({
                   setSlot(null);
                 }}
               >
-                {units.map((value) => (
+                {[...units].sort((a, b) => packageLabel(a).localeCompare(packageLabel(b))).map((value) => (
                   <option key={value} value={value}>
                     {packageLabel(value)}
                   </option>
@@ -723,7 +723,7 @@ export default function DraftWorkspace({
                 }}
               >
                 <option value="">All positions</option>
-                {(players?.positions ?? initialPlayers.positions).map(
+                {[...(players?.positions ?? initialPlayers.positions)].sort((a, b) => a.localeCompare(b)).map(
                   (value) => (
                     <option key={value}>{value}</option>
                   ),
@@ -1108,9 +1108,10 @@ export default function DraftWorkspace({
                             .slice(0, selectedPick.pick - 1)
                             .some((earlier) => earlier.player.id === p.id),
                       )
+                      .sort((a, b) => a.name.localeCompare(b.name))
                       .map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.rank ? `Rank ${p.rank}` : "Unranked"} · {p.name} ·{" "}
+                          {p.name} · {p.rank ? `Rank ${p.rank}` : "Unranked"} ·{" "}
                           {p.position} · {p.school}
                         </option>
                       ))}

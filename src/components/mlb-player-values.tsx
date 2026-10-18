@@ -560,7 +560,7 @@ export default function MlbPlayerValues({ index }: { index: PlayerValueIndex[] }
           onChange={(e) => { setPosition(e.target.value); setExpanded(null); }}
           className="h-8 border border-input bg-transparent px-2 font-mono text-xs md:hidden"
         >
-          {positions.map((option) => (
+          {[...positions].sort((a, b) => a.label.localeCompare(b.label)).map((option) => (
             <option key={option.key} value={option.key}>{option.label}</option>
           ))}
         </select>
@@ -594,16 +594,20 @@ export default function MlbPlayerValues({ index }: { index: PlayerValueIndex[] }
             onChange={(event) => onSort(event.target.value as SortKey)}
             className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm"
           >
-            <option value="grade">Grade</option>
-            <option value="value">Value</option>
-            <option value="age">Age</option>
-            <option value="impact">Impact</option>
-            <option value="projected_war">Projected WAR</option>
-            <option value="salary">Salary</option>
-            <option value="control_years">Control years</option>
-            <option value="per_war">Cost per WAR</option>
-            <option value="bat">{pitcherList ? "Stuff" : "Batting"}</option>
-            <option value="fld">{pitcherList ? "Command" : "Fielding"}</option>
+            {[
+              { key: "grade", label: "Grade" },
+              { key: "value", label: "Value" },
+              { key: "age", label: "Age" },
+              { key: "impact", label: "Impact" },
+              { key: "projected_war", label: "Projected WAR" },
+              { key: "salary", label: "Salary" },
+              { key: "control_years", label: "Control years" },
+              { key: "per_war", label: "Cost per WAR" },
+              { key: "bat", label: pitcherList ? "Stuff" : "Batting" },
+              { key: "fld", label: pitcherList ? "Command" : "Fielding" },
+            ].sort((a, b) => a.label.localeCompare(b.label)).map((option) => (
+              <option key={option.key} value={option.key}>{option.label}</option>
+            ))}
           </select>
           <button type="button" onClick={() => onSort(sortKey)} aria-label={`Sort ${sortDir === "desc" ? "ascending" : "descending"}`} className="min-h-10 rounded-md border px-3 text-xs">
             {sortDir === "desc" ? "High to low" : "Low to high"}

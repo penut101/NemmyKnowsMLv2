@@ -29,16 +29,20 @@ export function PlayerComparisonPicker({
     () => new Map(players.map((player) => [player.id, player])),
     [players],
   );
+  const sortedPlayers = useMemo(
+    () => [...players].sort((a, b) => a.label.localeCompare(b.label)),
+    [players],
+  );
   const first = byId.get(selected[0]);
   const second = byId.get(selected[1]);
   const opponents = useMemo(
     () =>
       first
-        ? players.filter(
+        ? sortedPlayers.filter(
             (player) => player.group === first.group && player.id !== first.id,
           )
         : [],
-    [players, first],
+    [sortedPlayers, first],
   );
 
   const clearButton = selected.length > 0 && (
@@ -70,7 +74,7 @@ export function PlayerComparisonPicker({
           {([0, 1] as const).map((slot) => (
             <Combobox.Root
               key={`${slot}-${slot === 1 ? (first?.group ?? "empty") : "first"}`}
-              items={slot === 0 ? players : opponents}
+              items={slot === 0 ? sortedPlayers : opponents}
               value={(slot === 0 ? first : second) ?? null}
               itemToStringLabel={(player: ComparisonPlayer) => player.label}
               isItemEqualToValue={(a, b) => a.id === b.id}
