@@ -1,4 +1,5 @@
 "use client";
+import { Fragment } from "react";
 import { TeamLogo, type TeamLogoSource } from "@/components/team-logo";
 import {
   playoffPercent,
@@ -35,24 +36,20 @@ export function CfbPlayoffBracket({
         key={seed}
         onClick={() => onTeam(team.id)}
         aria-label={`${team.team}, seed ${seed}, ${playoffPercent(team.playoff)} playoff chance`}
-        className="grid min-h-16 sm:min-h-12 w-full grid-cols-[12px_minmax(0,1fr)] items-center gap-1 px-2 py-2 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring sm:grid-cols-[18px_minmax(0,1fr)_auto] sm:gap-2 sm:px-3"
+        className="grid h-full min-h-11 w-full grid-cols-[10px_16px_minmax(0,1fr)] items-center gap-x-1 px-2 py-2 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring sm:grid-cols-[18px_20px_minmax(0,1fr)] sm:gap-x-2 sm:px-3"
       >
         <span className="text-[10px] tabular-nums text-muted-foreground">
           {seed}
         </span>
-        <span className="flex min-w-0 items-center gap-1 sm:gap-2">
-          <TeamLogo team={identities[team.id]} name={team.team} className="size-4 sm:size-5" />
-          <span className="min-w-0 text-[11px] font-semibold leading-tight sm:text-sm">
+        <TeamLogo team={identities[team.id]} name={team.team} className="size-4 sm:size-5" />
+        <span className="flex min-w-0 flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+          <span className="text-[11px] font-semibold leading-tight sm:text-sm">
             {team.team}
-            {bye && (
-              <span className="mt-0.5 block text-[8px] font-normal uppercase tracking-wider text-muted-foreground">
-                First-round bye
-              </span>
-            )}
+            {bye && <span className="sr-only">, first-round bye</span>}
           </span>
-        </span>
-        <span className="col-start-2 pl-5 text-[10px] font-semibold tabular-nums text-primary sm:col-start-auto sm:pl-0 sm:text-xs">
-          {playoffPercent(team.playoff)}
+          <span className="shrink-0 text-[10px] font-semibold leading-tight tabular-nums text-primary sm:text-xs">
+            {playoffPercent(team.playoff)}
+          </span>
         </span>
       </button>
     );
@@ -69,36 +66,44 @@ export function CfbPlayoffBracket({
         </p>
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1.15fr_1.15fr_.85fr_.8fr] lg:gap-6">
-        <div>
-          <h3 className="mb-4 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <div className="col-span-2 grid grid-cols-2 items-center gap-x-6 gap-y-4 sm:gap-x-8">
+          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             First round
           </h3>
-          <div className="space-y-4">
-            {PATHS.map(([h, a]) => (
-              <div
-                key={h}
-                className="relative divide-y divide-border rounded-lg border border-border bg-card after:absolute after:left-full after:top-1/2 after:w-3 after:border-t after:border-border lg:after:w-6"
-              >
-                {line(h)}
-                {line(a)}
-              </div>
-            ))}
-          </div>
-        </div>
-        <div>
-          <h3 className="mb-4 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Quarterfinals
           </h3>
-          <div className="space-y-4">
-            {PATHS.map(([h, a, b]) => (
-              <div key={b} className="rounded-lg border border-border bg-card">
-                {line(b, true)}
-                <div className="flex min-h-16 sm:min-h-12 items-center border-t border-border px-3 text-[10px] text-muted-foreground sm:text-xs">
-                  Winner of {h} vs. {a}
-                </div>
+          {PATHS.map(([h, a, b]) => (
+            <Fragment key={b}>
+              <div className="relative grid grid-rows-2 gap-2">
+                {[h, a].map((seed) => (
+                  <div key={seed} className="overflow-hidden rounded-lg border border-border bg-card">
+                    {line(seed)}
+                  </div>
+                ))}
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 100"
+                  preserveAspectRatio="none"
+                  className="pointer-events-none absolute left-full top-0 h-full w-6 overflow-visible text-primary/50 sm:w-8"
+                >
+                  <path
+                    d="M0 24 H12 V76 H0 M12 50 H24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </svg>
               </div>
-            ))}
-          </div>
+              <div className="overflow-hidden rounded-lg border border-primary/30 bg-card">
+                {line(b, true)}
+                <p className="border-t border-border px-2 py-1.5 text-[9px] text-muted-foreground sm:px-3 sm:text-[10px]">
+                  Bye · faces {h} / {a} winner
+                </p>
+              </div>
+            </Fragment>
+          ))}
         </div>
         <div className="hidden lg:block">
           <h3 className="mb-4 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
