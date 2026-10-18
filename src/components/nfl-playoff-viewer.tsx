@@ -168,10 +168,9 @@ export function NflPlayoffViewer({
           <TabsTrigger value="divisions">Division races</TabsTrigger>
         </TabsList>
         <TabsContent value="bracket" className="min-w-0 space-y-6">
-          <div className="grid grid-cols-3 gap-3 border-y border-rule-strong sm:gap-4">
+          <div className="grid grid-cols-2 gap-3 border-y border-rule-strong sm:gap-4">
             {([
               ["Playoff leader", "playoff"],
-              ["Bye favorite", "bye"],
               ["Title favorite", "champion"],
             ] as const).map(([label, key]) => {
               const leader = payload.teams.reduce((a, b) => a[key] >= b[key] ? a : b);
