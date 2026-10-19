@@ -47,5 +47,5 @@ AGENTS.md
 
 # local tooling
 .claude/
-docs/superpowers/
+docs/
 !.env.example
