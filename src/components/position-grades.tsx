@@ -20,6 +20,7 @@ import {
 } from "@/lib/position-traits";
 import { EMPTY, cn, formatNumber, formatSigned } from "@/lib/utils";
 import { InfoTip } from "@/components/info-tip";
+import { PlayerRowDisclosure, PlayerRowHeader } from "@/components/player-row-disclosure";
 import { PlayerCell } from "@/components/player-cell";
 import { TeamLogo, type TeamLogoSource } from "@/components/team-logo";
 import { PlayerComparisonPicker } from "@/components/player-comparison-picker";
@@ -190,6 +191,8 @@ function GradeCard({
   compared: boolean;
   onCompare: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const panelId = `${sport}-player-card-${row.athleteId}`;
   const copy = SPORT_COPY[sport];
   const grade = player?.grade ?? row.grade;
   const rating = RATING_LABELS[row.positionGroup];
@@ -201,102 +204,113 @@ function GradeCard({
     else sections.push({ kind: line.kind, names: [line.name] });
   }
   return (
-    <article className="self-start space-y-3 rounded-lg border border-rule-strong bg-card p-3 sm:p-4">
-      <div className="flex flex-col gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="shrink-0 font-mono text-xs text-muted-foreground">{rank}</span>
-          <div className="min-w-0 flex-1 overflow-hidden">
-            <Identity row={row} logo={logo} />
+    <article className="min-w-0 self-start border-b border-border md:rounded-lg md:border md:border-rule-strong md:bg-card">
+      <PlayerRowDisclosure
+        name={row.name}
+        rank={rank}
+        identity={<Identity row={row} logo={logo} />}
+        grade={grade == null ? EMPTY : formatNumber(grade, 1)}
+        open={open}
+        panelId={panelId}
+        onToggle={() => setOpen(!open)}
+      />
+      <div id={panelId} className={cn("space-y-3 p-3 md:block md:p-4", open ? "border-t border-border md:border-t-0" : "hidden")}>
+        <div className="flex flex-col gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 font-mono text-xs text-muted-foreground">{rank}</span>
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <Identity row={row} logo={logo} />
+            </div>
+            <button
+              type="button"
+              onClick={onCompare}
+              aria-pressed={compared}
+              aria-label={`Compare ${row.name}`}
+              className={cn(
+                "min-h-9 shrink-0 rounded-md border px-3 py-1 font-mono text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                compared
+                  ? "border-[var(--brand-highlight)] bg-[var(--brand-highlight)] text-[var(--brand-ink)]"
+                  : "border-border text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {compared ? "comparing" : "compare"}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onCompare}
-            aria-pressed={compared}
-            aria-label={`Compare ${row.name}`}
-            className={cn(
-              "min-h-9 shrink-0 rounded-md border px-3 py-1 font-mono text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              compared
-                ? "border-[var(--brand-highlight)] bg-[var(--brand-highlight)] text-[var(--brand-ink)]"
-                : "border-border text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {compared ? "comparing" : "compare"}
-          </button>
-        </div>
-        <div className={cn("grid gap-2 divide-x divide-border rounded-md bg-muted/30 py-3", rated ? "grid-cols-3" : "grid-cols-2")}>
-          <Headline
-            label="grade"
-            tip={rated ? rating.tip : copy.gradeTip}
-            tipLabel="What is the grade?"
-            value={grade == null ? EMPTY : formatNumber(grade, 1)}
-            sub={
-              grade == null
-                ? "no grade at this position"
-                : `±${formatNumber(player?.uncertainty, 1)} · pct ${row.percentile == null ? EMPTY : Math.round(row.percentile)}`
-            }
-          />
-          {rated && (
+          <div className={cn("grid gap-2 divide-x divide-border rounded-md bg-muted/30 py-3", rated ? "grid-cols-3" : "grid-cols-2")}>
             <Headline
-              label={rating.label}
-              tip={rating.tip}
-              tipLabel="What is the forecast?"
-              value={formatSigned(player.rating, 2)}
-              sub={`${rating.unit}${player.ratingRange != null ? ` · range ±${formatNumber(player.ratingRange, 0)}` : ""}`}
-              positive={player.rating != null && player.rating > 0}
+              label="grade"
+              tip={rated ? rating.tip : copy.gradeTip}
+              tipLabel="What is the grade?"
+              value={grade == null ? EMPTY : formatNumber(grade, 1)}
+              sub={
+                grade == null
+                  ? "no grade at this position"
+                  : `±${formatNumber(player?.uncertainty, 1)} · pct ${row.percentile == null ? EMPTY : Math.round(row.percentile)}`
+              }
             />
-          )}
-          <Headline
-            label="WAR"
-            tip={copy.warTip}
-            tipLabel="What is wins above replacement?"
-            value={player?.war == null ? EMPTY : formatSigned(player.war, 2)}
-            sub={
-              player == null
-                ? "loading"
-                : player.pointsAboveReplacement == null
-                  ? "no credited plays"
-                  : `${formatSigned(player.pointsAboveReplacement, 0)} pts`
-            }
-            positive={player?.war != null && player.war > 0}
-          />
-        </div>
-      </div>
-      {player && (
-        <Accordion.Root multiple className="space-y-2">
-          {sections.map((section) => {
-            const label = section.kind ? TRAIT_SECTION_LABELS[section.kind].label : "Attributes";
-            const traits = section.names.map((name) => (
-              <TraitRow
-                key={name}
-                sport={sport}
-                name={name}
-                group={row.positionGroup}
-                trait={player.traits.find((t) => t.trait === name)}
+            {rated && (
+              <Headline
+                label={rating.label}
+                tip={rating.tip}
+                tipLabel="What is the forecast?"
+                value={formatSigned(player.rating, 2)}
+                sub={`${rating.unit}${player.ratingRange != null ? ` · range ±${formatNumber(player.ratingRange, 0)}` : ""}`}
+                positive={player.rating != null && player.rating > 0}
               />
-            ));
-            const info = section.kind && (
-              <InfoTip text={TRAIT_SECTION_LABELS[section.kind].tip} label={`What are ${label} measures?`} />
-            );
-            return (
-              <Accordion.Item key={section.kind ?? "traits"} value={section.kind ?? "traits"} className="border-t border-border">
-                <div className="flex items-center gap-2">
-                  <Accordion.Header className="min-w-0 flex-1">
-                    <Accordion.Trigger className="group flex min-h-11 w-full items-center gap-2 rounded-sm text-left font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      <ChevronDown aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-[panel-open]:rotate-180" />
-                      <span>{label}</span>
-                      <span className="ml-auto text-[10px] text-muted-foreground">{section.names.length}</span>
-                    </Accordion.Trigger>
-                  </Accordion.Header>
-                  {info}
-                </div>
-                <Accordion.Panel className="space-y-1.5 pb-3">
-                  {traits}
-                </Accordion.Panel>
-              </Accordion.Item>
-            );
-          })}
-        </Accordion.Root>
-      )}
+            )}
+            <Headline
+              label="WAR"
+              tip={copy.warTip}
+              tipLabel="What is wins above replacement?"
+              value={player?.war == null ? EMPTY : formatSigned(player.war, 2)}
+              sub={
+                player == null
+                  ? "loading"
+                  : player.pointsAboveReplacement == null
+                    ? "no credited plays"
+                    : `${formatSigned(player.pointsAboveReplacement, 0)} pts`
+              }
+              positive={player?.war != null && player.war > 0}
+            />
+          </div>
+        </div>
+        {player && (
+          <Accordion.Root multiple className="space-y-2">
+            {sections.map((section) => {
+              const label = section.kind ? TRAIT_SECTION_LABELS[section.kind].label : "Attributes";
+              const traits = section.names.map((name) => (
+                <TraitRow
+                  key={name}
+                  sport={sport}
+                  name={name}
+                  group={row.positionGroup}
+                  trait={player.traits.find((t) => t.trait === name)}
+                />
+              ));
+              const info = section.kind && (
+                <InfoTip text={TRAIT_SECTION_LABELS[section.kind].tip} label={`What are ${label} measures?`} />
+              );
+              return (
+                <Accordion.Item key={section.kind ?? "traits"} value={section.kind ?? "traits"} className="border-t border-border">
+                  <div className="flex items-center gap-2">
+                    <Accordion.Header className="min-w-0 flex-1">
+                      <Accordion.Trigger className="group flex min-h-11 w-full items-center gap-2 rounded-sm text-left font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                        <ChevronDown aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-[panel-open]:rotate-180" />
+                        <span>{label}</span>
+                        <span className="ml-auto text-[10px] text-muted-foreground">{section.names.length}</span>
+                      </Accordion.Trigger>
+                    </Accordion.Header>
+                    {info}
+                  </div>
+                  <Accordion.Panel className="space-y-1.5 pb-3">
+                    {traits}
+                  </Accordion.Panel>
+                </Accordion.Item>
+              );
+            })}
+          </Accordion.Root>
+        )}
+      </div>
     </article>
   );
 }
@@ -637,7 +651,8 @@ export default function PositionGrades({
       {visible.length === 0 ? (
         <p className="text-sm text-muted-foreground">No players match.</p>
       ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 md:gap-4 lg:grid-cols-2">
+          <PlayerRowHeader />
           {visible.map((row, i) => (
             <GradeCard
               key={row.athleteId}

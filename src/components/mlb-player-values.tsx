@@ -19,6 +19,7 @@ import {
 import { mlbTeamIdentity } from "@/lib/mlb-teams";
 import { EMPTY, cn, formatNumber, formatSigned } from "@/lib/utils";
 import { InfoTip } from "@/components/info-tip";
+import { PlayerRowDisclosure, PlayerRowHeader } from "@/components/player-row-disclosure";
 import { PlayerCell } from "@/components/player-cell";
 import { PlayerComparisonPicker } from "@/components/player-comparison-picker";
 import { ToggleGroup } from "@/components/toggle-group";
@@ -162,12 +163,11 @@ function DetailStatus({ failed, onRetry, loadingText = "Loading traits…" }: { 
   );
 }
 
-function PlayerCard({ row, detail, failed, onRetry, showDetails = true }: {
+function PlayerCard({ row, detail, failed, onRetry }: {
   row: PlayerValueIndex;
   detail: PlayerDetail | undefined;
   failed: boolean;
   onRetry: () => void;
-  showDetails?: boolean;
 }) {
   const graded = row.grade != null;
   const head = headlineValue(row);
@@ -175,8 +175,9 @@ function PlayerCard({ row, detail, failed, onRetry, showDetails = true }: {
   const panels = pitcher ? ["arsenal", "results", "durability"] : ["batting", "fielding"];
   return (
     <div className="min-w-0 space-y-4 py-3">
-      {showDetails && <div className="flex flex-wrap gap-x-6 gap-y-1 font-mono text-[11px] text-muted-foreground">
+      <div className="flex flex-wrap gap-x-6 gap-y-1 font-mono text-[11px] text-muted-foreground">
         <span>{row.bats ?? "?"}/{row.throws ?? "?"}</span>
+        {row.age != null && <span>Age {row.age}</span>}
         {row.secondary_positions.length > 0 && <span>also {row.secondary_positions.join(", ")}</span>}
         {row.service_time != null && <span>service {formatNumber(row.service_time, 3)}</span>}
         {row.fa_year != null && <span>free agent {row.fa_year}</span>}
@@ -185,7 +186,7 @@ function PlayerCard({ row, detail, failed, onRetry, showDetails = true }: {
         {row.owed_through_control_musd != null && row.control_years > 0 && (
           <span>owed {formatMillions(row.owed_through_control_musd)} over {row.control_years} control year{row.control_years === 1 ? "" : "s"}</span>
         )}
-      </div>}
+      </div>
       <div className="grid grid-cols-3 gap-3 [&>div]:min-w-0">
         <div>
           <div className="inline-flex min-h-8 items-start gap-1 text-[10px] uppercase tracking-wider text-muted-foreground sm:min-h-0 sm:items-center">
@@ -221,7 +222,7 @@ function PlayerCard({ row, detail, failed, onRetry, showDetails = true }: {
           </div>
         </div>
       </div>
-      {showDetails && (detail == null ? (
+      {detail == null ? (
         <DetailStatus failed={failed} onRetry={onRetry} />
       ) : (
         <div className="grid grid-cols-1 gap-x-8 gap-y-4 md:grid-cols-2">
@@ -241,8 +242,8 @@ function PlayerCard({ row, detail, failed, onRetry, showDetails = true }: {
             );
           })}
         </div>
-      ))}
-      {showDetails && detail != null && detail.outlook.length > 0 && (
+      )}
+      {detail != null && detail.outlook.length > 0 && (
         <div className="space-y-1.5">
           <div className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
             Control-year outlook <InfoTip text={`${OUTLOOK_TIP} ${PLAYING_TIME_TIP}`} label="What is the outlook?" />
@@ -585,8 +586,8 @@ export default function MlbPlayerValues({ index }: { index: PlayerValueIndex[] }
           : `Top ${visible.length} of ${matches.length} ${position}, ${graded} graded.`}{" "}
         Best ranks talent; Bargain ranks trade value. Open a player for details.
       </p>
-      <div className="space-y-4 md:hidden">
-        <div className="flex items-center gap-2">
+      <div className="md:hidden">
+        <div className="mb-4 flex items-center gap-2">
           <label htmlFor="mobile-player-sort" className="text-xs text-muted-foreground">Sort by</label>
           <select
             id="mobile-player-sort"
@@ -613,35 +614,32 @@ export default function MlbPlayerValues({ index }: { index: PlayerValueIndex[] }
             {sortDir === "desc" ? "High to low" : "Low to high"}
           </button>
         </div>
+        <PlayerRowHeader />
         {visible.length === 0 && <p className="text-sm text-muted-foreground">No players match.</p>}
         {visible.map((row, i) => {
           const open = expanded === row.player_id;
           const name = row.player_name ?? String(row.player_id);
           return (
-            <article key={row.player_id} aria-label={name} className="min-w-0 rounded-lg border border-border p-3">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="shrink-0 font-mono text-xs text-muted-foreground">{i + 1}</span>
-                <div className="min-w-0 flex-1">
-                  <PlayerCell
-                    athleteId={String(row.player_id)}
-                    headshotUrl={row.headshot_url}
-                    name={name}
-                    team={row.team || "FA"}
-                    position={`${row.position_group}${row.age == null ? "" : ` · Age ${row.age}`}`}
-                    logo={mlbTeamIdentity(row.team)}
-                  />
-                </div>
+            <article key={row.player_id} aria-label={name} className="min-w-0 border-b border-border">
+              <PlayerRowDisclosure
+                name={name}
+                rank={i + 1}
+                identity={<PlayerCell
+                  athleteId={String(row.player_id)}
+                  headshotUrl={row.headshot_url}
+                  name={name}
+                  team={row.team || "FA"}
+                  position={row.position_group}
+                  logo={mlbTeamIdentity(row.team)}
+                />}
+                grade={row.grade == null ? EMPTY : formatNumber(row.grade, 0)}
+                open={open}
+                panelId={`mlb-mobile-player-${row.player_id}`}
+                onToggle={() => setExpanded(open ? null : row.player_id)}
+              />
+              <div id={`mlb-mobile-player-${row.player_id}`} hidden={!open} className="border-t border-border px-3">
+                {open && <PlayerCard row={row} detail={loaded[String(row.player_id)]} failed={!!failed[String(row.player_id)]} onRetry={() => retryDetails([row.player_id])} />}
               </div>
-              <PlayerCard row={row} detail={loaded[String(row.player_id)]} failed={!!failed[String(row.player_id)]} onRetry={() => retryDetails([row.player_id])} showDetails={open} />
-              <button
-                type="button"
-                aria-expanded={open}
-                aria-label={`${open ? "Hide" : "Show"} details for ${name}`}
-                onClick={() => setExpanded(open ? null : row.player_id)}
-                className="min-h-10 w-full rounded-md border border-border text-sm text-primary hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
-              >
-                {open ? "Hide details" : "View traits and outlook"}
-              </button>
             </article>
           );
         })}
