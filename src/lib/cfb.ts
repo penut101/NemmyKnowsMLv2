@@ -70,6 +70,41 @@ export const fetchLatestRatings = cache(async (): Promise<{
   };
 });
 
+// Model ratings from the most recent earlier week of the same season, keyed by
+// team_id, for the weekly change column. Week 1 has nothing to compare against
+// and a failed read only hides the column.
+export async function fetchPriorWeekRatings(
+  season: number,
+  week: number
+): Promise<{ week: number | null; ratings: Record<number, number> }> {
+  const priorRes = await supabaseCfb
+    .from("team_ratings")
+    .select("week")
+    .eq("season", season)
+    .lt("week", week)
+    .order("week", { ascending: false })
+    .limit(1);
+  const prior = priorRes.data?.[0];
+  if (priorRes.error || !prior) {
+    if (priorRes.error) console.error("cfb prior ratings fetch failed:", priorRes.error.message);
+    return { week: null, ratings: {} };
+  }
+
+  const { data, error } = await supabaseCfb
+    .from("team_ratings")
+    .select("team_id, power_rating")
+    .eq("season", season)
+    .eq("week", prior.week);
+  if (error) {
+    console.error("cfb prior ratings fetch failed:", error.message);
+    return { week: null, ratings: {} };
+  }
+  return {
+    week: prior.week,
+    ratings: Object.fromEntries((data ?? []).map((r) => [r.team_id, r.power_rating])),
+  };
+}
+
 // Descriptive unit companions for the same published ratings snapshot.
 // Missing historical unit data is represented on the row itself rather than
 // making the whole request fail.

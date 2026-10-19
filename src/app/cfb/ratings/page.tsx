@@ -1,6 +1,11 @@
 import { PageDescription, PageHeader, PageShell, PageTitle } from "@/components/page-layout";
 import type { Metadata } from "next";
-import { fetchLatestRatings, fetchTeams, fetchUnitRatings } from "@/lib/cfb";
+import {
+  fetchLatestRatings,
+  fetchPriorWeekRatings,
+  fetchTeams,
+  fetchUnitRatings,
+} from "@/lib/cfb";
 import { fetchComparisonProjections } from "@/lib/football-comparison.server";
 import { LastUpdated } from "@/components/last-updated";
 import CfbRatings from "@/components/cfb-ratings";
@@ -21,13 +26,14 @@ export default async function RatingsPage() {
     fetchLatestRatings(),
     fetchTeams(),
   ]);
-  const [units, projections] =
+  const [units, projections, prior] =
     season != null && week != null
       ? await Promise.all([
           fetchUnitRatings(season, week),
           fetchComparisonProjections("cfb", season, week),
+          fetchPriorWeekRatings(season, week),
         ])
-      : [[], { games: [], unavailable: false }];
+      : [[], { games: [], unavailable: false }, { week: null, ratings: {} }];
 
   if (ratings.length === 0) {
     return (
@@ -76,12 +82,19 @@ export default async function RatingsPage() {
         units={units}
         projections={projections}
         teams={[...teams.values()]}
+        prior={prior}
       />
 
       <p className="text-xs text-muted-foreground">
         Off and Def split the model rating into offense and defense.
         Market is fitted to earlier closing spreads with a prior-season market
         baseline; it does not include season win totals.
+        {prior.week != null && (
+          <>
+            {" "}Chg is the change in model rating since the week {prior.week}{" "}
+            ratings.
+          </>
+        )}
       </p>
     </PageShell>
   );

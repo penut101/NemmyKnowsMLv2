@@ -12,6 +12,7 @@ import { GroupRatings } from "@/components/group-ratings";
 import {
   PowerRatingsTable,
   type LimitedDataRule,
+  type RatingChange,
 } from "@/components/power-ratings-table";
 import { ToggleGroup } from "@/components/toggle-group";
 import {
@@ -62,11 +63,13 @@ export default function CfbRatings({
   units,
   projections,
   teams,
+  prior,
 }: {
   ratings: CfbTeamRating[];
   units: CfbTeamUnitRating[];
   projections: ComparisonProjections;
   teams: CfbTeamIdentity[];
+  prior: { week: number | null; ratings: Record<number, number> };
 }) {
   // Search params are read in the browser without opting the server page into
   // dynamic rendering. The server snapshot uses the default view, then deep
@@ -83,6 +86,20 @@ export default function CfbRatings({
     [teams]
   );
   const logo = (r: { team_id: number }) => teamById.get(r.team_id);
+
+  const change = useMemo<RatingChange<CfbTeamRating> | undefined>(
+    () =>
+      prior.week == null
+        ? undefined
+        : {
+            label: `Change in model rating since week ${prior.week}`,
+            value: (r) => {
+              const before = prior.ratings[r.team_id];
+              return before == null ? null : r.power_rating - before;
+            },
+          },
+    [prior]
+  );
 
   // Every view is a slice of the ratings already in the browser, so switching
   // only updates the URL-backed client view: no navigation, no refetch.
@@ -137,6 +154,7 @@ export default function CfbRatings({
             onSelect={selectConference}
             market={marketStrength}
             limited={LIMITED}
+            change={change}
           />
         ) : view === "units" ? (
           <CfbUnitRatings units={units} ratings={ratings} logo={logo} />
@@ -159,6 +177,7 @@ export default function CfbRatings({
               ) : null
             }
             limited={LIMITED}
+            change={change}
           />
         )}
       </ViewTabPanel>

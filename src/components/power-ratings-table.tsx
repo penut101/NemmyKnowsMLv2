@@ -8,7 +8,7 @@ import { RatingsHeatmapLegend } from "@/components/ratings-heatmap-legend";
 import { ComparisonGaps } from "@/components/comparison-gaps";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { RatingsSearch, useRatingsSearch } from "@/components/ratings-search";
-import { formatNumber } from "@/lib/utils";
+import { formatNumber, formatSigned } from "@/lib/utils";
 import { TeamLogo, type TeamLogoSource } from "@/components/team-logo";
 import {
   Table,
@@ -27,6 +27,12 @@ export interface PowerRatingRow {
   defense_points: number | null;
   power_rating_sd: number | null;
   missing_input_count: number | null;
+}
+
+// Change in model rating against an earlier published snapshot.
+export interface RatingChange<T> {
+  label: string;
+  value: (row: T) => number | null | undefined;
 }
 
 export interface MarketStrength {
@@ -74,6 +80,7 @@ export function PowerRatingsTable<T extends PowerRatingRow>({
   limited,
   searchRows,
   searchScope,
+  change,
 }: {
   rows: T[];
   heatmapRows: T[];
@@ -88,6 +95,7 @@ export function PowerRatingsTable<T extends PowerRatingRow>({
   limited: LimitedDataRule;
   searchRows?: T[];
   searchScope?: string;
+  change?: RatingChange<T>;
 }) {
   const [detail, setDetail] = useState<T | null>(null);
   const { query, setQuery, matches, total } = useRatingsSearch(rows, searchRows);
@@ -136,6 +144,11 @@ export function PowerRatingsTable<T extends PowerRatingRow>({
               {showSd && !market && (
                 <TableHead className="hidden text-right sm:table-cell">SD</TableHead>
               )}
+              {change && (
+                <TableHead className="text-right">
+                  <abbr title={change.label} className="no-underline">Chg</abbr>
+                </TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -179,6 +192,11 @@ export function PowerRatingsTable<T extends PowerRatingRow>({
                 {showSd && !market && (
                   <TableCell className={`hidden ${numCell} text-muted-foreground sm:table-cell`}>
                     {formatNumber(row.power_rating_sd)}
+                  </TableCell>
+                )}
+                {change && (
+                  <TableCell className={`${numCell} text-muted-foreground`}>
+                    {formatSigned(change.value(row))}
                   </TableCell>
                 )}
               </TableRow>
