@@ -239,6 +239,10 @@ const NFL_TRAIT_LABELS: Record<string, { label: string; tip: string }> = {
     label: "Protection",
     tip: "Sacks and QB hits allowed relative to league expectation for the unit’s dropbacks, adjusted for the defense. Unit measure.",
   },
+  "p.punt_epa": {
+    label: "Punt value",
+    tip: "Expected points added per punt above the league average through the previous week. Credits pinning the opponent and charges return yards.",
+  },
 };
 
 // The fitted ratings (NFL quarterbacks and running backs, version 2). Each

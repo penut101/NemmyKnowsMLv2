@@ -665,7 +665,7 @@ export default function PositionGrades({
           ? `${matches.length} player${matches.length === 1 ? "" : "s"} match “${query.trim()}”${group === ALL ? "" : ` in the ${group}`}, best grade first`
           : `Top ${visible.length} of ${matches.length} ${group === ALL ? "" : `${group} `}${position} · ${graded} graded this week`}
         <InfoTip
-          text={`Percentiles among ${copy.pool} at the position this week. ${sport === "cfb" ? "Grade inputs contribute to the rating; More context does not. Solid bars use recorded plays or stats; striped bars are inferred from teammates or unit results. Dimmed: not graded." : "Solid: directly measured. Striped: inferred. Grey: style, not quality. Dimmed: not graded. The r shows consistency between odd and even games."}`}
+          text={`Percentiles among ${copy.pool} at the position this week. ${sport === "cfb" ? "Grade inputs contribute to the rating; More context does not. Solid bars use recorded plays or stats; striped bars are inferred from teammates or unit results. Dimmed: not graded." : "Solid: directly measured. Striped: inferred. Grey: style, not quality. Dimmed: not graded. The r is the stat’s reliability over 8 games: how well odd and even games agree, scaled to 8 games."}`}
           label="How to read the bars"
         />
       </p>
