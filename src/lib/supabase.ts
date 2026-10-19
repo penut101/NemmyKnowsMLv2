@@ -10,7 +10,12 @@ type CfbDatabase = Omit<Database, "cfb"> & {
   cfb: Omit<Database["cfb"], "Tables" | "Views" | "Functions"> & {
     Tables: Omit<Database["cfb"]["Tables"], "team_ratings"> &
       CfbRatingsDatabase["cfb"]["Tables"] & CfbPicksDatabase["cfb"]["Tables"];
-    Views: Database["cfb"]["Views"] & CfbPicksDatabase["cfb"]["Views"];
+    Views: Database["cfb"]["Views"] & CfbPicksDatabase["cfb"]["Views"] & {
+      current_recommendations: {
+        Row: CfbPicksDatabase["cfb"]["Tables"]["recommendations"]["Row"];
+        Relationships: [];
+      };
+    };
     Functions: Database["cfb"]["Functions"] &
       CfbPicksDatabase["cfb"]["Functions"];
   };

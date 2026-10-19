@@ -6,6 +6,9 @@ export function tableCacheTag(sport: string, table: string) {
 
 export function restCacheTags(sport: string, url: URL): string[] {
   const resource = url.pathname.split("/rest/v1/")[1];
+  if (sport === "cfb" && resource === "current_recommendations") {
+    return [sport, tableCacheTag(sport, "recommendation_decisions"), tableCacheTag(sport, "recommendations")];
+  }
   if (!resource.startsWith("rpc/")) {
     return [sport, tableCacheTag(sport, resource)];
   }

@@ -165,7 +165,7 @@ function unstartedCutoff(): string {
 export async function fetchCfbPickExample(): Promise<PickExample | null> {
   const now = unstartedCutoff();
   const base = () =>
-    supabaseCfb.from("recommendations").select(REC_COLUMNS).eq("status", "recommended");
+    supabaseCfb.from("current_recommendations").select(REC_COLUMNS).eq("status", "recommended");
   const upcoming = await base()
     .gt("start_date", now)
     .order("start_date", { ascending: true })

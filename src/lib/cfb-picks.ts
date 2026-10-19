@@ -59,7 +59,7 @@ export async function fetchCfbWeeklyPredictions(): Promise<CfbWeeklyPredictions>
     let includeContext = true;
     for (let offset = 0; ; offset += PAGE) {
       const request = () => {
-        const table = supabaseCfb.from("recommendations");
+        const table = supabaseCfb.from("current_recommendations");
         const query = includeContext
           ? table.select(`${WEEKLY_PICK_COLUMNS},pricing_context`)
           : table.select(WEEKLY_PICK_COLUMNS);

@@ -43,7 +43,7 @@ export default async function PredictionsPage() {
           {updated && (
             <LastUpdated
               timestamp={updated}
-              schedule="Latest recorded decisions"
+              schedule="Latest recommendation refresh"
             />
           )}
         </div>
@@ -71,9 +71,9 @@ export default async function PredictionsPage() {
       )}
       <div className="flex flex-wrap justify-between gap-3 border-t border-border pt-4 text-xs leading-relaxed text-muted-foreground">
         <p className="max-w-2xl">
-          Lines, odds, and bookmakers stay fixed at publication. These are
-          recorded selections, not live prices. Each prediction is tracked at 1
-          unit.
+          Pregame recommendations reflect the latest model and odds refresh.
+          Picks that no longer qualify disappear from this list. Original picks
+          and their recorded prices remain in history, tracked at 1 unit.
         </p>
         <Link href="/cfb/history?view=picks" className="underline underline-offset-4">
           Results and No Play decisions
