@@ -183,8 +183,6 @@ function GradeCard({
   player,
   lines,
   logo,
-  compared,
-  onCompare,
 }: {
   desktop?: boolean;
   showForecast?: boolean;
@@ -195,8 +193,6 @@ function GradeCard({
   player: GradedPlayer | undefined;
   lines: TraitLine[];
   logo: TeamLogoSource | undefined;
-  compared: boolean;
-  onCompare: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const panelId = `${sport}-player-card-${row.athleteId}${desktop ? "-desktop" : ""}`;
@@ -212,35 +208,8 @@ function GradeCard({
   }
   const details = (
       <div id={panelId} className={cn("space-y-3 p-3 md:block md:p-4", open ? "border-t border-border md:border-t-0" : "hidden")}>
-        <div className="flex flex-col gap-3">
-          <div className="flex min-w-0 items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={onCompare}
-              aria-pressed={compared}
-              aria-label={`Compare ${row.name}`}
-              className={cn(
-                "min-h-9 shrink-0 rounded-md border px-3 py-1 font-mono text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                compared
-                  ? "border-[var(--brand-highlight)] bg-[var(--brand-highlight)] text-[var(--brand-ink)]"
-                  : "border-border text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {compared ? "comparing" : "compare"}
-            </button>
-          </div>
-          <div className={cn("grid gap-2 divide-x divide-border rounded-md bg-muted/30 py-3", rated ? "grid-cols-3" : "grid-cols-2")}>
-            <Headline
-              label="grade"
-              tip={rated ? rating.tip : copy.gradeTip}
-              tipLabel="What is the grade?"
-              value={grade == null ? EMPTY : formatNumber(grade, 1)}
-              sub={
-                grade == null
-                  ? "no grade at this position"
-                  : `±${formatNumber(player?.uncertainty, 1)} · pct ${row.percentile == null ? EMPTY : Math.round(row.percentile)}`
-              }
-            />
+        {!desktop && (
+          <div className={cn("grid gap-2 py-1", rated ? "grid-cols-2 divide-x divide-border" : "grid-cols-1")}>
             {rated && (
               <Headline
                 label={rating.label}
@@ -266,7 +235,7 @@ function GradeCard({
               positive={player?.war != null && player.war > 0}
             />
           </div>
-        </div>
+        )}
         {player && (
           <Accordion.Root multiple className={desktop ? "grid grid-cols-2 items-start gap-x-8 gap-y-4" : "space-y-2"}>
             {sections.map((section) => {
@@ -333,22 +302,22 @@ function GradeCard({
               <Identity row={row} logo={logo} />
             </button>
           </TableCell>
-          <TableCell>{row.positionGroup}</TableCell>
-          <TableCell className="text-right">{formatNumber(row.games, 0)}</TableCell>
-          <TableCell className="text-right font-bold text-primary">{grade == null ? EMPTY : formatNumber(grade, 1)}</TableCell>
-          <TableCell className="text-right">{player?.uncertainty == null ? EMPTY : `±${formatNumber(player.uncertainty, 1)}`}</TableCell>
-          <TableCell className="text-right">{row.percentile == null ? EMPTY : Math.round(row.percentile)}</TableCell>
+          <TableCell className="text-center">{row.positionGroup}</TableCell>
+          <TableCell className="text-center">{formatNumber(row.games, 0)}</TableCell>
+          <TableCell className="text-center font-bold text-primary">{grade == null ? EMPTY : formatNumber(grade, 1)}</TableCell>
+          <TableCell className="text-center">{player?.uncertainty == null ? EMPTY : `±${formatNumber(player.uncertainty, 1)}`}</TableCell>
+          <TableCell className="text-center">{row.percentile == null ? EMPTY : Math.round(row.percentile)}</TableCell>
           {desktopTraits.map((name) => {
             const trait = player?.traits.find((item) => item.trait === name);
-            return <TableCell key={name} className="text-right">{trait?.percentile == null ? EMPTY : Math.round(trait.percentile)}</TableCell>;
+            return <TableCell key={name} className="text-center">{trait?.percentile == null ? EMPTY : Math.round(trait.percentile)}</TableCell>;
           })}
           {showForecast && (
-            <TableCell className="text-right">
+            <TableCell className="text-center">
               {rated ? <><div>{formatSigned(player.rating, 2)}</div><div className="text-[11px] text-muted-foreground">{rating.unit}</div></> : EMPTY}
             </TableCell>
           )}
-          <TableCell className="text-right">{player?.war == null ? EMPTY : formatSigned(player.war, 2)}</TableCell>
-          <TableCell className="text-right">{player?.pointsAboveReplacement == null ? EMPTY : formatSigned(player.pointsAboveReplacement, 1)}</TableCell>
+          <TableCell className="text-center">{player?.war == null ? EMPTY : formatSigned(player.war, 2)}</TableCell>
+          <TableCell className="text-center">{player?.pointsAboveReplacement == null ? EMPTY : formatSigned(player.pointsAboveReplacement, 1)}</TableCell>
           <TableCell><ChevronDown aria-hidden="true" className={cn("size-4 text-muted-foreground transition-transform", open && "rotate-180")} /></TableCell>
         </TableRow>
         <TableRow hidden={!open} className="hover:bg-transparent">
@@ -556,16 +525,6 @@ export default function PositionGrades({
   const [compare, setCompare] = useState<string[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
   const byId = useMemo(() => new Map(index.map((row) => [row.athleteId, row] as const)), [index]);
-  const toggleCompare = (athleteId: string) => {
-    if (!compare.includes(athleteId)) setCompareOpen(true);
-    setCompare((current) => {
-      if (current.includes(athleteId)) return current.filter((id) => id !== athleteId);
-      const first = current[0] ? byId.get(current[0]) : undefined;
-      const picked = byId.get(athleteId);
-      if (!first || !picked || first.positionGroup !== picked.positionGroup) return [athleteId];
-      return [...current, athleteId].slice(-2);
-    });
-  };
 
   const comparisonPlayers = useMemo(() => index.map((row) => ({ id: row.athleteId, label: `${row.name} · ${row.team} · ${row.positionGroup}`, group: row.positionGroup })), [index]);
 
@@ -662,8 +621,6 @@ export default function PositionGrades({
       player={loaded[row.athleteId]}
       lines={linesFor(row.positionGroup)}
       logo={logoFor(row.team)}
-      compared={compare.includes(row.athleteId)}
-      onCompare={() => toggleCompare(row.athleteId)}
     />
   ));
 
@@ -737,20 +694,30 @@ export default function PositionGrades({
           </div>
           <div className="hidden md:block">
             <p className="pb-2 text-xs text-muted-foreground">Select a row for the full player card. ± is grade uncertainty; Pct and trait columns are position percentiles.</p>
-            <Table>
+            <Table className="table-fixed min-w-[1080px]">
+              <colgroup>
+                <col className="w-8" />
+                <col className="w-[22%]" />
+                <col className="w-12" />
+                <col /><col /><col /><col />
+                {desktopTraits.map((name) => <col key={name} className="w-28" />)}
+                {showForecast && <col className="w-28" />}
+                <col /><col />
+                <col className="w-8" />
+              </colgroup>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-8">#</TableHead>
                   <TableHead>Player</TableHead>
-                  <TableHead>Pos</TableHead>
-                  <TableHead className="text-right">Games</TableHead>
-                  <TableHead className="text-right">Grade</TableHead>
-                  <TableHead className="text-right">±</TableHead>
-                  <TableHead className="text-right">Pct</TableHead>
+                  <TableHead className="text-center">Pos</TableHead>
+                  <TableHead className="text-center">Games</TableHead>
+                  <TableHead className="text-center">Grade</TableHead>
+                  <TableHead className="text-center">±</TableHead>
+                  <TableHead className="text-center">Pct</TableHead>
                   {desktopTraits.map((name) => {
                     const { label, tip } = traitLabel(name, sport);
                     return (
-                      <TableHead key={name} className="text-right">
+                      <TableHead key={name} className="text-center">
                         <span className="inline-flex items-center gap-1">
                           <span className="max-w-24 truncate" title={label}>{label}</span>
                           <InfoTip text={`${tip} Shown as a percentile at this position, matching the player card.`} label={`What is ${label}?`} />
@@ -758,9 +725,9 @@ export default function PositionGrades({
                       </TableHead>
                     );
                   })}
-                  {showForecast && <TableHead className="text-right">Forecast</TableHead>}
-                  <TableHead className="text-right">WAR</TableHead>
-                  <TableHead className="text-right"><span className="inline-flex items-center gap-1">Pts <InfoTip text="Points above replacement credited to this player, as shown in the full card." label="What are points above replacement?" /></span></TableHead>
+                  {showForecast && <TableHead className="text-center">Forecast</TableHead>}
+                  <TableHead className="text-center">WAR</TableHead>
+                  <TableHead className="text-center"><span className="inline-flex items-center gap-1">Pts <InfoTip text="Points above replacement credited to this player, as shown in the full card." label="What are points above replacement?" /></span></TableHead>
                   <TableHead className="w-8"><span className="sr-only">Expand player</span></TableHead>
                 </TableRow>
               </TableHeader>
