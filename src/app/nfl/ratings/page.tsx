@@ -1,6 +1,11 @@
 import { PageDescription, PageHeader, PageShell, PageTitle } from "@/components/page-layout";
 import type { Metadata } from "next";
-import { fetchLatestRatings, fetchTeams, fetchUnitRatings } from "@/lib/nfl";
+import {
+  fetchLatestRatings,
+  fetchPriorWeekRatings,
+  fetchTeams,
+  fetchUnitRatings,
+} from "@/lib/nfl";
 import { fetchComparisonProjections } from "@/lib/football-comparison.server";
 import { LastUpdated } from "@/components/last-updated";
 import NflRatings from "@/components/nfl-ratings";
@@ -21,13 +26,14 @@ export default async function RatingsPage() {
     fetchLatestRatings(),
     fetchTeams(),
   ]);
-  const [units, projections] =
+  const [units, projections, prior] =
     season != null && week != null
       ? await Promise.all([
           fetchUnitRatings(season, week),
           fetchComparisonProjections("nfl", season, week),
+          fetchPriorWeekRatings(season, week),
         ])
-      : [[], { games: [], unavailable: false }];
+      : [[], { games: [], unavailable: false }, { week: null, ratings: {} }];
 
   if (ratings.length === 0) {
     return (
@@ -77,11 +83,18 @@ export default async function RatingsPage() {
         units={units}
         projections={projections}
         teams={[...teams.values()]}
+        prior={prior}
       />
 
       <p className="text-xs text-muted-foreground">
         Off and Def are points per game above an average opponent; Rating is
         their sum. SD is the model&apos;s uncertainty about the rating.
+        {prior.week != null && (
+          <>
+            {" "}Chg is the change in rating since the week {prior.week}{" "}
+            ratings.
+          </>
+        )}
       </p>
     </PageShell>
   );

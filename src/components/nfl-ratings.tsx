@@ -12,6 +12,7 @@ import { GroupRatings } from "@/components/group-ratings";
 import {
   PowerRatingsTable,
   type LimitedDataRule,
+  type RatingChange,
 } from "@/components/power-ratings-table";
 import {
   FootballTeamComparison,
@@ -46,11 +47,13 @@ export default function NflRatings({
   units,
   projections,
   teams,
+  prior,
 }: {
   ratings: NflTeamRating[];
   units: NflTeamUnitRating[];
   projections: ComparisonProjections;
   teams: NflTeamIdentity[];
+  prior: { week: number | null; ratings: Record<string, number> };
 }) {
   // Search params are read in the browser without opting the server page into
   // dynamic rendering. The server snapshot uses the default view, then deep
@@ -67,6 +70,20 @@ export default function NflRatings({
     [teams]
   );
   const logo = (r: { team_abbr: string }) => teamByAbbr.get(r.team_abbr);
+
+  const change = useMemo<RatingChange<NflTeamRating> | undefined>(
+    () =>
+      prior.week == null
+        ? undefined
+        : {
+            label: `Change in rating since week ${prior.week}`,
+            value: (r) => {
+              const before = prior.ratings[r.team_abbr];
+              return before == null ? null : r.power_rating - before;
+            },
+          },
+    [prior]
+  );
 
   const visible = useMemo(() => {
     if (view === "afc" || view === "nfc")
@@ -121,6 +138,7 @@ export default function NflRatings({
             initialGroup={initialDivision}
             onSelect={selectDivision}
             limited={LIMITED}
+            change={change}
           />
         ) : view === "units" ? (
           units.length === 0 ? (
@@ -150,6 +168,7 @@ export default function NflRatings({
             group={{ label: "Division", value: (r) => r.division }}
             showSd
             limited={LIMITED}
+            change={change}
           />
         )}
       </ViewTabPanel>
