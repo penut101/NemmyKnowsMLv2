@@ -213,11 +213,7 @@ function GradeCard({
   const details = (
       <div id={panelId} className={cn("space-y-3 p-3 md:block md:p-4", open ? "border-t border-border md:border-t-0" : "hidden")}>
         <div className="flex flex-col gap-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="shrink-0 font-mono text-xs text-muted-foreground">{rank}</span>
-            <div className="min-w-0 flex-1 overflow-hidden">
-              <Identity row={row} logo={logo} />
-            </div>
+          <div className="flex min-w-0 items-center justify-end gap-2">
             <button
               type="button"
               onClick={onCompare}
@@ -272,7 +268,7 @@ function GradeCard({
           </div>
         </div>
         {player && (
-          <Accordion.Root multiple className="space-y-2">
+          <Accordion.Root multiple className={desktop ? "grid grid-cols-2 items-start gap-x-8 gap-y-4" : "space-y-2"}>
             {sections.map((section) => {
               const label = section.kind ? TRAIT_SECTION_LABELS[section.kind].label : "Attributes";
               const traits = section.names.map((name) => (
@@ -287,6 +283,17 @@ function GradeCard({
               const info = section.kind && (
                 <InfoTip text={TRAIT_SECTION_LABELS[section.kind].tip} label={`What are ${label} measures?`} />
               );
+              if (desktop || sport === "cfb") {
+                return (
+                  <section key={section.kind ?? "traits"} className="min-w-0 border-t border-border">
+                    <div className="flex min-h-11 items-center gap-2">
+                      <h3 className="font-mono text-xs">{label}</h3>
+                      {info}
+                    </div>
+                    <div className="space-y-1.5 pb-3">{traits}</div>
+                  </section>
+                );
+              }
               return (
                 <Accordion.Item key={section.kind ?? "traits"} value={section.kind ?? "traits"} className="border-t border-border">
                   <div className="flex items-center gap-2">
