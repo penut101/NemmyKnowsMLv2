@@ -107,6 +107,10 @@ export function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
+// Traits the card never shows. QB receiver independence carries a fitted grade
+// weight of 0.00002 and is blank for most passers, so its GRADE tag misled.
+const HIDDEN_TRAITS = new Set(["qb.receiver_independence"]);
+
 // Players and the OL unit rows of one position, as the page's card model,
 // built from every row of those athletes for the season.
 export function buildGradedPlayers(rows: PositionTraitRow[]): Record<string, GradedPlayer> {
@@ -137,7 +141,7 @@ export function buildGradedPlayers(rows: PositionTraitRow[]): Record<string, Gra
       warPercentile: war?.percentile ?? null,
       pointsAboveReplacement: war?.points_above_replacement ?? null,
       traits: list
-        .filter((r) => r.trait !== "grade" && r.trait !== "war" && r.trait !== "rating")
+        .filter((r) => r.trait !== "grade" && r.trait !== "war" && r.trait !== "rating" && !HIDDEN_TRAITS.has(r.trait))
         .sort((a, b) => Number(b.in_grade) - Number(a.in_grade) || a.trait.localeCompare(b.trait))
         .map(({ trait, value, percentile, kind, in_grade, reliability }) => ({
           trait, value, percentile, kind, in_grade, reliability,

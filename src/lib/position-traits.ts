@@ -12,7 +12,7 @@ export const GRADE_TIP =
   "Projected talent on a 20 to 80 scale among qualified FBS players at the position this week. 50 is average; 10 points is one standard deviation. ± shows uncertainty.";
 
 export const WAR_TIP =
-  "Estimated wins above a replacement-level player at the position, using opponent-adjusted play credit and game leverage. Defensive value is understated because only tagged disruptions count.";
+  "Estimated wins above a replacement-level player at the position: points above replacement from opponent-adjusted play credit, at the league rate of about 50 points per win. Defensive value is understated because only tagged disruptions count.";
 
 const NFL_GRADE_TIP =
   "Talent on a 20 to 80 scale among qualified NFL players at the position this week. 50 is average; 10 points is one standard deviation. ± shows uncertainty.";
