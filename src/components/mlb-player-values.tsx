@@ -187,9 +187,9 @@ function PlayerCard({ row, detail, failed, onRetry }: {
           <span>owed {formatMillions(row.owed_through_control_musd)} over {row.control_years} control year{row.control_years === 1 ? "" : "s"}</span>
         )}
       </div>
-      <div className="grid grid-cols-3 gap-3 [&>div]:min-w-0">
+      <div className="grid grid-cols-3 divide-x divide-border border-y border-border bg-muted/20 py-3 text-center [&>div]:min-w-0 [&>div]:px-1.5 sm:[&>div]:px-3">
         <div>
-          <div className="inline-flex min-h-8 items-start gap-1 text-[10px] uppercase tracking-wider text-muted-foreground sm:min-h-0 sm:items-center">
+          <div className="flex min-h-8 items-center justify-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
             Grade <InfoTip text={GRADE_TIP} label="What is the Grade?" />
           </div>
           <div className="font-mono text-lg font-bold tabular-nums sm:text-2xl text-primary">{graded ? formatNumber(row.grade, 0) : EMPTY}</div>
@@ -198,7 +198,7 @@ function PlayerCard({ row, detail, failed, onRetry }: {
           </div>
         </div>
         <div>
-          <div className="inline-flex min-h-8 items-start gap-1 text-[10px] uppercase tracking-wider text-muted-foreground sm:min-h-0 sm:items-center">
+          <div className="flex min-h-8 items-center justify-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
             {head.label} <InfoTip text={`${head.tip} ${PRICE_TIP}`} label={`What is ${head.label}?`} />
           </div>
           <div className={cn("font-mono text-lg font-bold tabular-nums sm:text-2xl", (head.value ?? 0) >= 0 ? "text-positive" : "text-destructive")}>
@@ -213,7 +213,7 @@ function PlayerCard({ row, detail, failed, onRetry }: {
           </div>
         </div>
         <div>
-          <div className="inline-flex min-h-8 items-start gap-1 text-[10px] uppercase tracking-wider text-muted-foreground sm:min-h-0 sm:items-center">
+          <div className="flex min-h-8 items-center justify-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
             Impact <InfoTip text={IMPACT_TIP} label="What is Impact?" />
           </div>
           <div className="font-mono text-lg font-bold tabular-nums sm:text-2xl">{row.impact_war == null ? EMPTY : formatSigned(row.impact_war, 1)}</div>

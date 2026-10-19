@@ -2,7 +2,7 @@
 
 import { Accordion } from "@base-ui/react/accordion";
 import { ChevronDown } from "lucide-react";
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { Fragment, useDeferredValue, useEffect, useMemo, useState } from "react";
 import type { GradedPlayer, GradedPlayerTrait, PlayerIndexRow } from "@/lib/position-grades";
 import {
   CFB_SECTION_ORDER,
@@ -25,6 +25,7 @@ import { PlayerCell } from "@/components/player-cell";
 import { TeamLogo, type TeamLogoSource } from "@/components/team-logo";
 import { PlayerComparisonPicker } from "@/components/player-comparison-picker";
 import { ToggleGroup } from "@/components/toggle-group";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const PAGE_ROWS = 40;
 const ALL = "all";
@@ -173,6 +174,9 @@ function Headline({
 }
 
 function GradeCard({
+  desktop = false,
+  showForecast = false,
+  desktopTraits = [],
   sport,
   rank,
   row,
@@ -182,6 +186,9 @@ function GradeCard({
   compared,
   onCompare,
 }: {
+  desktop?: boolean;
+  showForecast?: boolean;
+  desktopTraits?: string[];
   sport: GradeSport;
   rank: number;
   row: PlayerIndexRow;
@@ -192,7 +199,7 @@ function GradeCard({
   onCompare: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const panelId = `${sport}-player-card-${row.athleteId}`;
+  const panelId = `${sport}-player-card-${row.athleteId}${desktop ? "-desktop" : ""}`;
   const copy = SPORT_COPY[sport];
   const grade = player?.grade ?? row.grade;
   const rating = RATING_LABELS[row.positionGroup];
@@ -203,17 +210,7 @@ function GradeCard({
     if (last && last.kind === line.kind) last.names.push(line.name);
     else sections.push({ kind: line.kind, names: [line.name] });
   }
-  return (
-    <article className="min-w-0 self-start border-b border-border md:rounded-lg md:border md:border-rule-strong md:bg-card">
-      <PlayerRowDisclosure
-        name={row.name}
-        rank={rank}
-        identity={<Identity row={row} logo={logo} />}
-        grade={grade == null ? EMPTY : formatNumber(grade, 1)}
-        open={open}
-        panelId={panelId}
-        onToggle={() => setOpen(!open)}
-      />
+  const details = (
       <div id={panelId} className={cn("space-y-3 p-3 md:block md:p-4", open ? "border-t border-border md:border-t-0" : "hidden")}>
         <div className="flex flex-col gap-3">
           <div className="flex min-w-0 items-center gap-2">
@@ -311,6 +308,60 @@ function GradeCard({
           </Accordion.Root>
         )}
       </div>
+  );
+  if (desktop) {
+    return (
+      <Fragment>
+        <TableRow onClick={() => setOpen(!open)} className={cn("cursor-pointer", open && "bg-muted/40")}>
+          <TableCell className="text-xs text-muted-foreground">{rank}</TableCell>
+          <TableCell className="font-sans">
+            <button
+              type="button"
+              className="w-full text-left focus-visible:outline-2 focus-visible:outline-ring"
+              aria-label={`${open ? "Hide" : "Show"} full player card for ${row.name}`}
+              aria-expanded={open}
+              aria-controls={panelId}
+              onClick={(event) => { event.stopPropagation(); setOpen(!open); }}
+            >
+              <Identity row={row} logo={logo} />
+            </button>
+          </TableCell>
+          <TableCell>{row.positionGroup}</TableCell>
+          <TableCell className="text-right">{formatNumber(row.games, 0)}</TableCell>
+          <TableCell className="text-right font-bold text-primary">{grade == null ? EMPTY : formatNumber(grade, 1)}</TableCell>
+          <TableCell className="text-right">{player?.uncertainty == null ? EMPTY : `±${formatNumber(player.uncertainty, 1)}`}</TableCell>
+          <TableCell className="text-right">{row.percentile == null ? EMPTY : Math.round(row.percentile)}</TableCell>
+          {desktopTraits.map((name) => {
+            const trait = player?.traits.find((item) => item.trait === name);
+            return <TableCell key={name} className="text-right">{trait?.percentile == null ? EMPTY : Math.round(trait.percentile)}</TableCell>;
+          })}
+          {showForecast && (
+            <TableCell className="text-right">
+              {rated ? <><div>{formatSigned(player.rating, 2)}</div><div className="text-[11px] text-muted-foreground">{rating.unit}</div></> : EMPTY}
+            </TableCell>
+          )}
+          <TableCell className="text-right">{player?.war == null ? EMPTY : formatSigned(player.war, 2)}</TableCell>
+          <TableCell className="text-right">{player?.pointsAboveReplacement == null ? EMPTY : formatSigned(player.pointsAboveReplacement, 1)}</TableCell>
+          <TableCell><ChevronDown aria-hidden="true" className={cn("size-4 text-muted-foreground transition-transform", open && "rotate-180")} /></TableCell>
+        </TableRow>
+        <TableRow hidden={!open} className="hover:bg-transparent">
+          <TableCell colSpan={(showForecast ? 11 : 10) + desktopTraits.length} className="whitespace-normal bg-muted/20">{details}</TableCell>
+        </TableRow>
+      </Fragment>
+    );
+  }
+  return (
+    <article className="min-w-0 self-start border-b border-border md:rounded-lg md:border md:border-rule-strong md:bg-card">
+      <PlayerRowDisclosure
+        name={row.name}
+        rank={rank}
+        identity={<Identity row={row} logo={logo} />}
+        grade={grade == null ? EMPTY : formatNumber(grade, 1)}
+        open={open}
+        panelId={panelId}
+        onToggle={() => setOpen(!open)}
+      />
+      {details}
     </article>
   );
 }
@@ -587,6 +638,27 @@ export default function PositionGrades({
         .map(([name, meta]) => ({ name, kind: meta.kind }));
   }, [index, loaded, sport]);
   const graded = gradedCounts[position] ?? 0;
+  const showForecast = visible.some((row) => RATING_LABELS[row.positionGroup] != null && loaded[row.athleteId]?.rating != null);
+  const desktopTraits = search ? [] : linesFor(position)
+    .filter(({ name }) => visible.some((row) => loaded[row.athleteId]?.traits.some((trait) => trait.trait === name && trait.in_grade)))
+    .slice(0, 2)
+    .map(({ name }) => name);
+  const renderPlayers = (desktop: boolean) => visible.map((row, i) => (
+    <GradeCard
+      key={row.athleteId}
+      desktop={desktop}
+      showForecast={showForecast}
+      desktopTraits={desktopTraits}
+      sport={sport}
+      rank={i + 1}
+      row={row}
+      player={loaded[row.athleteId]}
+      lines={linesFor(row.positionGroup)}
+      logo={logoFor(row.team)}
+      compared={compare.includes(row.athleteId)}
+      onCompare={() => toggleCompare(row.athleteId)}
+    />
+  ));
 
   return (
     <div className="space-y-section">
@@ -651,21 +723,43 @@ export default function PositionGrades({
       {visible.length === 0 ? (
         <p className="text-sm text-muted-foreground">No players match.</p>
       ) : (
-        <div className="grid grid-cols-1 md:gap-4 lg:grid-cols-2">
-          <PlayerRowHeader />
-          {visible.map((row, i) => (
-            <GradeCard
-              key={row.athleteId}
-              sport={sport}
-              rank={i + 1}
-              row={row}
-              player={loaded[row.athleteId]}
-              lines={linesFor(row.positionGroup)}
-              logo={logoFor(row.team)}
-              compared={compare.includes(row.athleteId)}
-              onCompare={() => toggleCompare(row.athleteId)}
-            />
-          ))}
+        <div>
+          <div className="grid grid-cols-1 md:hidden">
+            <PlayerRowHeader />
+            {renderPlayers(false)}
+          </div>
+          <div className="hidden md:block">
+            <p className="pb-2 text-xs text-muted-foreground">Select a row for the full player card. ± is grade uncertainty; Pct and trait columns are position percentiles.</p>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8">#</TableHead>
+                  <TableHead>Player</TableHead>
+                  <TableHead>Pos</TableHead>
+                  <TableHead className="text-right">Games</TableHead>
+                  <TableHead className="text-right">Grade</TableHead>
+                  <TableHead className="text-right">±</TableHead>
+                  <TableHead className="text-right">Pct</TableHead>
+                  {desktopTraits.map((name) => {
+                    const { label, tip } = traitLabel(name, sport);
+                    return (
+                      <TableHead key={name} className="text-right">
+                        <span className="inline-flex items-center gap-1">
+                          <span className="max-w-24 truncate" title={label}>{label}</span>
+                          <InfoTip text={`${tip} Shown as a percentile at this position, matching the player card.`} label={`What is ${label}?`} />
+                        </span>
+                      </TableHead>
+                    );
+                  })}
+                  {showForecast && <TableHead className="text-right">Forecast</TableHead>}
+                  <TableHead className="text-right">WAR</TableHead>
+                  <TableHead className="text-right"><span className="inline-flex items-center gap-1">Pts <InfoTip text="Points above replacement credited to this player, as shown in the full card." label="What are points above replacement?" /></span></TableHead>
+                  <TableHead className="w-8"><span className="sr-only">Expand player</span></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>{renderPlayers(true)}</TableBody>
+            </Table>
+          </div>
         </div>
       )}
     </div>
