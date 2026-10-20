@@ -117,14 +117,20 @@ export function useFootballLiveScores(
   return live;
 }
 
+// A game may be in the DOM twice (the table and the phone cards); one ref each.
 function readRows(container: RefObject<HTMLElement | null>): LiveGameRef[] {
   const rows =
-    container.current?.querySelectorAll<HTMLTableRowElement>("tr[data-live]") ?? [];
-  return [...rows].map((row) => {
+    container.current?.querySelectorAll<HTMLElement>("[data-live]") ?? [];
+  const refs = new Map<string, LiveGameRef>();
+  for (const row of rows) {
     const time = row.querySelector<HTMLTimeElement>("time[data-kickoff]");
     const start = time?.dateTime ? Date.parse(time.dateTime) : NaN;
-    return { key: row.dataset.live!, start: Number.isFinite(start) ? start : null };
-  });
+    refs.set(row.dataset.live!, {
+      key: row.dataset.live!,
+      start: Number.isFinite(start) ? start : null,
+    });
+  }
+  return [...refs.values()];
 }
 
 const PARTS = {
@@ -135,6 +141,7 @@ const PARTS = {
 const SIDES = ["away", "home"] as const;
 
 // Update server-rendered rows in place to avoid hydrating the entire table.
+// A row is any element carrying data-live: a table row or a phone card.
 export function useLiveScoreRows(
   container: RefObject<HTMLElement | null>,
   league: FootballLeague,
@@ -145,7 +152,7 @@ export function useLiveScoreRows(
   useEffect(() => {
     if (live.size === 0) return;
     const rows =
-      container.current?.querySelectorAll<HTMLTableRowElement>("tr[data-live]") ?? [];
+      container.current?.querySelectorAll<HTMLElement>("[data-live]") ?? [];
     for (const row of rows) {
       const game = live.get(row.dataset.live!);
       const time = row.querySelector<HTMLTimeElement>('time[data-kickoff="time"]');

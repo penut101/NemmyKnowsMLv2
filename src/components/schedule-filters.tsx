@@ -25,11 +25,13 @@ export interface ScheduleView<K extends string> {
 // and out of the client payload; passing the games as props would serialize
 // the whole slate again. Each row carries the facts to match on as data
 // attributes, so filtering is one pass over the DOM and never re-renders the
-// table. Each slate is its own <tbody> headed by a row without those
-// attributes; a slate the filter has emptied is hidden, heading and all, so
-// its rule does not stack on the next slate's. Live scores are
-// written into the rows the same way, from one poll loop per page, and a
-// started game's status opens its win probability in one shared dialog.
+// table. Each slate is its own [data-slate] group (a <tbody>, or a section of
+// phone cards) headed by a row without those attributes; a slate the filter
+// has emptied is hidden, heading and all, so its rule does not stack on the
+// next slate's. The table and the cards are both in the DOM, so a game is
+// counted once by id. Live scores are written into the rows the same way,
+// from one poll loop per page, and a started game's status opens its win
+// probability in one shared dialog.
 export function ScheduleFilters<K extends string>({
   league,
   views,
@@ -57,7 +59,7 @@ export function ScheduleFilters<K extends string>({
   function openProbability(event: MouseEvent<HTMLDivElement>) {
     const row = (event.target as HTMLElement)
       .closest("[data-live-block]")
-      ?.closest<HTMLTableRowElement>("tr[data-game]");
+      ?.closest<HTMLElement>("[data-game]");
     const { game, away, home } = row?.dataset ?? {};
     if (!game || !away || !home) return;
     setProbability({ gameId: game, away, home });
@@ -69,25 +71,24 @@ export function ScheduleFilters<K extends string>({
     setQuery(nextQuery);
     const needle = nextQuery.trim().toLowerCase();
     const showAll = views.find((v) => v.key === nextView)?.all === true;
-    const bodies =
-      container.current?.querySelectorAll<HTMLTableSectionElement>("tbody") ??
-      [];
-    let visible = 0;
-    for (const body of bodies) {
-      let inBody = 0;
-      for (const row of body.querySelectorAll<HTMLTableRowElement>(
-        "tr[data-search]",
-      )) {
+    const groups =
+      container.current?.querySelectorAll<HTMLElement>("[data-slate]") ?? [];
+    const visible = new Set<string>();
+    for (const group of groups) {
+      let inGroup = 0;
+      for (const row of group.querySelectorAll<HTMLElement>("[data-search]")) {
         const match =
           (!needle || (row.dataset.search ?? "").includes(needle)) &&
           (showAll || row.dataset[nextView] === "true");
         row.hidden = !match;
-        if (match) inBody += 1;
+        if (match) {
+          inGroup += 1;
+          visible.add(row.dataset.game ?? "");
+        }
       }
-      body.hidden = inBody === 0;
-      visible += inBody;
+      group.hidden = inGroup === 0;
     }
-    setShown(visible);
+    setShown(visible.size);
   }
 
   const narrowed = shown !== total || query.trim() !== "";

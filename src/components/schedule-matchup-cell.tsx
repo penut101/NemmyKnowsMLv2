@@ -14,13 +14,11 @@ export interface MatchupSide {
   markers?: (ScheduleMarker | false | null | undefined)[];
 }
 
-// Both teams in one cell so a phone can pin the matchup while the numbers
-// scroll under it: the sides sit in two columns where the table has room and
-// stack on a narrow screen. The desktop halves carry a floor wide enough for
-// the longest name so the auto table layout cannot collapse the column, and
-// the phone grid is a fixed width so names wrap instead. Each side paints its
-// own color bar and tint; the cell's 1px height lets the grid's 100% resolve,
-// so the sides fill the row however tall a neighbouring cell makes it.
+// Both teams in one cell, side by side. Each half carries a floor wide enough
+// for the longest name so the auto table layout cannot collapse the column,
+// paints its own color bar and tint, and fills the row however tall a
+// neighbouring cell makes it: the cell's 1px height lets the grid's 100%
+// resolve. Phones never see this table; they get ScheduleCards.
 //
 // The primary color is an accent only, never a text background: CFBD's
 // primary and secondary are not a usable pair (55 of 243 D1 teams have a
@@ -34,8 +32,8 @@ export function ScheduleMatchupCell({
   home: MatchupSide;
 }) {
   return (
-    <TableCell className="sticky left-0 z-10 h-px p-0 max-md:bg-background max-md:shadow-[1px_0_0_var(--border)] md:static">
-      <span className="grid h-full w-56 grid-rows-2 text-xs md:w-auto md:grid-cols-[minmax(16rem,1fr)_minmax(16rem,1fr)] md:grid-rows-none md:text-sm">
+    <TableCell className="h-px p-0">
+      <span className="grid h-full grid-cols-[minmax(16rem,1fr)_minmax(16rem,1fr)]">
         <Side side="away" {...away} />
         <Side side="home" {...home} />
       </span>
@@ -45,9 +43,8 @@ export function ScheduleMatchupCell({
 
 export function ScheduleMatchupHead() {
   return (
-    <TableHead className="sticky left-0 z-10 p-0 max-md:bg-background max-md:shadow-[1px_0_0_var(--border)] md:static">
-      <span className="px-[var(--table-cell-x)] md:hidden">Matchup</span>
-      <span className="hidden md:grid md:grid-cols-2">
+    <TableHead className="p-0">
+      <span className="grid grid-cols-2">
         <span className="px-[var(--table-cell-x)]">Away</span>
         <span className="px-[var(--table-cell-x)]">Home</span>
       </span>
@@ -60,7 +57,7 @@ function Side({
   name,
   team,
   rank,
-  markers = [],
+  markers,
 }: MatchupSide & { side: "away" | "home" }) {
   const color = teamColor(team);
   return (
@@ -80,27 +77,40 @@ function Side({
           : undefined
       }
     >
-      <TeamLogo team={team} name={name} />
-      <span className="font-medium max-md:whitespace-normal">{name}</span>
-      {rank != null && (
-        <span className="font-mono text-xs opacity-60">
-          <span className="sr-only">rank </span>
-          {rank}
-        </span>
-      )}
-      {markers.map(
-        (marker) =>
-          marker && (
-            <span
-              key={marker.label}
-              className="font-mono text-[10px] uppercase tracking-wider opacity-70"
-              title={marker.note}
-            >
-              {marker.label}
-              <span className="sr-only">: {marker.note}</span>
-            </span>
-          ),
-      )}
+      <TeamLabel name={name} team={team} rank={rank} markers={markers} />
     </span>
+  );
+}
+
+// Logo, name, rank and markers: the part of a side that the table cell and
+// the phone card render the same way. Rank and markers sit inside the name's
+// span so a name that wraps keeps them on its last line.
+export function TeamLabel({ name, team, rank, markers = [] }: MatchupSide) {
+  return (
+    <>
+      <TeamLogo team={team} name={name} />
+      <span className="font-medium">
+        {name}
+        {rank != null && (
+          <span className="ml-2 whitespace-nowrap font-mono text-xs font-normal opacity-60">
+            <span className="sr-only">rank </span>
+            {rank}
+          </span>
+        )}
+        {markers.map(
+          (marker) =>
+            marker && (
+              <span
+                key={marker.label}
+                className="ml-2 whitespace-nowrap font-mono text-[10px] font-normal uppercase tracking-wider opacity-70"
+                title={marker.note}
+              >
+                {marker.label}
+                <span className="sr-only">: {marker.note}</span>
+              </span>
+            ),
+        )}
+      </span>
+    </>
   );
 }

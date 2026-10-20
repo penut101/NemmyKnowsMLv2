@@ -19,6 +19,10 @@ import {
   type ScheduleMarker,
 } from "@/components/schedule-matchup-cell";
 import {
+  ScheduleCards,
+  type ScheduleCardGame,
+} from "@/components/schedule-cards";
+import {
   Table,
   TableBody,
   TableCaption,
@@ -55,10 +59,7 @@ const VIEWS = [
   },
 ] as const;
 
-// A phone stacks the two teams, so games need a hairline between them; wide
-// screens keep the booktabs look with hover tracking the row.
-const ROWS =
-  "max-md:[&>tr[data-search]:not([hidden])~tr[data-search]:not([hidden])]:border-t";
+const MARKETS = ["h2h", "spreads", "totals"] as const;
 
 const DEGRADED: ScheduleMarker = {
   label: "*",
@@ -127,7 +128,6 @@ export default async function SchedulePage() {
         { data: [], error: null },
       ];
   const fbsGameCount = games.filter(isFbs).length;
-  const slates = groupFootballSlates(games, "cfb");
   const marketByGame = new Map(
     ((marketRes.data ?? []) as CfbMarketComparison[]).map((m) => [
       m.game_id,
@@ -181,6 +181,93 @@ export default async function SchedulePage() {
     );
   }
 
+  // Everything the table row and the phone card both show, computed once.
+  const slates = groupFootballSlates(games, "cfb").map((slate) => ({
+    slate,
+    hidden: !slate.games.some(isFbs),
+    games: slate.games.map((g) => {
+      const market = marketByGame.get(g.game_id);
+      // The best priced offer can be a total or moneyline; the consensus
+      // spread the forecast was shrunk toward still exists.
+      const marketLine =
+        marketHomeLine(
+          market?.best_offer_market ?? null,
+          market?.best_offer_selection ?? null,
+          market?.best_offer_point ?? null,
+          g.home_team,
+        ) ?? g.market_home_spread;
+      const modelLine = g.market_informed_home_spread;
+      const awayRank = g.away_team_id
+        ? rankByTeam.get(g.away_team_id)
+        : undefined;
+      const homeRank = g.home_team_id
+        ? rankByTeam.get(g.home_team_id)
+        : undefined;
+      const isFbsGame = isFbs(g);
+      const card: ScheduleCardGame = {
+        gameId: g.game_id,
+        liveKey: liveKey("cfb", g.game_id),
+        start: g.start_date,
+        away: {
+          name: g.away_team,
+          team:
+            g.away_team_id != null ? teams.get(g.away_team_id) : undefined,
+          rank: awayRank,
+          markers: [(g.away_missing_input_count ?? 0) >= 4 && DEGRADED],
+        },
+        home: {
+          name: g.home_team,
+          team:
+            g.home_team_id != null ? teams.get(g.home_team_id) : undefined,
+          rank: homeRank,
+          markers: [
+            g.neutral_site && NEUTRAL,
+            (g.home_missing_input_count ?? 0) >= 4 && DEGRADED,
+          ],
+        },
+        // Rows published before the blended scores existed carry only the
+        // pure model's.
+        awayPoints: g.market_informed_away_points ?? g.expected_away_points,
+        homePoints: g.market_informed_home_points ?? g.expected_home_points,
+        homeLine: modelLine,
+        marketLine,
+        modelTotal: g.market_informed_total ?? g.model_total,
+        marketTotal: picks.get(`${g.game_id}-totals`)?.market_total ?? null,
+        picks: MARKETS.flatMap((market) => {
+          const pick = picks.get(`${g.game_id}-${market}`);
+          return pick?.status === "recommended" && pick.outcome !== "void"
+            ? [
+                `${pickLabel(pick)} · ${formatOdds(pick.price)} · EV ${formatPct(pick.expected_value_per_unit)}`,
+              ]
+            : [];
+        }),
+        // The filters read these rather than the rendered cells, so a query
+        // cannot accidentally hit a line, total or date.
+        data: {
+          "data-search": `${g.away_team} ${g.home_team}`.toLowerCase(),
+          "data-fbs": String(isFbsGame),
+          "data-fcs": String(
+            g.away_classification === "fcs" &&
+              g.home_classification === "fcs",
+          ),
+          "data-top25": String(
+            awayRank != null &&
+              awayRank <= 25 &&
+              homeRank != null &&
+              homeRank <= 25,
+          ),
+          "data-conference": String(
+            g.conference_game === true &&
+              g.away_classification === "fbs" &&
+              g.home_classification === "fbs",
+          ),
+        },
+        hidden: !isFbsGame,
+      };
+      return { g, card, pure: g.pure_home_spread };
+    }),
+  }));
+
   return (
     <PageShell>
       <PageHeader>
@@ -221,9 +308,10 @@ export default async function SchedulePage() {
         total={games.length}
         initialShown={fbsGameCount}
       >
+        <ScheduleCards slates={slates} />
         {/* Everything is centered except the matchup column, whose ragged
             name lengths read badly off a center axis. */}
-        <Table>
+        <Table className="max-md:hidden">
           <TableCaption className="sr-only">
             Week {latest.week} projections against the market
           </TableCaption>
@@ -231,9 +319,7 @@ export default async function SchedulePage() {
             <TableRow>
               <TableHead className="text-center">Time</TableHead>
               <ScheduleMatchupHead />
-              <TableHead className="hidden text-center md:table-cell">
-                Pure
-              </TableHead>
+              <TableHead className="text-center">Pure</TableHead>
               <TableHead className="text-center">Model line</TableHead>
               <TableHead className="text-center">Market line</TableHead>
               <TableHead className="text-center">Diff</TableHead>
@@ -245,122 +331,48 @@ export default async function SchedulePage() {
               <TableHead>Total pick</TableHead>
             </TableRow>
           </TableHeader>
-          {slates.map((slate) => (
-            <TableBody
-              key={slate.id}
-              hidden={!slate.games.some(isFbs)}
-              className={ROWS}
-            >
+          {slates.map(({ slate, hidden, games }) => (
+            <TableBody key={slate.id} data-slate hidden={hidden}>
               <SlateRow slate={slate} columns={12} />
-              {slate.games.map((g) => {
-                const market = marketByGame.get(g.game_id);
-                // The best priced offer can be a total or moneyline; the
-                // consensus spread the forecast was shrunk toward still exists.
-                const marketLine =
-                  marketHomeLine(
-                    market?.best_offer_market ?? null,
-                    market?.best_offer_selection ?? null,
-                    market?.best_offer_point ?? null,
-                    g.home_team,
-                  ) ?? g.market_home_spread;
-                const modelLine = g.market_informed_home_spread;
+              {games.map(({ g, card, pure }) => {
                 const diff =
-                  marketLine != null && modelLine != null
-                    ? modelLine - marketLine
+                  card.marketLine != null && card.homeLine != null
+                    ? card.homeLine - card.marketLine
                     : null;
-                const awayRank = g.away_team_id
-                  ? rankByTeam.get(g.away_team_id)
-                  : undefined;
-                const homeRank = g.home_team_id
-                  ? rankByTeam.get(g.home_team_id)
-                  : undefined;
-                const isFbsGame = isFbs(g);
                 return (
-                  // The filters read these rather than the rendered cells, so
-                  // a query cannot accidentally hit a line, total or date.
                   <TableRow
                     key={g.game_id}
-                    hidden={!isFbsGame}
-                    data-live={liveKey("cfb", g.game_id)}
+                    hidden={card.hidden}
+                    data-live={card.liveKey}
                     data-game={g.game_id}
                     data-away={g.away_team}
                     data-home={g.home_team}
-                    data-search={`${g.away_team} ${g.home_team}`.toLowerCase()}
-                    data-fbs={String(isFbsGame)}
-                    data-fcs={String(
-                      g.away_classification === "fcs" &&
-                        g.home_classification === "fcs",
-                    )}
-                    data-top25={String(
-                      awayRank != null &&
-                        awayRank <= 25 &&
-                        homeRank != null &&
-                        homeRank <= 25,
-                    )}
-                    data-conference={String(
-                      g.conference_game === true &&
-                        g.away_classification === "fbs" &&
-                        g.home_classification === "fbs",
-                    )}
+                    {...card.data}
                   >
                     <KickoffCell start={g.start_date} />
-                    <ScheduleMatchupCell
-                      away={{
-                        name: g.away_team,
-                        team:
-                          g.away_team_id != null
-                            ? teams.get(g.away_team_id)
-                            : undefined,
-                        rank: awayRank,
-                        markers: [
-                          (g.away_missing_input_count ?? 0) >= 4 && DEGRADED,
-                        ],
-                      }}
-                      home={{
-                        name: g.home_team,
-                        team:
-                          g.home_team_id != null
-                            ? teams.get(g.home_team_id)
-                            : undefined,
-                        rank: homeRank,
-                        markers: [
-                          g.neutral_site && NEUTRAL,
-                          (g.home_missing_input_count ?? 0) >= 4 && DEGRADED,
-                        ],
-                      }}
-                    />
-                    <TableCell className="hidden text-center font-mono tabular-nums text-muted-foreground md:table-cell">
-                      {formatHomeLine(g.pure_home_spread)}
+                    <ScheduleMatchupCell away={card.away} home={card.home} />
+                    <TableCell className="text-center font-mono tabular-nums text-muted-foreground">
+                      {formatHomeLine(pure)}
                     </TableCell>
                     <TableCell className="text-center font-mono font-semibold tabular-nums">
-                      {formatHomeLine(modelLine)}
+                      {formatHomeLine(card.homeLine)}
                     </TableCell>
                     <TableCell className="text-center font-mono tabular-nums text-muted-foreground">
-                      {marketLine != null ? formatHomeLine(marketLine) : "–"}
+                      {formatHomeLine(card.marketLine)}
                     </TableCell>
                     <TableCell className="text-center font-mono tabular-nums">
-                      {diff != null ? formatHomeLine(diff) : "–"}
+                      {formatHomeLine(diff)}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-center font-mono tabular-nums">
-                      {/* Rows published before the blended scores existed
-                          carry only the pure model's. */}
-                      {formatNumber(
-                        g.market_informed_away_points ?? g.expected_away_points,
-                        0,
-                      )}
+                      {formatNumber(card.awayPoints, 0)}
                       &ndash;
-                      {formatNumber(
-                        g.market_informed_home_points ?? g.expected_home_points,
-                        0,
-                      )}
+                      {formatNumber(card.homePoints, 0)}
                     </TableCell>
                     <TableCell className="text-center font-mono tabular-nums">
-                      {formatNumber(g.market_informed_total ?? g.model_total)}
+                      {formatNumber(card.modelTotal)}
                     </TableCell>
                     <TableCell className="text-center font-mono tabular-nums text-muted-foreground">
-                      {formatNumber(
-                        picks.get(`${g.game_id}-totals`)?.market_total,
-                      )}
+                      {formatNumber(card.marketTotal)}
                     </TableCell>
                     <TableCell>{pickCell(g.game_id, "h2h")}</TableCell>
                     <TableCell>{pickCell(g.game_id, "spreads")}</TableCell>

@@ -27,19 +27,32 @@ export function KickoffCell({ start }: { start: string | null }) {
   );
 }
 
-// Heads a slate's rows with its day and clock hour. The label is pinned to
-// the left edge so it stays readable on a phone while the numbers scroll;
-// `columns` is the table's column count so the heading spans the row. The
-// filters skip this row because it carries no data-search.
+type SlateHeading = Pick<FootballSlate<unknown>, "start" | "broadcast">;
+
+// A slate's day and clock hour, with the NFL broadcast name when it has one.
+export function SlateLabel({ slate }: { slate: SlateHeading }) {
+  if (slate.start == null) return "Kickoff TBD";
+  const start = new Date(slate.start).toISOString();
+  return (
+    <>
+      <Kickoff start={start} part="day" /> ·{" "}
+      <Kickoff start={start} part="hour" />
+      {slate.broadcast && ` · ${slate.broadcast}`}
+    </>
+  );
+}
+
+// Heads a slate's rows. The label is pinned to the left edge so it stays
+// readable while a narrow screen scrolls the numbers; `columns` is the
+// table's column count so the heading spans the row. The filters skip this
+// row because it carries no data-search.
 export function SlateRow({
   slate,
   columns,
 }: {
-  slate: Pick<FootballSlate<unknown>, "start" | "broadcast">;
+  slate: SlateHeading;
   columns: number;
 }) {
-  const start =
-    slate.start == null ? null : new Date(slate.start).toISOString();
   return (
     <tr>
       <TableHead
@@ -48,15 +61,7 @@ export function SlateRow({
         className="h-auto px-0 pt-3 pb-1"
       >
         <span className="sticky left-0 inline-block px-2">
-          {start ? (
-            <>
-              <Kickoff start={start} part="day" /> ·{" "}
-              <Kickoff start={start} part="hour" />
-              {slate.broadcast && ` · ${slate.broadcast}`}
-            </>
-          ) : (
-            "Kickoff TBD"
-          )}
+          <SlateLabel slate={slate} />
         </span>
       </TableHead>
     </tr>
