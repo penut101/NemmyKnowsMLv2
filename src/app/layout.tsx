@@ -41,6 +41,16 @@ export const metadata: Metadata = {
     template: "%s | René Núñez",
   },
   description: SITE_DESCRIPTION,
+  icons: {
+    icon: [
+      { url: "/favicon.ico?v=poleo-1", sizes: "16x16 32x32 48x48", type: "image/x-icon" },
+      { url: "/favicon-32x32.png?v=poleo-1", sizes: "32x32", type: "image/png" },
+      { url: "/icon.svg?v=poleo-1", sizes: "any", type: "image/svg+xml" },
+    ],
+    apple: [
+      { url: "/apple-touch-icon.png?v=poleo-1", sizes: "180x180", type: "image/png" },
+    ],
+  },
   // "./" resolves to the current route, so every page canonicalizes to its own
   // www URL without repeating the field in each segment.
   alternates: { canonical: "./" },
