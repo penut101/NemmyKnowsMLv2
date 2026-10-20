@@ -7,6 +7,11 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.4"
+  }
   cfb: {
     Tables: {
       backtest_predictions: {
@@ -62,38 +67,38 @@ export type Database = {
       }
       draft_publications: {
         Row: {
-          board: NonNullable<Json>
-          catalog: NonNullable<Json>
+          board: Json
+          catalog: Json
           draft_year: number
-          history: NonNullable<Json>
-          meta: NonNullable<Json>
+          history: Json
+          meta: Json
           payload: Json | null
-          players: NonNullable<Json>
-          roster: NonNullable<Json>
+          players: Json
+          roster: Json
           schema_version: number
           updated_at: string
         }
         Insert: {
-          board: NonNullable<Json>
-          catalog: NonNullable<Json>
+          board: Json
+          catalog: Json
           draft_year: number
-          history: NonNullable<Json>
-          meta: NonNullable<Json>
+          history: Json
+          meta: Json
           payload?: Json | null
-          players: NonNullable<Json>
-          roster: NonNullable<Json>
+          players: Json
+          roster: Json
           schema_version: number
           updated_at?: string
         }
         Update: {
-          board?: NonNullable<Json>
-          catalog?: NonNullable<Json>
+          board?: Json
+          catalog?: Json
           draft_year?: number
-          history?: NonNullable<Json>
-          meta?: NonNullable<Json>
+          history?: Json
+          meta?: Json
           payload?: Json | null
-          players?: NonNullable<Json>
-          roster?: NonNullable<Json>
+          players?: Json
+          roster?: Json
           schema_version?: number
           updated_at?: string
         }
@@ -504,17 +509,17 @@ export type Database = {
       live_win_probability: {
         Row: {
           game_id: number
-          payload: NonNullable<Json>
+          payload: Json
           updated_at: string
         }
         Insert: {
           game_id: number
-          payload: NonNullable<Json>
+          payload: Json
           updated_at: string
         }
         Update: {
           game_id?: number
-          payload?: NonNullable<Json>
+          payload?: Json
           updated_at?: string
         }
         Relationships: []
@@ -714,7 +719,8 @@ export type Database = {
           heisman_training_seasons: string
           heisman_winner_hit_rate: number
           heisman_winner_pool_coverage: number | null
-          opponent_effect_prior_games: number
+          opponent_prior_regression: number | null
+          opponent_prior_share: number | null
           prior_games: number
           qualifying_games: number
           reliability: string
@@ -736,7 +742,8 @@ export type Database = {
           heisman_training_seasons: string
           heisman_winner_hit_rate: number
           heisman_winner_pool_coverage?: number | null
-          opponent_effect_prior_games?: number
+          opponent_prior_regression?: number | null
+          opponent_prior_share?: number | null
           prior_games?: number
           qualifying_games?: number
           reliability: string
@@ -758,7 +765,8 @@ export type Database = {
           heisman_training_seasons?: string
           heisman_winner_hit_rate?: number
           heisman_winner_pool_coverage?: number | null
-          opponent_effect_prior_games?: number
+          opponent_prior_regression?: number | null
+          opponent_prior_share?: number | null
           prior_games?: number
           qualifying_games?: number
           reliability?: string
@@ -846,6 +854,24 @@ export type Database = {
           value_above_replacement?: number
           week?: number
           wpa?: number
+        }
+        Relationships: []
+      }
+      playoff_forecasts: {
+        Row: {
+          payload: Json
+          published_at: string
+          season: number
+        }
+        Insert: {
+          payload: Json
+          published_at?: string
+          season: number
+        }
+        Update: {
+          payload?: Json
+          published_at?: string
+          season?: number
         }
         Relationships: []
       }
@@ -948,7 +974,7 @@ export type Database = {
         }
         Relationships: []
       }
-      recommendations: {
+      recommendation_decisions: {
         Row: {
           away_missing_input_count: number | null
           away_points: number | null
@@ -981,6 +1007,7 @@ export type Database = {
           point: number | null
           policy_version: string
           price: number | null
+          pricing_context: Json | null
           probability_edge: number | null
           profit_units: number | null
           provider: string | null
@@ -1033,6 +1060,7 @@ export type Database = {
           point?: number | null
           policy_version: string
           price?: number | null
+          pricing_context?: Json | null
           probability_edge?: number | null
           profit_units?: number | null
           provider?: string | null
@@ -1085,6 +1113,7 @@ export type Database = {
           point?: number | null
           policy_version?: string
           price?: number | null
+          pricing_context?: Json | null
           probability_edge?: number | null
           profit_units?: number | null
           provider?: string | null
@@ -1103,6 +1132,336 @@ export type Database = {
           status?: string
           total_sd?: number
           week?: number
+          win_probability?: number | null
+        }
+        Relationships: []
+      }
+      recommendations: {
+        Row: {
+          away_missing_input_count: number | null
+          away_points: number | null
+          away_team: string
+          closing_point: number | null
+          closing_price: number | null
+          closing_source: string | null
+          clv_points: number | null
+          decision_at: string
+          decision_forecast: Json | null
+          degrees_of_freedom: number | null
+          edge_points: number | null
+          expected_value_per_unit: number | null
+          forecast_as_of: string
+          game_id: number
+          graded_at: string | null
+          home_missing_input_count: number | null
+          home_points: number | null
+          home_team: string
+          margin_sd: number
+          market: string
+          market_fetched_at: string | null
+          market_total: number | null
+          match_score: number | null
+          model_home_margin: number
+          model_total: number
+          model_version: string
+          odds_api_event_id: string | null
+          outcome: string
+          point: number | null
+          policy_version: string
+          price: number | null
+          pricing_context: Json | null
+          probability_edge: number | null
+          profit_units: number | null
+          provider: string | null
+          provider_key: string | null
+          provider_last_update: string | null
+          provider_start_date: string | null
+          published_at: string
+          push_probability: number | null
+          reason: string
+          season: number
+          selection: string | null
+          settlement_reason: string | null
+          side: string | null
+          stake_units: number
+          start_date: string
+          status: string
+          total_sd: number
+          week: number
+          win_probability: number | null
+        }
+        Insert: {
+          away_missing_input_count?: number | null
+          away_points?: number | null
+          away_team: string
+          closing_point?: number | null
+          closing_price?: number | null
+          closing_source?: string | null
+          clv_points?: number | null
+          decision_at: string
+          decision_forecast?: Json | null
+          degrees_of_freedom?: number | null
+          edge_points?: number | null
+          expected_value_per_unit?: number | null
+          forecast_as_of: string
+          game_id: number
+          graded_at?: string | null
+          home_missing_input_count?: number | null
+          home_points?: number | null
+          home_team: string
+          margin_sd: number
+          market: string
+          market_fetched_at?: string | null
+          market_total?: number | null
+          match_score?: number | null
+          model_home_margin: number
+          model_total: number
+          model_version: string
+          odds_api_event_id?: string | null
+          outcome?: string
+          point?: number | null
+          policy_version: string
+          price?: number | null
+          pricing_context?: Json | null
+          probability_edge?: number | null
+          profit_units?: number | null
+          provider?: string | null
+          provider_key?: string | null
+          provider_last_update?: string | null
+          provider_start_date?: string | null
+          published_at?: string
+          push_probability?: number | null
+          reason: string
+          season: number
+          selection?: string | null
+          settlement_reason?: string | null
+          side?: string | null
+          stake_units: number
+          start_date: string
+          status: string
+          total_sd: number
+          week: number
+          win_probability?: number | null
+        }
+        Update: {
+          away_missing_input_count?: number | null
+          away_points?: number | null
+          away_team?: string
+          closing_point?: number | null
+          closing_price?: number | null
+          closing_source?: string | null
+          clv_points?: number | null
+          decision_at?: string
+          decision_forecast?: Json | null
+          degrees_of_freedom?: number | null
+          edge_points?: number | null
+          expected_value_per_unit?: number | null
+          forecast_as_of?: string
+          game_id?: number
+          graded_at?: string | null
+          home_missing_input_count?: number | null
+          home_points?: number | null
+          home_team?: string
+          margin_sd?: number
+          market?: string
+          market_fetched_at?: string | null
+          market_total?: number | null
+          match_score?: number | null
+          model_home_margin?: number
+          model_total?: number
+          model_version?: string
+          odds_api_event_id?: string | null
+          outcome?: string
+          point?: number | null
+          policy_version?: string
+          price?: number | null
+          pricing_context?: Json | null
+          probability_edge?: number | null
+          profit_units?: number | null
+          provider?: string | null
+          provider_key?: string | null
+          provider_last_update?: string | null
+          provider_start_date?: string | null
+          published_at?: string
+          push_probability?: number | null
+          reason?: string
+          season?: number
+          selection?: string | null
+          settlement_reason?: string | null
+          side?: string | null
+          stake_units?: number
+          start_date?: string
+          status?: string
+          total_sd?: number
+          week?: number
+          win_probability?: number | null
+        }
+        Relationships: []
+      }
+      recommendations_archive_20261012_week7_v8: {
+        Row: {
+          archive_reason: string | null
+          archived_at: string | null
+          away_missing_input_count: number | null
+          away_points: number | null
+          away_team: string | null
+          closing_point: number | null
+          closing_price: number | null
+          closing_source: string | null
+          clv_points: number | null
+          decision_at: string | null
+          decision_forecast: Json | null
+          degrees_of_freedom: number | null
+          edge_points: number | null
+          expected_value_per_unit: number | null
+          forecast_as_of: string | null
+          game_id: number | null
+          graded_at: string | null
+          home_missing_input_count: number | null
+          home_points: number | null
+          home_team: string | null
+          margin_sd: number | null
+          market: string | null
+          market_fetched_at: string | null
+          market_total: number | null
+          match_score: number | null
+          model_home_margin: number | null
+          model_total: number | null
+          model_version: string | null
+          odds_api_event_id: string | null
+          outcome: string | null
+          point: number | null
+          policy_version: string | null
+          price: number | null
+          pricing_context: Json | null
+          probability_edge: number | null
+          profit_units: number | null
+          provider: string | null
+          provider_key: string | null
+          provider_last_update: string | null
+          provider_start_date: string | null
+          published_at: string | null
+          push_probability: number | null
+          reason: string | null
+          season: number | null
+          selection: string | null
+          settlement_reason: string | null
+          side: string | null
+          stake_units: number | null
+          start_date: string | null
+          status: string | null
+          total_sd: number | null
+          week: number | null
+          win_probability: number | null
+        }
+        Insert: {
+          archive_reason?: string | null
+          archived_at?: string | null
+          away_missing_input_count?: number | null
+          away_points?: number | null
+          away_team?: string | null
+          closing_point?: number | null
+          closing_price?: number | null
+          closing_source?: string | null
+          clv_points?: number | null
+          decision_at?: string | null
+          decision_forecast?: Json | null
+          degrees_of_freedom?: number | null
+          edge_points?: number | null
+          expected_value_per_unit?: number | null
+          forecast_as_of?: string | null
+          game_id?: number | null
+          graded_at?: string | null
+          home_missing_input_count?: number | null
+          home_points?: number | null
+          home_team?: string | null
+          margin_sd?: number | null
+          market?: string | null
+          market_fetched_at?: string | null
+          market_total?: number | null
+          match_score?: number | null
+          model_home_margin?: number | null
+          model_total?: number | null
+          model_version?: string | null
+          odds_api_event_id?: string | null
+          outcome?: string | null
+          point?: number | null
+          policy_version?: string | null
+          price?: number | null
+          pricing_context?: Json | null
+          probability_edge?: number | null
+          profit_units?: number | null
+          provider?: string | null
+          provider_key?: string | null
+          provider_last_update?: string | null
+          provider_start_date?: string | null
+          published_at?: string | null
+          push_probability?: number | null
+          reason?: string | null
+          season?: number | null
+          selection?: string | null
+          settlement_reason?: string | null
+          side?: string | null
+          stake_units?: number | null
+          start_date?: string | null
+          status?: string | null
+          total_sd?: number | null
+          week?: number | null
+          win_probability?: number | null
+        }
+        Update: {
+          archive_reason?: string | null
+          archived_at?: string | null
+          away_missing_input_count?: number | null
+          away_points?: number | null
+          away_team?: string | null
+          closing_point?: number | null
+          closing_price?: number | null
+          closing_source?: string | null
+          clv_points?: number | null
+          decision_at?: string | null
+          decision_forecast?: Json | null
+          degrees_of_freedom?: number | null
+          edge_points?: number | null
+          expected_value_per_unit?: number | null
+          forecast_as_of?: string | null
+          game_id?: number | null
+          graded_at?: string | null
+          home_missing_input_count?: number | null
+          home_points?: number | null
+          home_team?: string | null
+          margin_sd?: number | null
+          market?: string | null
+          market_fetched_at?: string | null
+          market_total?: number | null
+          match_score?: number | null
+          model_home_margin?: number | null
+          model_total?: number | null
+          model_version?: string | null
+          odds_api_event_id?: string | null
+          outcome?: string | null
+          point?: number | null
+          policy_version?: string | null
+          price?: number | null
+          pricing_context?: Json | null
+          probability_edge?: number | null
+          profit_units?: number | null
+          provider?: string | null
+          provider_key?: string | null
+          provider_last_update?: string | null
+          provider_start_date?: string | null
+          published_at?: string | null
+          push_probability?: number | null
+          reason?: string | null
+          season?: number | null
+          selection?: string | null
+          settlement_reason?: string | null
+          side?: string | null
+          stake_units?: number | null
+          start_date?: string | null
+          status?: string | null
+          total_sd?: number | null
+          week?: number | null
           win_probability?: number | null
         }
         Relationships: []
@@ -1307,6 +1666,62 @@ export type Database = {
       }
     }
     Views: {
+      current_recommendations: {
+        Row: {
+          away_missing_input_count: number | null
+          away_points: number | null
+          away_team: string | null
+          closing_point: number | null
+          closing_price: number | null
+          closing_source: string | null
+          clv_points: number | null
+          decision_at: string | null
+          decision_forecast: Json | null
+          degrees_of_freedom: number | null
+          edge_points: number | null
+          expected_value_per_unit: number | null
+          forecast_as_of: string | null
+          game_id: number | null
+          graded_at: string | null
+          home_missing_input_count: number | null
+          home_points: number | null
+          home_team: string | null
+          margin_sd: number | null
+          market: string | null
+          market_fetched_at: string | null
+          market_total: number | null
+          match_score: number | null
+          model_home_margin: number | null
+          model_total: number | null
+          model_version: string | null
+          odds_api_event_id: string | null
+          outcome: string | null
+          point: number | null
+          policy_version: string | null
+          price: number | null
+          pricing_context: Json | null
+          probability_edge: number | null
+          profit_units: number | null
+          provider: string | null
+          provider_key: string | null
+          provider_last_update: string | null
+          provider_start_date: string | null
+          published_at: string | null
+          push_probability: number | null
+          reason: string | null
+          season: number | null
+          selection: string | null
+          settlement_reason: string | null
+          side: string | null
+          stake_units: number | null
+          start_date: string | null
+          status: string | null
+          total_sd: number | null
+          week: number | null
+          win_probability: number | null
+        }
+        Relationships: []
+      }
       recommendation_performance: {
         Row: {
           average_clv_points: number | null
@@ -1539,7 +1954,6 @@ export type Database = {
           game_pk: number
           input_version: string
         }
-        ComputedFields: never
         Insert: {
           completed_at?: string
           eval_date: string
@@ -1565,19 +1979,19 @@ export type Database = {
       live_win_probability: {
         Row: {
           game_pk: number
-          payload: NonNullable<Json>
+          payload: Json
           source_timestamp: string
           updated_at: string
         }
         Insert: {
           game_pk: number
-          payload: NonNullable<Json>
+          payload: Json
           source_timestamp: string
           updated_at: string
         }
         Update: {
           game_pk?: number
-          payload?: NonNullable<Json>
+          payload?: Json
           source_timestamp?: string
           updated_at?: string
         }
@@ -2401,6 +2815,7 @@ export type Database = {
           {
             foreignKeyName: "odds_game_pk_fkey"
             columns: ["game_pk"]
+            isOneToOne: false
             referencedRelation: "games"
             referencedColumns: ["game_pk"]
           },
@@ -2511,27 +2926,6 @@ export type Database = {
         }
         Relationships: []
       }
-      playoff_forecasts: {
-        Row: {
-          generated_at: string
-          payload: NonNullable<Json>
-          season: number
-          stage: string
-        }
-        Insert: {
-          generated_at: string
-          payload: NonNullable<Json>
-          season: number
-          stage: string
-        }
-        Update: {
-          generated_at?: string
-          payload?: NonNullable<Json>
-          season?: number
-          stage?: string
-        }
-        Relationships: []
-      }
       player_contracts: {
         Row: {
           contract_start: number | null
@@ -2597,21 +2991,21 @@ export type Database = {
       }
       player_details: {
         Row: {
-          outlook: NonNullable<Json>
+          outlook: Json
           player_id: number
-          tip: NonNullable<Json>
+          tip: Json
           updated_at: string
         }
         Insert: {
-          outlook?: NonNullable<Json>
+          outlook?: Json
           player_id: number
-          tip?: NonNullable<Json>
+          tip?: Json
           updated_at?: string
         }
         Update: {
-          outlook?: NonNullable<Json>
+          outlook?: Json
           player_id?: number
-          tip?: NonNullable<Json>
+          tip?: Json
           updated_at?: string
         }
         Relationships: []
@@ -2814,6 +3208,27 @@ export type Database = {
         }
         Relationships: []
       }
+      playoff_forecasts: {
+        Row: {
+          generated_at: string
+          payload: Json
+          season: number
+          stage: string
+        }
+        Insert: {
+          generated_at: string
+          payload: Json
+          season: number
+          stage: string
+        }
+        Update: {
+          generated_at?: string
+          payload?: Json
+          season?: number
+          stage?: string
+        }
+        Relationships: []
+      }
       posterior_sigmas: {
         Row: {
           mean: number
@@ -2835,42 +3250,6 @@ export type Database = {
           p90?: number | null
           refit_date?: string
           sigma_name?: string
-        }
-        Relationships: []
-      }
-      posterior_skills: {
-        Row: {
-          actor_id: number
-          actor_name: string | null
-          actor_type: string
-          rank: number
-          rank_type: string
-          refit_date: string
-          skill_score: number
-          split_label: string
-          team: string | null
-        }
-        Insert: {
-          actor_id: number
-          actor_name?: string | null
-          actor_type: string
-          rank: number
-          rank_type: string
-          refit_date: string
-          skill_score: number
-          split_label: string
-          team?: string | null
-        }
-        Update: {
-          actor_id?: number
-          actor_name?: string | null
-          actor_type?: string
-          rank?: number
-          rank_type?: string
-          refit_date?: string
-          skill_score?: number
-          split_label?: string
-          team?: string | null
         }
         Relationships: []
       }
@@ -2906,6 +3285,7 @@ export type Database = {
           {
             foreignKeyName: "probable_starters_game_pk_fkey"
             columns: ["game_pk"]
+            isOneToOne: false
             referencedRelation: "games"
             referencedColumns: ["game_pk"]
           },
@@ -3094,17 +3474,6 @@ export type Database = {
       }
     }
     Functions: {
-      betting_headline: {
-        Args: Record<PropertyKey, never>
-        Returns: {
-          bet_type: string
-          losses: number
-          pushes: number
-          total_payout: number
-          total_stake: number
-          wins: number
-        }[]
-      }
       bet_record_summary: {
         Args: { p_from?: string; p_team?: string; p_to?: string }
         Returns: {
@@ -3114,11 +3483,15 @@ export type Database = {
           wins: number
         }[]
       }
-      live_evaluation_status: {
-        Args: { p_game_pk: number }
+      betting_headline: {
+        Args: never
         Returns: {
-          eval_date: string
-          input_version: string
+          bet_type: string
+          losses: number
+          pushes: number
+          total_payout: number
+          total_stake: number
+          wins: number
         }[]
       }
       complete_live_evaluation: {
@@ -3134,9 +3507,13 @@ export type Database = {
         Args: { p_game_pk: number }
         Returns: string
       }
-      live_evaluation_started_at: {
-        Args: Record<PropertyKey, never>
-        Returns: string
+      live_evaluation_started_at: { Args: never; Returns: string }
+      live_evaluation_status: {
+        Args: { p_game_pk: number }
+        Returns: {
+          eval_date: string
+          input_version: string
+        }[]
       }
       publish_live_evaluation: {
         Args: { p_rows: Json; p_started_at: string }
@@ -3160,7 +3537,7 @@ export type Database = {
           candidate_name: string
           context_reason: string | null
           context_source: string | null
-          drivers: NonNullable<Json>
+          drivers: Json
           games: number
           headshot_url: string | null
           model_version: string
@@ -3169,10 +3546,10 @@ export type Database = {
           position: string
           predicted_rank: number | null
           probability_status: string
-          projected_stats: NonNullable<Json>
+          projected_stats: Json
           rank_change: number | null
           season: number
-          season_stats: NonNullable<Json>
+          season_stats: Json
           team: string
           week: number
           win_probability: number | null
@@ -3184,7 +3561,7 @@ export type Database = {
           candidate_name: string
           context_reason?: string | null
           context_source?: string | null
-          drivers: NonNullable<Json>
+          drivers: Json
           games: number
           headshot_url?: string | null
           model_version: string
@@ -3193,10 +3570,10 @@ export type Database = {
           position: string
           predicted_rank?: number | null
           probability_status: string
-          projected_stats: NonNullable<Json>
+          projected_stats: Json
           rank_change?: number | null
           season: number
-          season_stats?: NonNullable<Json>
+          season_stats?: Json
           team: string
           week: number
           win_probability?: number | null
@@ -3208,7 +3585,7 @@ export type Database = {
           candidate_name?: string
           context_reason?: string | null
           context_source?: string | null
-          drivers?: NonNullable<Json>
+          drivers?: Json
           games?: number
           headshot_url?: string | null
           model_version?: string
@@ -3217,10 +3594,10 @@ export type Database = {
           position?: string
           predicted_rank?: number | null
           probability_status?: string
-          projected_stats?: NonNullable<Json>
+          projected_stats?: Json
           rank_change?: number | null
           season?: number
-          season_stats?: NonNullable<Json>
+          season_stats?: Json
           team?: string
           week?: number
           win_probability?: number | null
@@ -3233,11 +3610,11 @@ export type Database = {
           award: string
           candidate_count: number
           model_version: string
-          provenance: NonNullable<Json>
+          provenance: Json
           season: number
           status: string
-          training_seasons: NonNullable<Json>
-          validation: NonNullable<Json>
+          training_seasons: Json
+          validation: Json
           week: number
         }
         Insert: {
@@ -3245,11 +3622,11 @@ export type Database = {
           award: string
           candidate_count: number
           model_version: string
-          provenance: NonNullable<Json>
+          provenance: Json
           season: number
           status: string
-          training_seasons: NonNullable<Json>
-          validation: NonNullable<Json>
+          training_seasons: Json
+          validation: Json
           week: number
         }
         Update: {
@@ -3257,11 +3634,11 @@ export type Database = {
           award?: string
           candidate_count?: number
           model_version?: string
-          provenance?: NonNullable<Json>
+          provenance?: Json
           season?: number
           status?: string
-          training_seasons?: NonNullable<Json>
-          validation?: NonNullable<Json>
+          training_seasons?: Json
+          validation?: Json
           week?: number
         }
         Relationships: []
@@ -3338,7 +3715,7 @@ export type Database = {
       forecast_input_runs: {
         Row: {
           forecast_as_of: string
-          manifest: NonNullable<Json>
+          manifest: Json
           recorded_at: string
           run_id: string
           season: number
@@ -3346,7 +3723,7 @@ export type Database = {
         }
         Insert: {
           forecast_as_of: string
-          manifest: NonNullable<Json>
+          manifest: Json
           recorded_at?: string
           run_id: string
           season: number
@@ -3354,7 +3731,7 @@ export type Database = {
         }
         Update: {
           forecast_as_of?: string
-          manifest?: NonNullable<Json>
+          manifest?: Json
           recorded_at?: string
           run_id?: string
           season?: number
@@ -3776,17 +4153,17 @@ export type Database = {
       live_win_probability: {
         Row: {
           game_id: string
-          payload: NonNullable<Json>
+          payload: Json
           updated_at: string
         }
         Insert: {
           game_id: string
-          payload: NonNullable<Json>
+          payload: Json
           updated_at: string
         }
         Update: {
           game_id?: string
-          payload?: NonNullable<Json>
+          payload?: Json
           updated_at?: string
         }
         Relationships: []
@@ -4004,6 +4381,24 @@ export type Database = {
         }
         Relationships: []
       }
+      playoff_forecasts: {
+        Row: {
+          payload: Json
+          published_at: string
+          season: number
+        }
+        Insert: {
+          payload: Json
+          published_at?: string
+          season: number
+        }
+        Update: {
+          payload?: Json
+          published_at?: string
+          season?: number
+        }
+        Relationships: []
+      }
       position_traits: {
         Row: {
           as_of: string
@@ -4071,7 +4466,7 @@ export type Database = {
         Row: {
           game_id: string
           market: string
-          previous_record: NonNullable<Json>
+          previous_record: Json
           published_at: string
           reason: string
           superseded_at: string
@@ -4079,7 +4474,7 @@ export type Database = {
         Insert: {
           game_id: string
           market: string
-          previous_record: NonNullable<Json>
+          previous_record: Json
           published_at: string
           reason?: string
           superseded_at?: string
@@ -4087,7 +4482,7 @@ export type Database = {
         Update: {
           game_id?: string
           market?: string
-          previous_record?: NonNullable<Json>
+          previous_record?: Json
           published_at?: string
           reason?: string
           superseded_at?: string
@@ -4138,7 +4533,7 @@ export type Database = {
           away_missing_input_count: number | null
           away_points: number | null
           away_team: string
-          data_flags: NonNullable<Json>
+          data_flags: Json
           decision_at: string
           degrees_of_freedom: number | null
           edge_points: number | null
@@ -4163,7 +4558,7 @@ export type Database = {
           point: number | null
           policy_version: string
           price: number | null
-          pricing_weights: NonNullable<Json>
+          pricing_weights: Json
           probability_edge: number | null
           profit_units: number | null
           provider: string | null
@@ -4178,7 +4573,7 @@ export type Database = {
           selection: string | null
           settlement_reason: string | null
           side: string | null
-          source_timestamps: NonNullable<Json>
+          source_timestamps: Json
           stake_units: number
           start_date: string
           status: string
@@ -4190,7 +4585,7 @@ export type Database = {
           away_missing_input_count?: number | null
           away_points?: number | null
           away_team: string
-          data_flags: NonNullable<Json>
+          data_flags: Json
           decision_at: string
           degrees_of_freedom?: number | null
           edge_points?: number | null
@@ -4215,7 +4610,7 @@ export type Database = {
           point?: number | null
           policy_version: string
           price?: number | null
-          pricing_weights: NonNullable<Json>
+          pricing_weights: Json
           probability_edge?: number | null
           profit_units?: number | null
           provider?: string | null
@@ -4230,7 +4625,7 @@ export type Database = {
           selection?: string | null
           settlement_reason?: string | null
           side?: string | null
-          source_timestamps: NonNullable<Json>
+          source_timestamps: Json
           stake_units: number
           start_date: string
           status: string
@@ -4242,7 +4637,7 @@ export type Database = {
           away_missing_input_count?: number | null
           away_points?: number | null
           away_team?: string
-          data_flags?: NonNullable<Json>
+          data_flags?: Json
           decision_at?: string
           degrees_of_freedom?: number | null
           edge_points?: number | null
@@ -4267,7 +4662,7 @@ export type Database = {
           point?: number | null
           policy_version?: string
           price?: number | null
-          pricing_weights?: NonNullable<Json>
+          pricing_weights?: Json
           probability_edge?: number | null
           profit_units?: number | null
           provider?: string | null
@@ -4282,7 +4677,7 @@ export type Database = {
           selection?: string | null
           settlement_reason?: string | null
           side?: string | null
-          source_timestamps?: NonNullable<Json>
+          source_timestamps?: Json
           stake_units?: number
           start_date?: string
           status?: string
@@ -4709,9 +5104,13 @@ export type Database = {
           home_team: string
           home_team_abbr: string
           home_win_prob: number
+          market_home_prob: number | null
+          market_total: number | null
           missing_input_count: number
           model_total: number
           model_version: string
+          pure_home_win_prob: number | null
+          pure_model_total: number | null
           recorded_at: string
           season: number
           snapshot_id: number
@@ -4735,9 +5134,13 @@ export type Database = {
           home_team: string
           home_team_abbr: string
           home_win_prob: number
+          market_home_prob?: number | null
+          market_total?: number | null
           missing_input_count: number
           model_total: number
           model_version: string
+          pure_home_win_prob?: number | null
+          pure_model_total?: number | null
           recorded_at?: string
           season: number
           snapshot_id?: never
@@ -4761,9 +5164,13 @@ export type Database = {
           home_team?: string
           home_team_abbr?: string
           home_win_prob?: number
+          market_home_prob?: number | null
+          market_total?: number | null
           missing_input_count?: number
           model_total?: number
           model_version?: string
+          pure_home_win_prob?: number | null
+          pure_model_total?: number | null
           recorded_at?: string
           season?: number
           snapshot_id?: never
@@ -4790,9 +5197,13 @@ export type Database = {
           home_team: string
           home_team_abbr: string
           home_win_prob: number
+          market_home_prob: number | null
+          market_total: number | null
           missing_input_count: number
           model_total: number
           model_version: string
+          pure_home_win_prob: number | null
+          pure_model_total: number | null
           season: number
           start_date: string
         }
@@ -4814,9 +5225,13 @@ export type Database = {
           home_team: string
           home_team_abbr: string
           home_win_prob: number
+          market_home_prob?: number | null
+          market_total?: number | null
           missing_input_count: number
           model_total: number
           model_version: string
+          pure_home_win_prob?: number | null
+          pure_model_total?: number | null
           season: number
           start_date: string
         }
@@ -4838,9 +5253,13 @@ export type Database = {
           home_team?: string
           home_team_abbr?: string
           home_win_prob?: number
+          market_home_prob?: number | null
+          market_total?: number | null
           missing_input_count?: number
           model_total?: number
           model_version?: string
+          pure_home_win_prob?: number | null
+          pure_model_total?: number | null
           season?: number
           start_date?: string
         }
@@ -4897,17 +5316,17 @@ export type Database = {
       live_win_probability: {
         Row: {
           game_id: string
-          payload: NonNullable<Json>
+          payload: Json
           updated_at: string
         }
         Insert: {
           game_id: string
-          payload: NonNullable<Json>
+          payload: Json
           updated_at: string
         }
         Update: {
           game_id?: string
-          payload?: NonNullable<Json>
+          payload?: Json
           updated_at?: string
         }
         Relationships: []
@@ -4924,7 +5343,7 @@ export type Database = {
           provider_key: string
           provider_last_update: string | null
           puck_line: number | null
-          quote_verifications: NonNullable<Json>
+          quote_verifications: Json
           total_line: number | null
           under_price: number | null
         }
@@ -4939,7 +5358,7 @@ export type Database = {
           provider_key: string
           provider_last_update?: string | null
           puck_line?: number | null
-          quote_verifications?: NonNullable<Json>
+          quote_verifications?: Json
           total_line?: number | null
           under_price?: number | null
         }
@@ -4954,7 +5373,7 @@ export type Database = {
           provider_key?: string
           provider_last_update?: string | null
           puck_line?: number | null
-          quote_verifications?: NonNullable<Json>
+          quote_verifications?: Json
           total_line?: number | null
           under_price?: number | null
         }
@@ -5004,7 +5423,7 @@ export type Database = {
           away_goals: number | null
           away_lambda: number
           away_team: string
-          data_flags: NonNullable<Json>
+          data_flags: Json
           decision_at: string
           edge_points: number | null
           expected_value_per_unit: number | null
@@ -5027,7 +5446,7 @@ export type Database = {
           point: number | null
           policy_version: string
           price: number | null
-          pricing_weights: NonNullable<Json>
+          pricing_weights: Json
           probability_edge: number | null
           profit_units: number | null
           provider: string | null
@@ -5043,7 +5462,7 @@ export type Database = {
           selection: string | null
           settlement_reason: string | null
           side: string | null
-          source_timestamps: NonNullable<Json>
+          source_timestamps: Json
           stake_units: number
           start_date: string
           status: string
@@ -5053,7 +5472,7 @@ export type Database = {
           away_goals?: number | null
           away_lambda: number
           away_team: string
-          data_flags: NonNullable<Json>
+          data_flags: Json
           decision_at: string
           edge_points?: number | null
           expected_value_per_unit?: number | null
@@ -5076,7 +5495,7 @@ export type Database = {
           point?: number | null
           policy_version: string
           price?: number | null
-          pricing_weights: NonNullable<Json>
+          pricing_weights: Json
           probability_edge?: number | null
           profit_units?: number | null
           provider?: string | null
@@ -5092,7 +5511,7 @@ export type Database = {
           selection?: string | null
           settlement_reason?: string | null
           side?: string | null
-          source_timestamps: NonNullable<Json>
+          source_timestamps: Json
           stake_units: number
           start_date: string
           status: string
@@ -5102,7 +5521,7 @@ export type Database = {
           away_goals?: number | null
           away_lambda?: number
           away_team?: string
-          data_flags?: NonNullable<Json>
+          data_flags?: Json
           decision_at?: string
           edge_points?: number | null
           expected_value_per_unit?: number | null
@@ -5125,7 +5544,7 @@ export type Database = {
           point?: number | null
           policy_version?: string
           price?: number | null
-          pricing_weights?: NonNullable<Json>
+          pricing_weights?: Json
           probability_edge?: number | null
           profit_units?: number | null
           provider?: string | null
@@ -5141,7 +5560,7 @@ export type Database = {
           selection?: string | null
           settlement_reason?: string | null
           side?: string | null
-          source_timestamps?: NonNullable<Json>
+          source_timestamps?: Json
           stake_units?: number
           start_date?: string
           status?: string
@@ -5312,7 +5731,7 @@ export type Database = {
           provider_key: string
           provider_last_update: string | null
           puck_line: number | null
-          quote_verifications: NonNullable<Json>
+          quote_verifications: Json
           total_line: number | null
           under_price: number | null
         }[]

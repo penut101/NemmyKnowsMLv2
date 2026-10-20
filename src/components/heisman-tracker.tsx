@@ -511,12 +511,13 @@ function Method({ meta }: { meta: CfbPlayerModelMeta | null }) {
           Each credited play is measured against what an average player
           produces on that channel against the unit he faced, using the unit
           rating fit strictly before that week, so a player&apos;s own game
-          never feeds the rating that adjusts it.{" "}
-          {meta?.value_model_version === "cfb_player_value_v2"
-            ? "Opponent effects use EPA per play weighted by observed play counts. Early-season effects start from the previous season's rush and pass ratings, then blend in observed games on each channel"
-            : "Early-season ratings are shrunk toward an average opponent by games played"}
-          {meta ? ` (prior of ${formatNumber(meta.opponent_effect_prior_games, 0)} games)` : ""}.
-          Plays against FCS opponents count
+          never feeds the rating that adjusts it. Opponent effects use EPA
+          per play weighted by observed play counts.{" "}
+          {meta?.opponent_prior_regression != null &&
+          meta.opponent_prior_share != null
+            ? `Early-season effects start from the previous season's rush and pass ratings, keeping ${formatPct(meta.opponent_prior_regression, 0)} of each unit's distance from its subdivision mean, and a ridge fit in which that prior holds a ${formatPct(meta.opponent_prior_share, 0)} share lets observed games move each unit off that anchor`
+            : "Early-season effects start from the previous season's rush and pass ratings, then blend in observed games on each channel"}
+          . Plays against FCS opponents count
           {meta ? ` ${formatPct(meta.fcs_opponent_weight, 0)}` : " half"}.
           Garbage time, by the same score-and-period rule as the team
           ratings, is excluded from points value and kept in win probability

@@ -1,9 +1,13 @@
 import type { Database } from "./database.types";
 
+// The generated Database also carries a `__InternalSupabase` entry that is
+// not a schema.
+export type Schema = Exclude<keyof Database, "__InternalSupabase">;
+
 // Keep schema explicit at callers while using the standard generated database types.
 export type Tables<
-  Schema extends keyof Database,
-  Name extends keyof (Database[Schema]["Tables"] & Database[Schema]["Views"]),
-> = (Database[Schema]["Tables"] & Database[Schema]["Views"])[Name] extends { Row: infer Row }
+  S extends Schema,
+  Name extends keyof (Database[S]["Tables"] & Database[S]["Views"]),
+> = (Database[S]["Tables"] & Database[S]["Views"])[Name] extends { Row: infer Row }
   ? Row
   : never;
