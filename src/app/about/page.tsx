@@ -9,7 +9,7 @@ import { CONTACT_EMAIL, SITE_NAME, SITE_URL, SOCIAL_LINKS } from "@/lib/site";
 export const metadata: Metadata = {
   title: "About",
   description:
-    "Data Analyst who builds probabilistic forecasting models and benchmarks them against the market in public.",
+    "Data & AI Engineer who builds probabilistic forecasting models and benchmarks them against the market in public.",
 };
 
 const links = [
@@ -39,10 +39,10 @@ const strengths = [
 
 const experience = [
   {
-    role: "Data Analyst",
+    role: "Data & AI Engineer",
     org: "Group U",
     when: "2026 – present",
-    body: "Operational and workforce reporting for a contact-center business: service-level and productivity KPIs, the pipelines behind them, and the reports leadership reads every day.",
+    body: "Call-volume forecast that staffs about 48,000 calls a week from an 8-week baseline, prior-year seasonality, and per-account holiday effects; headcount targets from a model of missed-call rate against staffing, plus the hiring scenarios behind staffing decisions; root-cause analyses of forecast misses; AI call-quality scoring with AssemblyAI and Claude, measured for error, bias, and agreement against supervisor grades; and automated executive KPI reporting on PostgreSQL and Azure SQL.",
   },
   {
     role: "Data Science Research Volunteer",
@@ -105,7 +105,7 @@ export default function AboutPage() {
           name: SITE_NAME,
           url: SITE_URL,
           image: `${SITE_URL}/portrait.jpeg`,
-          jobTitle: "Data Analyst",
+          jobTitle: "Data & AI Engineer",
           sameAs: links
             .filter((l) => l.href.startsWith("https://"))
             .map((l) => l.href),
@@ -128,7 +128,7 @@ export default function AboutPage() {
             Ren&eacute; N&uacute;&ntilde;ez
           </PageTitle>
           <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
-            Data Analyst in the San Diego&ndash;Tijuana area, with a
+            Data &amp; AI Engineer in the San Diego&ndash;Tijuana area, with a
             background in behavioral neuroscience research, municipal government, and
             production statistical systems. Outside work I build probabilistic
             forecasting models for MLB, college football, the NFL, and the NHL, publish their

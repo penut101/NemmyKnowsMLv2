@@ -446,7 +446,7 @@ export default function Home() {
               "@type": "Person",
               name: SITE_NAME,
               url: SITE_URL,
-              jobTitle: "Data Analyst",
+              jobTitle: "Data & AI Engineer",
               sameAs: SOCIAL_LINKS.map((link) => link.href),
             },
           ],
@@ -460,7 +460,7 @@ export default function Home() {
               Ren&eacute; N&uacute;&ntilde;ez
             </PageTitle>
             <PageDescription>
-              Data Analyst. I build player ratings, team ratings, and sports forecasts.
+              Data &amp; AI Engineer. I build player ratings, team ratings, and sports forecasts.
             </PageDescription>
             <ContactLine className="mt-heading text-xs text-muted-foreground" />
           </div>
