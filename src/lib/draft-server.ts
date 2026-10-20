@@ -12,12 +12,12 @@ import type {
 
 // Cache the source once per edition window. Compression keeps the full catalog
 // below the Data Cache item limit; only bounded results go to the browser.
+// Each section is its own column, so a read detoasts only what it selects:
+// the whole publication is megabytes, and the anon role has three seconds.
 const publication = unstable_cache(
   async (section: string, year?: number) => {
     const select =
-      section === "workspace"
-        ? "schema_version:payload->schema_version,board:payload->board,meta:payload->meta"
-        : `data:payload->${section}`;
+      section === "workspace" ? "schema_version,board,meta" : `data:${section}`;
     const params = new URLSearchParams({
       select,
       order: "draft_year.desc",

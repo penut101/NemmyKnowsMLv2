@@ -3,8 +3,9 @@ import { supabase } from "@/lib/supabase";
 import type { Tables } from "@/lib/database-schema";
 
 // The player valuation tables, written nightly by mlbmodel. The page reads the
-// index (every column but the two jsonb blobs) once per hour and the detail
-// (outlook, tip, traits) for the players a visitor actually opens.
+// index once per hour and the detail (outlook, tip, traits) for the players a
+// visitor actually opens. The two jsonb blobs live in player_details so the
+// ordered index read stays within the anon role's three-second timeout.
 
 export type PlayerValueRow = Tables<"mlb", "player_values">;
 export type PlayerTraitRow = Tables<"mlb", "player_traits">;
@@ -74,7 +75,7 @@ export const fetchPlayerValues = cache(async (): Promise<PlayerValues> => {
 export async function fetchPlayerDetails(ids: number[]): Promise<Record<string, PlayerDetail>> {
   const signal = AbortSignal.timeout(10_000);
   const [valuesRes, traitsRes] = await Promise.all([
-    supabase.from("player_values").select("player_id, outlook, tip").in("player_id", ids).limit(DETAIL_IDS).abortSignal(signal),
+    supabase.from("player_details").select("player_id, outlook, tip").in("player_id", ids).limit(DETAIL_IDS).abortSignal(signal),
     supabase.from("player_traits").select("*").in("player_id", ids).limit(DETAIL_IDS * 16).abortSignal(signal),
   ]);
   // Failed or incomplete reads must reach the route's uncached 503 response.

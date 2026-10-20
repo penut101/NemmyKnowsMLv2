@@ -60,6 +60,45 @@ export type Database = {
         }
         Relationships: []
       }
+      draft_publications: {
+        Row: {
+          board: NonNullable<Json>
+          catalog: NonNullable<Json>
+          draft_year: number
+          history: NonNullable<Json>
+          meta: NonNullable<Json>
+          payload: Json | null
+          players: NonNullable<Json>
+          roster: NonNullable<Json>
+          schema_version: number
+          updated_at: string
+        }
+        Insert: {
+          board: NonNullable<Json>
+          catalog: NonNullable<Json>
+          draft_year: number
+          history: NonNullable<Json>
+          meta: NonNullable<Json>
+          payload?: Json | null
+          players: NonNullable<Json>
+          roster: NonNullable<Json>
+          schema_version: number
+          updated_at?: string
+        }
+        Update: {
+          board?: NonNullable<Json>
+          catalog?: NonNullable<Json>
+          draft_year?: number
+          history?: NonNullable<Json>
+          meta?: NonNullable<Json>
+          payload?: Json | null
+          players?: NonNullable<Json>
+          roster?: NonNullable<Json>
+          schema_version?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       game_projections: {
         Row: {
           as_of: string
@@ -2552,6 +2591,27 @@ export type Database = {
           service_time?: number | null
           source_url?: string | null
           team?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      player_details: {
+        Row: {
+          outlook: NonNullable<Json>
+          player_id: number
+          tip: NonNullable<Json>
+          updated_at: string
+        }
+        Insert: {
+          outlook?: NonNullable<Json>
+          player_id: number
+          tip?: NonNullable<Json>
+          updated_at?: string
+        }
+        Update: {
+          outlook?: NonNullable<Json>
+          player_id?: number
+          tip?: NonNullable<Json>
           updated_at?: string
         }
         Relationships: []
