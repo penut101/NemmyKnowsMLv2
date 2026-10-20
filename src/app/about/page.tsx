@@ -21,7 +21,7 @@ const links = [
 const strengths = [
   {
     title: "Probabilistic modeling",
-    body: "Hierarchical Bayesian models fit with NUTS (PyMC, numpyro, JAX), Monte Carlo simulation, and parameter uncertainty carried through to the published number.",
+    body: "Hierarchical Bayesian models fit with NUTS (PyMC, NumPyro, JAX), Monte Carlo simulation, and parameter uncertainty carried through to the published number.",
   },
   {
     title: "Forecast evaluation",
@@ -42,7 +42,7 @@ const experience = [
     role: "Data & AI Engineer",
     org: "Group U",
     when: "2026 – present",
-    body: "Call-volume forecast that staffs about 48,000 calls a week from an 8-week baseline, prior-year seasonality, and per-account holiday effects; headcount targets from a model of missed-call rate against staffing, plus the hiring scenarios behind staffing decisions; root-cause analyses of forecast misses; AI call-quality scoring with AssemblyAI and Claude, measured for error, bias, and agreement against supervisor grades; and automated executive KPI reporting on PostgreSQL and Azure SQL.",
+    body: "Account-level forecasts covering about 48,000 calls a week, built from historical trends, seasonality, and holidays to guide staffing decisions; headcount targets from a model of missed-call rate against staffing, plus the hiring scenarios behind staffing decisions; root-cause analyses of forecast misses; AI call-quality scoring with AssemblyAI and Claude, measured for error, bias, and agreement against supervisor grades; and automated executive KPI reporting on PostgreSQL and Azure SQL.",
   },
   {
     role: "Data Science Research Volunteer",
