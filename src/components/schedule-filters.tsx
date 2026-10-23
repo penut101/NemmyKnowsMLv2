@@ -58,7 +58,7 @@ export function ScheduleFilters<K extends string>({
 
   function openProbability(event: MouseEvent<HTMLDivElement>) {
     const row = (event.target as HTMLElement)
-      .closest("[data-live-block]")
+      .closest("[data-live-block], [data-live-probability]")
       ?.closest<HTMLElement>("[data-game]");
     const { game, away, home } = row?.dataset ?? {};
     if (!game || !away || !home) return;

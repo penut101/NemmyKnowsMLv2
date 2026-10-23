@@ -157,6 +157,8 @@ export function useLiveScoreRows(
       const game = live.get(row.dataset.live!);
       const time = row.querySelector<HTMLTimeElement>('time[data-kickoff="time"]');
       if (!game || game.state === "pre" || !time) continue;
+      const probability = row.querySelector<HTMLElement>("[data-live-probability]");
+      if (probability) probability.hidden = false;
 
       for (const side of SIDES) {
         const cell = row.querySelector<HTMLElement>(`[data-team-cell="${side}"]`);

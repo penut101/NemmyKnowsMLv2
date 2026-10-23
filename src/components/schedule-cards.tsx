@@ -1,3 +1,4 @@
+import { ChartNoAxesCombined } from "lucide-react";
 import { Kickoff, SlateLabel } from "@/components/kickoff-cells";
 import {
   TeamLabel,
@@ -84,7 +85,7 @@ function ScheduleCard({ game }: { game: ScheduleCardGame }) {
       className="group overflow-hidden rounded-sm border border-border bg-card text-sm has-[[data-live-score]]:[--score-col:3rem]"
     >
       <div
-        className={`${ROW} bg-muted/35 py-1.5 [&_[data-live-block]]:row-start-1 [&_[data-live-block]]:col-span-full [&_[data-live-block]]:w-full [&_[data-live-block]]:flex-row [&_[data-live-block]]:gap-3 [&_[data-live-block]]:px-0 [&_[data-live-part=situation]]:ml-auto [&_[data-live-part=situation]]:text-xs [&_[data-live-part=situation]]:text-foreground[&_[data-live-part=field]]:h-2.5 [&_[data-live-part=field]]:w-28`}
+        className={`${ROW} bg-muted/35 py-1.5 [&_[data-live-block]]:row-start-1 [&_[data-live-block]]:col-span-full [&_[data-live-block]]:w-full [&_[data-live-block]]:flex-row [&_[data-live-block]]:gap-3 [&_[data-live-block]]:px-0 [&_[data-live-part=situation]]:ml-auto [&_[data-live-part=situation]]:text-xs [&_[data-live-part=situation]]:text-foreground [&_[data-live-part=field]]:h-2.5 [&_[data-live-part=field]]:w-28`}
       >
         {/* `contents`, so the time and the live block the writer puts after
             it are both items of this grid. */}
@@ -127,6 +128,17 @@ function ScheduleCard({ game }: { game: ScheduleCardGame }) {
           / {formatNumber(game.marketTotal)}
         </span>
       </div>
+      {/* The live score writer shows this once the game has started; the
+          schedule's click handler opens the game's win probability. */}
+      <button
+        type="button"
+        data-live-probability
+        hidden
+        className="flex w-full items-center gap-1.5 border-t border-border px-2.5 py-2 text-xs text-primary hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        <ChartNoAxesCombined className="size-3.5" aria-hidden="true" />
+        Win probability
+      </button>
       {game.picks.length > 0 && (
         <ul className="border-t border-border px-2.5 py-1.5 text-xs text-primary">
           {game.picks.map((pick) => (
