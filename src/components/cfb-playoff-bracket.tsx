@@ -2,10 +2,10 @@
 import { Fragment } from "react";
 import { TeamLogo, type TeamLogoSource } from "@/components/team-logo";
 import {
-  playoffPercent,
   type CfbPlayoffSlot,
   type CfbPlayoffTeam,
 } from "@/lib/cfb-playoffs";
+import { playoffPercent } from "@/lib/football-playoff-format";
 
 export type PlayoffIdentities = Record<number, TeamLogoSource>;
 interface Props {

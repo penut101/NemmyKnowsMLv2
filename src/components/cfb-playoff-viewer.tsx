@@ -10,11 +10,10 @@ import {
 import { CfbPlayoffTeamDialog } from "./cfb-playoff-team-dialog";
 import {
   decodeCfbPlayoffs,
-  playoffDate,
-  playoffPercent,
   type CfbPlayoffPayload,
   type CfbPlayoffTeam,
 } from "@/lib/cfb-playoffs";
+import { playoffDate, playoffPercent } from "@/lib/football-playoff-format";
 
 function TeamButton({
   team,

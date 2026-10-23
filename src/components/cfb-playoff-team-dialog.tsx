@@ -7,11 +7,10 @@ import {
 } from "@/components/ui/dialog";
 import { TeamLogo } from "@/components/team-logo";
 import {
-  playoffDate,
-  playoffPercent,
   type CfbPlayoffForecast,
   type CfbPlayoffTeam,
 } from "@/lib/cfb-playoffs";
+import { playoffDate, playoffPercent } from "@/lib/football-playoff-format";
 import type { PlayoffIdentities } from "./cfb-playoff-bracket";
 export function CfbPlayoffTeamDialog({
   team,
