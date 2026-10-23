@@ -6,6 +6,7 @@ import { SiteHeader } from "@/components/site-header";
 
 const mlbLinks = [
   { href: "/mlb/players", label: "Players" },
+  { href: "/mlb/prospects", label: "Prospects" },
   { href: "/mlb/games", label: "Games" },
   { href: "/mlb/playoffs", label: "Playoffs" },
   { href: "/mlb/history", label: "History" },

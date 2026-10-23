@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { PlayerHeadshot } from "@/components/player-headshot";
 import { cfbPlayerHeadshotUrl } from "@/lib/player-headshots";
 import { TeamLogo, type TeamLogoSource } from "@/components/team-logo";
@@ -12,6 +13,7 @@ export function PlayerCell({
   team,
   position,
   logo,
+  headshotFallback,
 }: {
   athleteId: string;
   headshotUrl?: string | null;
@@ -19,10 +21,11 @@ export function PlayerCell({
   team: string;
   position: string | null;
   logo: TeamLogoSource | undefined;
+  headshotFallback?: ReactNode;
 }) {
   return (
     <div className="flex items-center gap-2.5">
-      <PlayerHeadshot name={name} src={headshotUrl ?? cfbPlayerHeadshotUrl(athleteId)} className="h-9 w-9" />
+      <PlayerHeadshot name={name} src={headshotUrl ?? cfbPlayerHeadshotUrl(athleteId)} className="h-9 w-9" fallback={headshotFallback} />
       <div className="min-w-0">
         <div className="truncate font-medium">{name}</div>
         <div className="flex items-center gap-1 truncate text-xs text-muted-foreground">

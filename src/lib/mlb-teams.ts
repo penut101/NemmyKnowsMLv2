@@ -15,6 +15,11 @@ const MLB_TEAM_ID: Record<string, number> = {
   SFG: 137, STL: 138, TBR: 139, TEX: 140, TOR: 141, WSN: 120,
 };
 
+// The prospect table names parent clubs by the Stats API's own abbreviations.
+const STATS_API_CODE: Record<string, string> = {
+  AZ: "ARI", CWS: "CHW", KC: "KCR", SD: "SDP", SF: "SFG", TB: "TBR", WSH: "WSN",
+};
+
 // MLB serves cap logos as SVG off a public CDN keyed by team id, with separate
 // artwork cut for light and dark backgrounds. Nothing is fetched or stored: the
 // URL is a pure function of the code, so logos cost no request at build time
@@ -59,7 +64,8 @@ function displayColor([primary, alternate]: [string, string]): string {
 // back to its monogram instead of rendering a broken image.
 export function mlbTeamIdentity(code: string | null | undefined): MlbTeamIdentity | undefined {
   if (!code) return undefined;
-  const key = code.trim().toUpperCase();
+  const upper = code.trim().toUpperCase();
+  const key = STATS_API_CODE[upper] ?? upper;
   const id = MLB_TEAM_ID[key];
   if (id === undefined) return undefined;
   const pair = MLB_TEAM_COLOR[key];
@@ -68,4 +74,13 @@ export function mlbTeamIdentity(code: string | null | undefined): MlbTeamIdentit
     logo_dark: `${LOGO_BASE}/team-cap-on-dark/${id}.svg`,
     color: pair ? displayColor(pair) : null,
   };
+}
+
+// Every affiliated club, MLB down to the DSL, has a primary logo keyed by its
+// Stats API team id. There is no dark cut for minor league clubs, so both
+// themes share it.
+export function mlbAffiliateLogo(teamId: number | null | undefined): MlbTeamIdentity | undefined {
+  if (teamId == null) return undefined;
+  const url = `${LOGO_BASE}/${teamId}.svg`;
+  return { logo_light: url, logo_dark: url, color: null };
 }

@@ -3291,6 +3291,150 @@ export type Database = {
           },
         ]
       }
+      prospect_values: {
+        Row: {
+          acquired: string | null
+          age: number | null
+          as_of: string
+          bats: string | null
+          draft_pick: number | null
+          draft_round: string | null
+          draft_year: number | null
+          eta_season: number | null
+          expected_control_war: number | null
+          grade_reason: string | null
+          headshot_url: string | null
+          level: string | null
+          market_value_musd: number | null
+          mlb_ab_or_ip: number | null
+          model_version: string
+          on_40_man: boolean
+          org: string | null
+          org_id: number | null
+          p_mlb: number | null
+          p_regular: number | null
+          peak_grade: number | null
+          peak_grade_high: number | null
+          peak_grade_low: number | null
+          peak_grade_percentile: number | null
+          peak_war: number | null
+          player_id: number
+          player_name: string | null
+          position_group: string
+          risk: string | null
+          sample: number | null
+          season: number
+          season_sample: number | null
+          service_days: number | null
+          signing_bonus_musd: number | null
+          team: string | null
+          team_id: number | null
+          throws: string | null
+          tip: Json
+          tracked_share: number | null
+          trade_value_high: number | null
+          trade_value_low: number | null
+          trade_value_musd: number | null
+          trait_grades: number[]
+          trait_pcts: number[]
+          updated_at: string
+        }
+        Insert: {
+          acquired?: string | null
+          age?: number | null
+          as_of: string
+          bats?: string | null
+          draft_pick?: number | null
+          draft_round?: string | null
+          draft_year?: number | null
+          eta_season?: number | null
+          expected_control_war?: number | null
+          grade_reason?: string | null
+          headshot_url?: string | null
+          level?: string | null
+          market_value_musd?: number | null
+          mlb_ab_or_ip?: number | null
+          model_version: string
+          on_40_man: boolean
+          org?: string | null
+          org_id?: number | null
+          p_mlb?: number | null
+          p_regular?: number | null
+          peak_grade?: number | null
+          peak_grade_high?: number | null
+          peak_grade_low?: number | null
+          peak_grade_percentile?: number | null
+          peak_war?: number | null
+          player_id: number
+          player_name?: string | null
+          position_group: string
+          risk?: string | null
+          sample?: number | null
+          season: number
+          season_sample?: number | null
+          service_days?: number | null
+          signing_bonus_musd?: number | null
+          team?: string | null
+          team_id?: number | null
+          throws?: string | null
+          tip: Json
+          tracked_share?: number | null
+          trade_value_high?: number | null
+          trade_value_low?: number | null
+          trade_value_musd?: number | null
+          trait_grades: number[]
+          trait_pcts: number[]
+          updated_at?: string
+        }
+        Update: {
+          acquired?: string | null
+          age?: number | null
+          as_of?: string
+          bats?: string | null
+          draft_pick?: number | null
+          draft_round?: string | null
+          draft_year?: number | null
+          eta_season?: number | null
+          expected_control_war?: number | null
+          grade_reason?: string | null
+          headshot_url?: string | null
+          level?: string | null
+          market_value_musd?: number | null
+          mlb_ab_or_ip?: number | null
+          model_version?: string
+          on_40_man?: boolean
+          org?: string | null
+          org_id?: number | null
+          p_mlb?: number | null
+          p_regular?: number | null
+          peak_grade?: number | null
+          peak_grade_high?: number | null
+          peak_grade_low?: number | null
+          peak_grade_percentile?: number | null
+          peak_war?: number | null
+          player_id?: number
+          player_name?: string | null
+          position_group?: string
+          risk?: string | null
+          sample?: number | null
+          season?: number
+          season_sample?: number | null
+          service_days?: number | null
+          signing_bonus_musd?: number | null
+          team?: string | null
+          team_id?: number | null
+          throws?: string | null
+          tip?: Json
+          tracked_share?: number | null
+          trade_value_high?: number | null
+          trade_value_low?: number | null
+          trade_value_musd?: number | null
+          trait_grades?: number[]
+          trait_pcts?: number[]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       team_batting: {
         Row: {
           babip: number | null

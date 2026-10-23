@@ -22,6 +22,7 @@ const MLB_PATHS: Record<string, string[]> = {
   posterior_sigmas: ["/mlb/performance"],
   player_values: ["/mlb/players"],
   player_traits: [], // Details use their API route's CDN window.
+  prospect_values: ["/mlb/prospects"], // Filtered pages use their API route's CDN window.
   playoff_forecasts: [], // Both consumers use the tagged REST read.
 };
 
