@@ -49,3 +49,8 @@ AGENTS.md
 .claude/
 docs/
 !.env.example
+
+# local tool output
+.playwright-cli/
+output/
+supabase/.temp/
