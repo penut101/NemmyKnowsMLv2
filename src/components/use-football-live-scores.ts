@@ -201,11 +201,10 @@ export function useLiveScoreRows(
         block.querySelector<HTMLElement>(`[data-live-part="${name}"]`)!;
       part("detail").textContent = game.detail ?? "";
       part("detail").classList.toggle("text-primary", game.state === "in");
-      // The strip shows the spot, so the text keeps only the down and distance.
-      const downDistance =
-        game.state === "in" ? (game.situation?.replace(/ at .*$/, "") ?? null) : null;
-      part("situation").textContent = downDistance ?? "";
-      part("situation").hidden = !downDistance;
+      // The strip is too small to read a yard line off, so the text keeps the spot.
+      const situation = game.state === "in" ? game.situation : null;
+      part("situation").textContent = situation ?? "";
+      part("situation").hidden = !situation;
       const svg = fieldSvg(game);
       part("field").innerHTML = svg ?? "";
       part("field").hidden = !svg;

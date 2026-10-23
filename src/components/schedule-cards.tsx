@@ -84,7 +84,7 @@ function ScheduleCard({ game }: { game: ScheduleCardGame }) {
       className="group overflow-hidden rounded-sm border border-border bg-card text-sm has-[[data-live-score]]:[--score-col:3rem]"
     >
       <div
-        className={`${ROW} bg-muted/35 py-1.5 [&_[data-live-block]]:row-start-1 [&_[data-live-block]]:col-span-full [&_[data-live-block]]:w-full [&_[data-live-block]]:flex-row [&_[data-live-block]]:justify-between [&_[data-live-block]]:px-0`}
+        className={`${ROW} bg-muted/35 py-1.5 [&_[data-live-block]]:row-start-1 [&_[data-live-block]]:col-span-full [&_[data-live-block]]:w-full [&_[data-live-block]]:flex-row [&_[data-live-block]]:gap-3 [&_[data-live-block]]:px-0 [&_[data-live-part=situation]]:ml-auto [&_[data-live-part=situation]]:text-xs [&_[data-live-part=situation]]:text-foreground[&_[data-live-part=field]]:h-2.5 [&_[data-live-part=field]]:w-28`}
       >
         {/* `contents`, so the time and the live block the writer puts after
             it are both items of this grid. */}
