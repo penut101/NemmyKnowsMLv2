@@ -3,9 +3,9 @@ import { Nav } from "@/components/nav";
 import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "NHL Model Predictions",
+  title: "NHL Team Ratings & Analysis",
   description:
-    "Daily NHL win probabilities, goal totals, and partner-book picks from a Poisson goal model built on shot-quality windows.",
+    "NHL team ratings, expected goals, shot-quality analysis, and home and road splits, with daily game projections.",
 };
 
 const nhlLinks = [

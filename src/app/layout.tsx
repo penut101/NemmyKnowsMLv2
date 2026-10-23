@@ -37,7 +37,7 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "René Núñez | Probabilistic Sports Forecasting",
+    default: "René Núñez | Sports Analytics, Player Grades & Team Ratings",
     template: "%s | René Núñez",
   },
   description: SITE_DESCRIPTION,

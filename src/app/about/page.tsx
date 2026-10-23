@@ -9,7 +9,7 @@ import { CONTACT_EMAIL, SITE_NAME, SITE_URL, SOCIAL_LINKS } from "@/lib/site";
 export const metadata: Metadata = {
   title: "About",
   description:
-    "Data & AI Engineer who builds probabilistic forecasting models and benchmarks them against the market in public.",
+    "Data & AI Engineer building player grades, team ratings, and statistical tools for sports analysis, fantasy, and DFS research.",
 };
 
 const links = [
@@ -68,17 +68,17 @@ const models = [
   {
     name: "MLB",
     href: "/mlb/methodology",
-    body: "Hierarchical Bayesian plate-appearance model and per-PA Monte Carlo simulator; run distributions published daily and graded live.",
+    body: "Hitter and pitcher grades, skill profiles, projected production, and trade value, alongside a Bayesian plate-appearance model and game simulator.",
   },
   {
     name: "College football",
     href: "/cfb/methodology",
-    body: "Possession-level power ratings with calibrated margin and total uncertainty, validated walk-forward against closing lines.",
+    body: "Team and unit ratings, position-specific player grades, and player comparisons, with possession-level modeling and public forecast evaluation.",
   },
   {
     name: "NFL",
     href: "/nfl/methodology",
-    body: "Bayesian power ratings from drive-level EPA with QB and rest adjustments, backtested from 2016 with untouched holdout seasons.",
+    body: "Team ratings from drive-level EPA, player grades, projected production, and position-specific comparisons, with season and awards analysis.",
   },
   {
     name: "NHL",
@@ -130,12 +130,11 @@ export default function AboutPage() {
           <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
             Data &amp; AI Engineer in the San Diego&ndash;Tijuana area, with a
             background in behavioral neuroscience research, municipal government, and
-            production statistical systems. Outside work I build probabilistic
-            forecasting models for MLB, college football, the NFL, and the NHL, publish their
-            numbers before the games start, and grade them against the closing line in
-            public. The betting market is the benchmark because it is the sharpest
-            public probability estimate available, not because the goal is a betting
-            product.
+            production statistical systems. I build Momentum to explore player
+            talent, team strength, and the numbers behind performance across MLB,
+            college football, the NFL, and the NHL. Player grades, team ratings, and
+            comparisons support sports analysis, fantasy, and DFS research. Game
+            forecasts and public evaluation show how the models perform over time.
           </p>
 
           <div className="mt-5 flex flex-col gap-1.5">
@@ -203,7 +202,7 @@ export default function AboutPage() {
       </PageSection>
 
       <PageSection>
-        <SectionLabel>Models on this site</SectionLabel>
+        <SectionLabel>Sports analysis on this site</SectionLabel>
         <div className="divide-y divide-border border-y border-rule-strong">
           {models.map(({ name, href, body }) => (
             <Link

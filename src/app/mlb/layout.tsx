@@ -3,9 +3,9 @@ import { Nav } from "@/components/nav";
 import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "MLB Model Predictions",
+  title: "MLB Player Grades & Analysis",
   description:
-    "Daily MLB run-distribution forecasts, calibrated win and total probabilities, and model performance tracked against the market.",
+    "MLB player grades, skill profiles, projected production, and trade value, with game simulations and playoff analysis.",
 };
 
 export default function MlbLayout({

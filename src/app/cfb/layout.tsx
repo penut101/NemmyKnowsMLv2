@@ -3,9 +3,9 @@ import { Nav } from "@/components/nav";
 import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "CFB Model Ratings",
+  title: "College Football Ratings & Player Grades",
   description:
-    "College football power ratings, weekly spread and total projections, and model performance against the closing line.",
+    "College football team ratings, position-specific player grades, offense and defense splits, player comparisons, and Heisman analysis.",
 };
 
 const cfbLinks = [

@@ -3,9 +3,9 @@ import { Nav } from "@/components/nav";
 import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "NFL Model Ratings",
+  title: "NFL Ratings & Player Grades",
   description:
-    "NFL power ratings, weekly spread and total projections, unit ratings, and model performance against the closing line.",
+    "NFL team ratings, player grades, projected production, and position-specific comparisons for statistical analysis and fantasy research.",
 };
 
 const nflLinks = [
