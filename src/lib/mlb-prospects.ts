@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import type { Tables } from "@/lib/database-schema";
-import { PROSPECT_PAGE, type ProspectFilters, type ProspectSort } from "@/lib/prospect-values";
+import { PROSPECT_PAGE, prospectSearchRegex, type ProspectFilters, type ProspectSort } from "@/lib/prospect-values";
 
 // The prospect table, written weekly by mlbmodel: about 8,500 rows, so neither
 // the page nor the browser ever holds all of it. Every read is one filtered,
@@ -80,6 +80,8 @@ export async function fetchProspectPage(filters: ProspectFilters, offset: number
   if (filters.level) query = query.eq("level", filters.level);
   if (filters.position) query = query.eq("position_group", filters.position);
   if (filters.gradedOnly) query = query.not("peak_grade", "is", null);
+  // A regex scan of under ten thousand short names, so no index is needed.
+  if (filters.search) query = query.filter("player_name", "imatch", prospectSearchRegex(filters.search));
   for (const column of ORDER[filters.sort]) {
     query = query.order(column, { ascending: column === "eta_season", nullsFirst: false });
   }

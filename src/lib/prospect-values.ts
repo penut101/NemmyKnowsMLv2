@@ -36,9 +36,11 @@ export interface ProspectFilters {
   position: string | null;
   gradedOnly: boolean;
   sort: ProspectSort;
+  // A trimmed, lowercased name fragment, or null for no search.
+  search: string | null;
 }
 
-export const DEFAULT_PROSPECT_FILTERS: ProspectFilters = { org: null, level: null, position: null, gradedOnly: false, sort: "value" };
+export const DEFAULT_PROSPECT_FILTERS: ProspectFilters = { org: null, level: null, position: null, gradedOnly: false, sort: "value", search: null };
 export const PROSPECT_PAGE = 40;
 // Past the last row of the largest pool; anything further is a malformed request.
 export const MAX_PROSPECT_OFFSET = 20_000;
@@ -47,6 +49,30 @@ const ORG_SET: ReadonlySet<string> = new Set(PROSPECT_ORGS);
 const LEVEL_SET: ReadonlySet<string> = new Set(PROSPECT_LEVELS.map((l) => l.key));
 const POSITION_SET: ReadonlySet<string> = new Set(MLB_POSITION_ORDER);
 const SORT_SET: ReadonlySet<string> = new Set(PROSPECT_SORTS.map((s) => s.key));
+// Two to forty letters (any script), spaces, apostrophes, hyphens and periods:
+// everything a name holds, and nothing that is regex or PostgREST filter syntax
+// but the period.
+const SEARCH_PATTERN = /^[\p{L} '.-]{2,40}$/u;
+
+// The raw search box text as a filter value: null until it is long enough to
+// narrow the list, or when it holds characters no name has.
+export function prospectSearch(text: string): string | null {
+  const search = text.trim().replace(/\s+/g, " ").toLowerCase();
+  return SEARCH_PATTERN.test(search) ? search : null;
+}
+
+// Names are stored with their accents ("Moisés Gómez"), and people type
+// without them, so each base letter matches its accented forms.
+const ACCENTED: Record<string, string> = {
+  a: "aáàâäãÁÀÂÄÃ", e: "eéèêëÉÈÊË", i: "iíìîïÍÌÎÏ", o: "oóòôöõÓÒÔÖÕ", u: "uúùûüÚÙÛÜ", n: "nñÑ", c: "cçÇ", y: "yýÿÝ",
+};
+
+// A case-insensitive POSIX regex for the name column.
+export function prospectSearchRegex(search: string): string {
+  return Array.from(search.normalize("NFD").replace(/\p{M}/gu, ""))
+    .map((ch) => (ch === "." ? "\\." : ACCENTED[ch] ? `[${ACCENTED[ch]}]` : ch))
+    .join("");
+}
 
 // Canonical query string: fixed key order and defaults omitted, so one filter
 // set is one URL and one CDN entry.
@@ -57,30 +83,34 @@ export function prospectQuery(filters: ProspectFilters, offset = 0): string {
   if (filters.position) params.set("pos", filters.position);
   if (filters.gradedOnly) params.set("graded", "1");
   if (filters.sort !== "value") params.set("sort", filters.sort);
+  if (filters.search) params.set("q", filters.search);
   if (offset > 0) params.set("offset", String(offset));
   return params.toString();
 }
 
 // Every value is checked against its whitelist; null means the request is malformed.
 export function parseProspectQuery(params: URLSearchParams): { filters: ProspectFilters; offset: number } | null {
-  const allowed = new Set(["org", "level", "pos", "graded", "sort", "offset"]);
+  const allowed = new Set(["org", "level", "pos", "graded", "sort", "q", "offset"]);
   for (const key of params.keys()) if (!allowed.has(key)) return null;
   const org = params.get("org");
   const level = params.get("level");
   const position = params.get("pos");
   const graded = params.get("graded");
   const sort = params.get("sort") ?? "value";
+  const search = params.get("q");
   const offsetText = params.get("offset") ?? "0";
   if (org != null && !ORG_SET.has(org)) return null;
   if (level != null && !LEVEL_SET.has(level)) return null;
   if (position != null && !POSITION_SET.has(position)) return null;
   if (graded != null && graded !== "1") return null;
   if (!SORT_SET.has(sort)) return null;
+  // Only the canonical form, so one search is one CDN entry.
+  if (search != null && prospectSearch(search) !== search) return null;
   if (!/^\d{1,5}$/.test(offsetText)) return null;
   const offset = Number(offsetText);
   if (offset % PROSPECT_PAGE !== 0 || offset > MAX_PROSPECT_OFFSET) return null;
   return {
-    filters: { org, level, position, gradedOnly: graded === "1", sort: sort as ProspectSort },
+    filters: { org, level, position, gradedOnly: graded === "1", sort: sort as ProspectSort, search },
     offset,
   };
 }

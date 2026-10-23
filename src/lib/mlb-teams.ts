@@ -75,12 +75,3 @@ export function mlbTeamIdentity(code: string | null | undefined): MlbTeamIdentit
     color: pair ? displayColor(pair) : null,
   };
 }
-
-// Every affiliated club, MLB down to the DSL, has a primary logo keyed by its
-// Stats API team id. There is no dark cut for minor league clubs, so both
-// themes share it.
-export function mlbAffiliateLogo(teamId: number | null | undefined): MlbTeamIdentity | undefined {
-  if (teamId == null) return undefined;
-  const url = `${LOGO_BASE}/${teamId}.svg`;
-  return { logo_light: url, logo_dark: url, color: null };
-}

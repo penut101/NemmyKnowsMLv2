@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useEffectEvent, useMemo, useState } from "react";
 import type { ProspectPage, ProspectRow } from "@/lib/mlb-prospects";
 import {
   CONTROL_TIP,
@@ -22,17 +22,20 @@ import {
   isPitcherGroup,
   levelLabel,
   prospectQuery,
+  prospectSearch,
   prospectTraits,
   ungradedReason,
   type ProspectFilters,
   type ProspectSort,
 } from "@/lib/prospect-values";
 import { MLB_POSITION_ORDER, formatMillions } from "@/lib/player-values";
-import { mlbAffiliateLogo, mlbTeamIdentity } from "@/lib/mlb-teams";
+import { mlbTeamIdentity } from "@/lib/mlb-teams";
 import { EMPTY, cn, formatNumber, formatSigned } from "@/lib/utils";
 import { InfoTip } from "@/components/info-tip";
 import { Notice } from "@/components/notice";
 import { PlayerCell } from "@/components/player-cell";
+import { ComparisonGrades, ComparisonMetrics, type ComparisonMetric } from "@/components/player-comparison";
+import { PlayerComparisonPicker, type ComparisonPlayer } from "@/components/player-comparison-picker";
 import { PlayerRowDisclosure, PlayerRowHeader } from "@/components/player-row-disclosure";
 import { TeamLogo } from "@/components/team-logo";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -64,7 +67,7 @@ function identity(row: ProspectRow) {
       team={[row.org, row.team].filter(Boolean).join(" · ") || "Unassigned"}
       position={row.position_group}
       logo={mlbTeamIdentity(row.org)}
-      headshotFallback={<TeamLogo team={mlbAffiliateLogo(row.team_id) ?? mlbTeamIdentity(row.org)} name={row.team ?? row.org ?? name} className="h-6 w-6" />}
+      headshotFallback={<TeamLogo team={mlbTeamIdentity(row.org)} name={row.org ?? name} className="h-6 w-6" />}
     />
   );
 }
@@ -214,6 +217,147 @@ function ProspectCard({ row }: { row: ProspectRow }) {
   );
 }
 
+// Each search is a server read, so typed text settles into a search only after
+// a pause in typing, and only once it is a valid search.
+function useSettledSearch(text: string, current: string | null, onSettle: (search: string | null) => void) {
+  const settle = useEffectEvent(onSettle);
+  useEffect(() => {
+    const next = prospectSearch(text);
+    if (next === current) return;
+    const timer = window.setTimeout(() => settle(next), 300);
+    return () => window.clearTimeout(timer);
+  }, [text, current]);
+}
+
+// One page from the prospects route; a failed or malformed response throws.
+async function requestProspects(query: string, signal: AbortSignal): Promise<{ rows: ProspectRow[]; total: number | null }> {
+  const res = await fetch(`/mlb/api/prospects${query ? `?${query}` : ""}`, { signal });
+  if (!res.ok) throw new Error("Prospects unavailable");
+  const body = (await res.json()) as Partial<ProspectPage>;
+  if (!Array.isArray(body.rows)) throw new Error("Malformed prospect page");
+  return { rows: body.rows, total: typeof body.total === "number" ? body.total : null };
+}
+
+// Hitter and pitcher traits are different sets, so only like is compared with like.
+function comparisonPlayer(row: ProspectRow): ComparisonPlayer {
+  return {
+    id: String(row.player_id),
+    label: `${row.player_name ?? row.player_id} · ${row.org ?? "Unassigned"} · ${row.position_group}`,
+    group: isPitcherGroup(row.position_group) ? "pitcher" : "hitter",
+  };
+}
+
+function ProspectHeadToHead({ rows }: { rows: [ProspectRow, ProspectRow] }) {
+  const pair = <T,>(value: (row: ProspectRow) => T): [T, T] => [value(rows[0]), value(rows[1])];
+  const graded = (row: ProspectRow) => row.peak_grade != null;
+  const metrics: ComparisonMetric[] = [
+    {
+      label: "Peak grade",
+      values: pair((row) => (graded(row) ? `${formatNumber(row.peak_grade, 0)} (${formatNumber(row.peak_grade_low, 0)}–${formatNumber(row.peak_grade_high, 0)})` : "Not graded")),
+    },
+    { label: "Trade value", values: pair((row) => (graded(row) ? formatMillions(row.trade_value_musd) : EMPTY)) },
+    { label: "Chance of a regular", values: pair((row) => percent(row.p_regular)) },
+    { label: "Chance to reach MLB", values: pair((row) => percent(row.p_mlb)) },
+    { label: "ETA", values: pair((row) => (row.eta_season == null ? EMPTY : String(row.eta_season))) },
+    { label: "Risk", values: pair((row) => (row.risk ? (RISK_LABEL[row.risk] ?? row.risk) : EMPTY)) },
+    { label: "Peak WAR", values: pair((row) => formatNumber(row.peak_war, 1)) },
+    { label: "Control-year WAR", values: pair((row) => formatNumber(row.expected_control_war, 1)) },
+    { label: "Level", values: pair((row) => levelLabel(row.level) ?? EMPTY) },
+    { label: "Age", values: pair((row) => formatNumber(row.age, 1)) },
+    { label: "40-man roster", values: pair((row) => (row.on_40_man ? "Yes" : "No")) },
+    {
+      label: "Sample in window",
+      values: pair((row) => (row.sample == null ? EMPTY : `${formatNumber(row.sample, 0)} ${isPitcherGroup(row.position_group) ? "BF" : "PA"}`)),
+    },
+  ].filter((metric) => metric.values.some((value) => value !== EMPTY));
+  const traits = prospectTraits(rows[0].position_group);
+  const bothTraits = rows.every((row) => row.trait_grades.length > 0);
+  return (
+    <section aria-label="Prospect comparison" className="space-y-4 rounded-lg border border-rule-strong p-4">
+      <div className="grid grid-cols-2 gap-4">
+        {rows.map((row) => (
+          <div key={row.player_id} className="min-w-0">
+            {identity(row)}
+          </div>
+        ))}
+      </div>
+      <ComparisonMetrics metrics={metrics} />
+      {bothTraits ? (
+        <div className="space-y-3">
+          <h3 className="inline-flex items-center gap-1 text-sm">
+            Traits <InfoTip text={TRAITS_TIP} label="What are the traits?" />
+          </h3>
+          <ComparisonGrades grades={traits.map((trait, i) => ({ label: trait.label, values: [rows[0].trait_grades[i], rows[1].trait_grades[i]] }))} />
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">Traits are compared once both players are graded.</p>
+      )}
+    </section>
+  );
+}
+
+// The picker searches the whole table by name; with nothing typed it offers
+// the prospects the list is showing.
+function ProspectComparison({ suggestions }: { suggestions: ProspectRow[] }) {
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState<ProspectRow[]>([]);
+  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState<string | null>(null);
+  const [found, setFound] = useState<Record<string, ProspectRow[]>>({});
+  const [failedSearch, setFailedSearch] = useState<string | null>(null);
+
+  useSettledSearch(query, search, setSearch);
+
+  useEffect(() => {
+    if (search == null || found[search] || failedSearch === search) return;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
+    let active = true;
+    requestProspects(prospectQuery({ ...DEFAULT_PROSPECT_FILTERS, search }), controller.signal)
+      .then((page) => {
+        if (active) setFound((prev) => ({ ...prev, [search]: page.rows }));
+      })
+      .catch(() => {
+        if (active) setFailedSearch(search);
+      })
+      .finally(() => window.clearTimeout(timeout));
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [search, found, failedSearch]);
+
+  const pool = useMemo(() => {
+    const candidates = search == null ? suggestions : (found[search] ?? []);
+    return new Map([...picked, ...candidates].map((row) => [String(row.player_id), row]));
+  }, [picked, suggestions, search, found]);
+  const players = useMemo(() => [...pool.values()].map(comparisonPlayer), [pool]);
+  const status = search == null || found[search] ? null : failedSearch === search ? "failed" : "searching";
+
+  return (
+    <>
+      <PlayerComparisonPicker
+        players={players}
+        selected={picked.map((row) => String(row.player_id))}
+        onChange={(ids) => setPicked(ids.flatMap((id) => pool.get(id) ?? []))}
+        description="Compare two hitters or two pitchers. Search any prospect by name."
+        disclosure={{ open, onOpenChange: setOpen }}
+        noun="prospect"
+        search={{
+          onQueryChange: (text) => {
+            setQuery(text);
+            setFailedSearch(null);
+          },
+          status,
+          placeholder: "Search name",
+        }}
+      />
+      {picked.length === 2 && <ProspectHeadToHead rows={[picked[0], picked[1]]} />}
+    </>
+  );
+}
+
 type LoadState = "loading" | "failed";
 
 export default function MlbProspects({ initial }: { initial: ProspectPage }) {
@@ -225,6 +369,7 @@ export default function MlbProspects({ initial }: { initial: ProspectPage }) {
   const [moreFor, setMoreFor] = useState<string | null>(null);
   const [failed, setFailed] = useState<Record<string, true>>({});
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [query, setQuery] = useState("");
 
   const key = prospectQuery(filters);
   const current = results[key];
@@ -238,13 +383,7 @@ export default function MlbProspects({ initial }: { initial: ProspectPage }) {
     const timeout = window.setTimeout(() => controller.abort(), 15_000);
     let active = true;
     const query = [key, offset > 0 ? `offset=${offset}` : ""].filter(Boolean).join("&");
-    fetch(`/mlb/api/prospects${query ? `?${query}` : ""}`, { signal: controller.signal })
-      .then(async (res) => {
-        if (!res.ok) throw new Error("Prospects unavailable");
-        const body = (await res.json()) as Partial<ProspectPage>;
-        if (!Array.isArray(body.rows)) throw new Error("Malformed prospect page");
-        return { rows: body.rows, total: typeof body.total === "number" ? body.total : null };
-      })
+    requestProspects(query, controller.signal)
       .then((page) => {
         if (!active) return;
         setResults((prev) => {
@@ -273,6 +412,8 @@ export default function MlbProspects({ initial }: { initial: ProspectPage }) {
     setExpanded(null);
     setMoreFor(null);
   };
+
+  useSettledSearch(query, filters.search, (search) => update({ search }));
   const retry = () => {
     if (!requestKey) return;
     setFailed((prev) => {
@@ -302,6 +443,7 @@ export default function MlbProspects({ initial }: { initial: ProspectPage }) {
 
   return (
     <div className="min-w-0 space-y-section">
+      <ProspectComparison suggestions={rows} />
       <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-center">
         <select aria-label="Organization" value={filters.org ?? ""} onChange={(e) => update({ org: e.target.value || null })} className={SELECT}>
           <option value="">All organizations</option>
@@ -326,6 +468,14 @@ export default function MlbProspects({ initial }: { initial: ProspectPage }) {
             <option key={sort.key} value={sort.key}>{sort.label}</option>
           ))}
         </select>
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search player"
+          aria-label="Search player"
+          className={cn(SELECT, "col-span-2 w-full sm:w-56")}
+        />
         <label className="col-span-2 inline-flex min-h-10 items-center gap-2 text-sm md:min-h-8 md:text-xs">
           <input type="checkbox" checked={filters.gradedOnly} onChange={(e) => update({ gradedOnly: e.target.checked })} className="size-4" />
           Graded only
@@ -334,7 +484,12 @@ export default function MlbProspects({ initial }: { initial: ProspectPage }) {
 
       {current != null && (
         <p className="max-w-4xl text-sm text-muted-foreground leading-relaxed">
-          {total === 0 ? "No prospects match." : `Showing ${rows.length} of ${formatNumber(total, 0)} prospects.`} Open a player for traits and what moved his grade.
+          {total === 0
+            ? "No prospects match."
+            : filters.search
+              ? `${formatNumber(total, 0)} prospect${total === 1 ? "" : "s"} match “${query.trim()}”${rows.length < total ? `, showing ${rows.length}` : ""}.`
+              : `Showing ${rows.length} of ${formatNumber(total, 0)} prospects.`}{" "}
+          Open a player for traits and what moved his grade.
         </p>
       )}
 

@@ -22,6 +22,7 @@ import { InfoTip } from "@/components/info-tip";
 import { PlayerRowDisclosure, PlayerRowHeader } from "@/components/player-row-disclosure";
 import { PlayerCell } from "@/components/player-cell";
 import { PlayerComparisonPicker } from "@/components/player-comparison-picker";
+import { ComparisonGrades, ComparisonMetrics, type ComparisonMetric } from "@/components/player-comparison";
 import { ToggleGroup } from "@/components/toggle-group";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -250,6 +251,10 @@ function PlayerCard({ row, detail, failed, onRetry }: {
   );
 }
 
+function gradeOf(detail: PlayerDetail | undefined, trait: string): number | null | undefined {
+  return detail?.traits.find((t) => t.trait === trait)?.grade;
+}
+
 function MlbComparison({
   rows,
   loaded,
@@ -272,15 +277,16 @@ function MlbComparison({
       ),
     ),
   ];
-  const metrics = [
-    { label: "Grade", values: rows.map((row) => formatNumber(row.grade, 0)) },
+  const pair = <T,>(value: (row: PlayerValueIndex) => T): [T, T] => [value(rows[0]), value(rows[1])];
+  const metrics: ComparisonMetric[] = [
+    { label: "Grade", values: pair((row) => formatNumber(row.grade, 0)) },
     {
       label: "Projected WAR",
-      values: rows.map((row) => formatNumber(row.projected_war, 1)),
+      values: pair((row) => formatNumber(row.projected_war, 1)),
     },
     {
       label: "Trade value",
-      values: rows.map((row) =>
+      values: pair((row) =>
         row.grade != null && headlineValue(row).label === "Trade value"
           ? formatMillions(row.trade_value_musd)
           : EMPTY,
@@ -288,7 +294,7 @@ function MlbComparison({
     },
     {
       label: "Market value",
-      values: rows.map((row) =>
+      values: pair((row) =>
         row.grade != null && headlineValue(row).label === "Market value"
           ? formatMillions(row.market_value_musd)
           : EMPTY,
@@ -296,15 +302,15 @@ function MlbComparison({
     },
     {
       label: "Salary",
-      values: rows.map((row) => formatMillions(row.salary_current_musd)),
+      values: pair((row) => formatMillions(row.salary_current_musd)),
     },
     {
       label: "Control years",
-      values: rows.map((row) => String(row.control_years)),
+      values: pair((row) => String(row.control_years)),
     },
     {
       label: "Impact WAR",
-      values: rows.map((row) => formatNumber(row.impact_war, 1)),
+      values: pair((row) => formatNumber(row.impact_war, 1)),
     },
   ].filter((metric) => metric.values.some((value) => value !== EMPTY));
   return (
@@ -326,24 +332,7 @@ function MlbComparison({
           </div>
         ))}
       </div>
-      <div className="divide-y divide-border border-y border-rule-strong">
-        {metrics.map((metric) => (
-          <div
-            key={metric.label}
-            className="grid grid-cols-[1fr_1.4fr_1fr] items-center gap-2 py-2 text-sm"
-          >
-            <span className="font-mono font-semibold text-primary">
-              {metric.values[0]}
-            </span>
-            <span className="text-center text-xs text-muted-foreground">
-              {metric.label}
-            </span>
-            <span className="text-right font-mono font-semibold text-accent-blue">
-              {metric.values[1]}
-            </span>
-          </div>
-        ))}
-      </div>
+      <ComparisonMetrics metrics={metrics} />
       <p className="text-xs text-muted-foreground">
         Grades are relative to each player&apos;s position. Projected WAR uses a
         common wins scale across positions.
@@ -351,46 +340,12 @@ function MlbComparison({
       {details.every(Boolean) ? (
         <div className="space-y-3">
           <h3 className="text-sm">Trait grades</h3>
-          {traits.map((name) => {
-            const grades = details.map(
-              (detail) =>
-                detail?.traits.find((trait) => trait.trait === name)?.grade,
-            );
-            return (
-              <div key={name} className="space-y-1">
-                <div className="grid grid-cols-[2rem_1fr_2rem] gap-2 text-xs">
-                  <span className="font-mono">
-                    {formatNumber(grades[0], 0)}
-                  </span>
-                  <span className="text-center">{traitLabel(name).label}</span>
-                  <span className="text-right font-mono">
-                    {formatNumber(grades[1], 0)}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  {grades.map((grade, i) => (
-                    <div
-                      key={i}
-                      className={cn(
-                        "flex h-1.5 bg-grid",
-                        i === 0 && "justify-end",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "h-full",
-                          i === 0 ? "bg-primary" : "bg-accent-blue",
-                        )}
-                        style={{
-                          width: `${grade == null ? 0 : Math.max(0, Math.min(100, ((grade - 20) / 60) * 100))}%`,
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+          <ComparisonGrades
+            grades={traits.map((name) => ({
+              label: traitLabel(name).label,
+              values: [gradeOf(details[0], name), gradeOf(details[1], name)],
+            }))}
+          />
         </div>
       ) : (
         <DetailStatus failed={failed} onRetry={onRetry} loadingText="Loading comparison traits…" />
