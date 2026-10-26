@@ -1,6 +1,7 @@
 import { PageDescription, PageHeader, PageShell, PageTitle } from "@/components/page-layout";
 import type { Metadata } from "next";
 import { fetchProspectPage, fetchProspectSummary } from "@/lib/mlb-prospects";
+import { databaseConfigured } from "@/lib/supabase";
 import { DEFAULT_PROSPECT_FILTERS, PEAK_GRADE_TIP, PROSPECT_TRADE_VALUE_TIP } from "@/lib/prospect-values";
 import { formatMillions } from "@/lib/player-values";
 import { formatNumber } from "@/lib/utils";
@@ -17,6 +18,14 @@ export const metadata: Metadata = {
 };
 
 export default async function MlbProspectsPage() {
+  if (!databaseConfigured) {
+    return (
+      <PageShell>
+        <PageTitle>Prospects</PageTitle>
+        <p role="status" className="text-muted-foreground">Prospect values are unavailable until the sports data connection is ready.</p>
+      </PageShell>
+    );
+  }
   // Three small reads per regeneration; a failure throws so ISR keeps the last good page.
   const [first, summary] = await Promise.all([fetchProspectPage(DEFAULT_PROSPECT_FILTERS, 0), fetchProspectSummary()]);
   const total = first.total ?? first.rows.length;

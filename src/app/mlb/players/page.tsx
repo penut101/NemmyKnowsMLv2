@@ -1,6 +1,7 @@
 import { PageDescription, PageHeader, PageShell, PageTitle } from "@/components/page-layout";
 import type { Metadata } from "next";
 import { fetchPlayerValues } from "@/lib/mlb-players";
+import { databaseConfigured } from "@/lib/supabase";
 import { formatNumber } from "@/lib/utils";
 import { KpiCard } from "@/components/kpi-card";
 import { LastUpdated } from "@/components/last-updated";
@@ -10,6 +11,7 @@ import { GRADE_TIP, TRADE_VALUE_TIP, formatMillions } from "@/lib/player-values"
 export const revalidate = 3600;
 
 export async function generateMetadata(): Promise<Metadata> {
+  if (!databaseConfigured) return { title: "MLB Player Values" };
   const { season } = await fetchPlayerValues();
   const year = season ?? new Date().getFullYear();
   return {
@@ -19,6 +21,14 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function MlbPlayersPage() {
+  if (!databaseConfigured) {
+    return (
+      <PageShell>
+        <PageTitle>Player Values</PageTitle>
+        <p role="status" className="text-muted-foreground">Player values are unavailable until the sports data connection is ready.</p>
+      </PageShell>
+    );
+  }
   const values = await fetchPlayerValues();
   const { season, index } = values;
 

@@ -16,6 +16,9 @@ import type {
 // the whole publication is megabytes, and the anon role has three seconds.
 const publication = unstable_cache(
   async (section: string, year?: number) => {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      throw new Error("Draft publication unavailable: sports data is not configured");
+    }
     const select =
       section === "workspace" ? "schema_version,board,meta" : `data:${section}`;
     const params = new URLSearchParams({

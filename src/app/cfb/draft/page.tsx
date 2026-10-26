@@ -10,6 +10,7 @@ import { LastUpdated } from "@/components/last-updated";
 import DraftWorkspace from "@/components/draft-workspace";
 import { fetchDraft, fetchPlayerPage } from "@/lib/draft-server";
 import { fetchTeams as fetchNflTeams } from "@/lib/nfl";
+import { databaseConfigured } from "@/lib/supabase";
 export const revalidate = 3600;
 export const metadata: Metadata = {
   title: "NFL Draft Board",
@@ -17,6 +18,18 @@ export const metadata: Metadata = {
     "Explore an editable NFL mock draft, team priorities, current rosters, and college player performance.",
 };
 export default async function DraftPage() {
+  if (!databaseConfigured) {
+    return (
+      <PageShell width="wide">
+        <PageHeader><div>
+          <PageTitle>NFL Draft</PageTitle>
+          <PageDescription>Seven-round mock draft, scouting rankings, and team needs.</PageDescription>
+        </div></PageHeader>
+        <PlayerSectionTabs />
+        <p role="status">The draft board is unavailable until the sports data connection is ready.</p>
+      </PageShell>
+    );
+  }
   const [data, nflTeams] = await Promise.all([
     fetchDraft("workspace"),
     fetchNflTeams(),
