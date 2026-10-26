@@ -1,0 +1,371 @@
+"""Model evaluation metrics: regression, probabilistic, financial. Pure functions, no DB."""
+import numpy as np
+import pandas as pd
+
+# ---------------------------------------------------------------------------
+# Regression metrics (predicted runs vs actual runs)
+# ---------------------------------------------------------------------------
+
+def _finite_pair(y_true, y_pred):
+    mask = ~(np.isnan(y_true) | np.isnan(y_pred))
+    return y_true[mask], y_pred[mask]
+
+
+def mae(y_true, y_pred):
+    yt, yp = _finite_pair(y_true, y_pred)
+    return float(np.mean(np.abs(yt - yp))) if yt.size else np.nan
+
+
+def rmse(y_true, y_pred):
+    yt, yp = _finite_pair(y_true, y_pred)
+    return float(np.sqrt(np.mean((yt - yp) ** 2))) if yt.size else np.nan
+
+
+def mape(y_true, y_pred):
+    yt, yp = _finite_pair(y_true, y_pred)
+    nonzero = yt != 0
+    if not nonzero.any():
+        return np.nan
+    return float(np.mean(np.abs((yt[nonzero] - yp[nonzero]) / yt[nonzero])) * 100)
+
+
+def r_squared(y_true, y_pred):
+    yt, yp = _finite_pair(y_true, y_pred)
+    if yt.size < 2:
+        return np.nan
+    ss_res = np.sum((yt - yp) ** 2)
+    ss_tot = np.sum((yt - np.mean(yt)) ** 2)
+    return float(1 - ss_res / ss_tot) if ss_tot > 0 else np.nan
+
+
+def residual_stats(y_true, y_pred):
+    yt, yp = _finite_pair(y_true, y_pred)
+    residuals = yp - yt
+    if len(residuals) < 2:
+        return {"mean": np.nan, "std": np.nan, "skew": np.nan}
+    return {
+        "mean": float(np.mean(residuals)),
+        "std": float(np.std(residuals, ddof=1)),
+        "skew": float(pd.Series(residuals).skew()),
+    }
+
+
+def regression_summary(y_true, y_pred):
+    """All regression metrics in one dict."""
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    return {
+        "mae": mae(y_true, y_pred),
+        "rmse": rmse(y_true, y_pred),
+        "mape": mape(y_true, y_pred),
+        "r2": r_squared(y_true, y_pred),
+        **{f"residual_{k}": v for k, v in residual_stats(y_true, y_pred).items()},
+    }
+
+
+# ---------------------------------------------------------------------------
+# Probabilistic metrics (win_prob vs binary outcome)
+# ---------------------------------------------------------------------------
+
+def brier_score(probs, outcomes):
+    """Mean squared error between predicted probabilities and binary outcomes."""
+    probs = np.asarray(probs, dtype=float)
+    outcomes = np.asarray(outcomes, dtype=float)
+    mask = ~(np.isnan(probs) | np.isnan(outcomes))
+    if not mask.any():
+        return np.nan
+    return float(np.mean((probs[mask] - outcomes[mask]) ** 2))
+
+
+def log_loss(probs, outcomes, eps=1e-7):
+    """Binary cross-entropy with safe clipping to avoid log(0)."""
+    probs = np.clip(np.asarray(probs, dtype=float), eps, 1 - eps)
+    outcomes = np.asarray(outcomes, dtype=float)
+    mask = ~(np.isnan(probs) | np.isnan(outcomes))
+    if not mask.any():
+        return np.nan
+    p, y = probs[mask], outcomes[mask]
+    return float(-np.mean(y * np.log(p) + (1 - y) * np.log(1 - p)))
+
+
+def sharpness(probs):
+    """Variance of predicted probabilities - measures decisiveness."""
+    probs = np.asarray(probs, dtype=float)
+    valid = probs[~np.isnan(probs)]
+    return float(np.var(valid)) if len(valid) > 0 else np.nan
+
+
+def calibration_curve(probs, outcomes, n_bins=10):
+    """Bin predictions into deciles and return predicted vs observed rates.
+
+    Returns list of dicts: [{bin_mid, predicted_mean, observed_rate, count}, ...]
+    """
+    probs = np.asarray(probs, dtype=float)
+    outcomes = np.asarray(outcomes, dtype=float)
+    mask = ~(np.isnan(probs) | np.isnan(outcomes))
+    probs, outcomes = probs[mask], outcomes[mask]
+    if len(probs) == 0:
+        return []
+
+    bins = np.linspace(0, 1, n_bins + 1)
+    result = []
+    for i in range(n_bins):
+        in_bin = (probs >= bins[i]) & (probs < bins[i + 1])
+        if i == n_bins - 1:
+            in_bin |= (probs == bins[i + 1])
+        count = int(in_bin.sum())
+        if count == 0:
+            continue
+        result.append({
+            "bin_mid": round(float((bins[i] + bins[i + 1]) / 2), 2),
+            "predicted_mean": round(float(probs[in_bin].mean()), 4),
+            "observed_rate": round(float(outcomes[in_bin].mean()), 4),
+            "count": count,
+        })
+    return result
+
+
+def prediction_interval_coverage(histograms, actual_runs, level=0.80):
+    """Equal-tail coverage of the persisted PMF; its last bin is 20+ runs.
+
+    Missing legacy PMFs are excluded explicitly, never approximated from means.
+    """
+    covered = []
+    for histogram, actual in zip(histograms, actual_runs, strict=True):
+        if not isinstance(histogram, (list, tuple, np.ndarray)):
+            continue
+        mass = np.asarray(histogram, dtype=float)
+        if mass.shape != (21,) or not np.isfinite(mass).all() or (mass < 0).any() or mass.sum() <= 0:
+            raise ValueError("Invalid frozen run distribution")
+        if not np.isfinite(actual):
+            continue
+        cdf = np.cumsum(mass / mass.sum())
+        alpha = (1 - level) / 2
+        lo, hi = np.searchsorted(cdf, [alpha, 1 - alpha])
+        covered.append(lo <= min(actual, 20) <= hi)
+    return round(float(np.mean(covered)), 4) if covered else np.nan
+
+
+def probabilistic_summary(probs, outcomes, *, histograms=None, actual_runs=None):
+    """Probability metrics, with coverage restricted to recoverable frozen PMFs."""
+    histograms = histograms if histograms is not None else [None] * len(probs)
+    result = {
+        "brier_score": brier_score(probs, outcomes),
+        "log_loss": log_loss(probs, outcomes),
+        "sharpness": sharpness(probs),
+        "interval_coverage_predictions": sum(
+            isinstance(h, (list, tuple, np.ndarray)) and bool(np.isfinite(actual))
+            for h, actual in zip(histograms, actual_runs, strict=True)
+        ) if actual_runs is not None else 0,
+    }
+    for percent in (50, 80, 90):
+        result[f"interval_coverage_{percent}"] = (
+            prediction_interval_coverage(histograms, actual_runs, level=percent / 100)
+            if actual_runs is not None else np.nan
+        )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Financial / betting metrics
+# ---------------------------------------------------------------------------
+
+def roi(ledger):
+    """Net profit / total staked. ledger: DataFrame with columns [stake, payout]."""
+    if ledger.empty:
+        return np.nan
+    total_staked = ledger["stake"].sum()
+    if total_staked == 0:
+        return np.nan
+    net = ledger["payout"].sum() - total_staked
+    return round(float(net / total_staked), 4)
+
+
+def _daily_returns(ledger):
+    """Compute daily P&L returns from a bet ledger with 'date', 'stake', 'payout'."""
+    if ledger.empty:
+        return pd.Series(dtype=float)
+    daily = ledger.groupby("date").apply(
+        lambda g: (g["payout"].sum() - g["stake"].sum()) / g["stake"].sum()
+        if g["stake"].sum() > 0 else 0.0
+    )
+    return daily
+
+
+def sharpe_ratio(ledger, annual_factor=252):
+    """Annualized Sharpe ratio from daily returns."""
+    dr = _daily_returns(ledger)
+    if len(dr) < 2:
+        return np.nan
+    mu = dr.mean()
+    sigma = dr.std()
+    if sigma == 0:
+        return np.nan
+    return round(float(mu / sigma * np.sqrt(annual_factor)), 4)
+
+
+def sortino_ratio(ledger, annual_factor=252):
+    """Annualized Sortino ratio (only penalizes downside volatility)."""
+    dr = _daily_returns(ledger)
+    if len(dr) < 2:
+        return np.nan
+    mu = dr.mean()
+    downside = dr[dr < 0]
+    if len(downside) < 1:
+        return np.nan if mu == 0 else np.inf
+    downside_std = downside.std()
+    if downside_std == 0:
+        return np.nan
+    return round(float(mu / downside_std * np.sqrt(annual_factor)), 4)
+
+
+def max_drawdown(equity_curve):
+    """Worst peak-to-trough decline of cumulative P&L, in units.
+    Reported as units rather than % because stakes are flat fractions of a
+    fixed 1u base (no compounding), so a Kelly-style % of running equity
+    would misrepresent the strategy.
+    """
+    eq = np.asarray(equity_curve, dtype=float)
+    if len(eq) < 2:
+        return np.nan
+    running_max = np.maximum.accumulate(eq)
+    drawdowns = eq - running_max
+    return round(float(drawdowns.min()), 4)
+
+
+def equity_curve_from_ledger(ledger, initial=1.0):
+    """Build a cumulative equity curve from a bet ledger.
+
+    Returns a DataFrame with columns [date, equity].
+    """
+    if ledger.empty:
+        return pd.DataFrame(columns=["date", "equity"])
+    daily = ledger.groupby("date").agg(
+        staked=("stake", "sum"),
+        returned=("payout", "sum"),
+    ).sort_index()
+    daily["pnl"] = daily["returned"] - daily["staked"]
+    daily["equity"] = initial + daily["pnl"].cumsum()
+    return daily.reset_index()[["date", "equity"]]
+
+
+def hit_rate_by_edge_bucket(ledger, buckets=(0.045, 0.065, 0.10, 0.20)):
+    """Hit rate and ROI per edge bucket.
+
+    Default boundaries align with EV_THRESHOLDS (ml/rl 4.5%, totals 6.5%) so no
+    bucket can contain sub-threshold bets.
+
+    ledger must have columns: edge, won (bool), stake, payout.
+    Returns list of dicts: [{bucket_label, n_bets, hit_rate, roi}, ...]
+    """
+    if ledger.empty or "edge" not in ledger.columns:
+        return []
+
+    def _fmt(p):
+        v = p * 100
+        return f"{v:g}"  # 4.5 → "4.5", 10 → "10"
+
+    edges = sorted(buckets)
+    results = []
+    for i, lo in enumerate(edges):
+        hi = edges[i + 1] if i + 1 < len(edges) else np.inf
+        label = f"{_fmt(lo)}-{_fmt(hi)}%" if hi != np.inf else f"{_fmt(lo)}%+"
+        mask = (ledger["edge"] >= lo) & (ledger["edge"] < hi)
+        subset = ledger[mask]
+        if subset.empty:
+            continue
+        total_staked = subset["stake"].sum()
+        bucket_roi = (subset["payout"].sum() - total_staked) / total_staked if total_staked > 0 else 0
+        # Pushes are bets with zero P&L: in n_bets and ROI, out of the hit rate.
+        pushes = int(subset["push"].sum()) if "push" in subset.columns else 0
+        decided = len(subset) - pushes
+        hit_rate = float(subset["won"].sum()) / decided if decided > 0 else np.nan
+        results.append({
+            "bucket_label": label,
+            "n_bets": int(len(subset)),
+            "hit_rate": round(hit_rate, 4) if not np.isnan(hit_rate) else None,
+            "roi": round(float(bucket_roi), 4),
+        })
+    return results
+
+
+def segment_summary(ledger):
+    """Bet-segment metrics: favorites/underdogs (ML only) and totals over/under.
+
+    Expects optional columns:
+      - american_odds (numeric, present for ML rows)
+      - totals_side ("over" | "under", present for total rows)
+    Missing columns are tolerated; segments collapse to zero counts.
+    """
+    out = {
+        "roi_favorites": None, "n_favorites": 0, "favorites_correct": 0,
+        "roi_underdogs": None, "n_underdogs": 0, "underdogs_correct": 0,
+        "avg_ml_line": None,
+        "overs_correct": 0, "overs_predictions": 0, "overs_roi": None,
+        "unders_correct": 0, "unders_predictions": 0, "unders_roi": None,
+        "roi_run_line": None, "n_run_line": 0, "run_line_bets_correct": 0,
+    }
+    if ledger is None or ledger.empty:
+        return out
+
+    if "bet_type" in ledger.columns:
+        rl = ledger[ledger["bet_type"] == "rl"]
+        n = int(len(rl))
+        out["n_run_line"] = n
+        if n > 0:
+            staked = float(rl["stake"].sum())
+            pnl = float(rl["payout"].sum() - staked)
+            out["roi_run_line"] = round(pnl / staked, 4) if staked > 0 else None
+            out["run_line_bets_correct"] = int(rl["won"].sum())
+
+    if "american_odds" in ledger.columns:
+        ml = ledger[ledger["american_odds"].notna()].copy()
+        if not ml.empty:
+            favs = ml[ml["american_odds"] < 0]
+            dogs = ml[ml["american_odds"] > 0]
+            for label, sub in (("favorites", favs), ("underdogs", dogs)):
+                n = int(len(sub))
+                out[f"n_{label}"] = n
+                if n > 0:
+                    staked = float(sub["stake"].sum())
+                    pnl = float(sub["payout"].sum() - staked)
+                    out[f"roi_{label}"] = round(pnl / staked, 4) if staked > 0 else None
+                    correct_key = "favorites_correct" if label == "favorites" else "underdogs_correct"
+                    out[correct_key] = int(sub["won"].sum())
+            # Average via implied probability - averaging American odds directly is
+            # meaningless because of the discontinuity at ±100.
+            odds = ml["american_odds"].astype(float)
+            implied = np.where(odds > 0, 100.0 / (odds + 100.0), -odds / (-odds + 100.0))
+            mean_p = float(np.mean(implied))
+            if mean_p >= 0.5:
+                avg_american = -100.0 * mean_p / (1.0 - mean_p)
+            else:
+                avg_american = 100.0 * (1.0 - mean_p) / mean_p
+            out["avg_ml_line"] = round(avg_american, 2)
+
+    if "totals_side" in ledger.columns:
+        for side in ("over", "under"):
+            sub = ledger[ledger["totals_side"] == side]
+            n = int(len(sub))
+            key = "overs" if side == "over" else "unders"
+            out[f"{key}_predictions"] = n
+            if n > 0:
+                wins = int(sub["won"].sum())
+                staked = float(sub["stake"].sum())
+                pnl = float(sub["payout"].sum() - staked)
+                out[f"{key}_correct"] = wins
+                out[f"{key}_roi"] = round(pnl / staked, 4) if staked > 0 else None
+    return out
+
+
+def financial_summary(ledger):
+    """All financial metrics in one dict."""
+    eq = equity_curve_from_ledger(ledger)
+    return {
+        "roi": roi(ledger),
+        "sharpe": sharpe_ratio(ledger),
+        "sortino": sortino_ratio(ledger),
+        "max_drawdown": max_drawdown(eq["equity"].values) if not eq.empty else np.nan,
+        "total_staked_units": round(float(ledger["stake"].sum()), 4) if not ledger.empty else 0,
+        "net_profit_units": round(float(ledger["payout"].sum() - ledger["stake"].sum()), 4) if not ledger.empty else 0,
+    }

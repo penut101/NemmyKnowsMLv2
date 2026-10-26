@@ -1,0 +1,240 @@
+"""Empirical baserunner advancement and out-subtype sampling.
+
+Two parquet tables (built by `build_advancement_table.py`):
+- advancement.parquet: P(new_state, runs, outs_added | state, outs, outcome, subtype)
+- out_subtype.parquet: P(subtype | state, outs)  (only meaningful when outcome=OUT)
+
+Both lookups are vectorized: take (N,) arrays of the lookup key, return (N,) arrays of samples.
+
+Known approximation: out_subtype is conditioned only on (state, outs), not on
+batter or pitcher tendencies. League-mean GIDP/sac_fly rates per state.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from v2.data.pa_dataset import OUTCOMES
+
+TABLES_DIR = Path(__file__).resolve().parent / "tables"
+OUTCOME_TO_IDX = {o: i for i, o in enumerate(OUTCOMES)}
+OUT_IDX = OUTCOME_TO_IDX["OUT"]
+
+# Subtype string ↔ int. Keep a stable order; "_NA_" reserved for non-OUT outcomes.
+SUBTYPE_ORDER = (
+    "_NA_", "field_out", "force_out", "gidp", "dp", "tp", "fc",
+    "sac_fly", "sac_fly_dp", "sac_bunt", "sac_bunt_dp", "roe", "ci", "k_dp",
+)
+SUBTYPE_TO_IDX = {s: i for i, s in enumerate(SUBTYPE_ORDER)}
+N_SUBTYPES = len(SUBTYPE_ORDER)
+NA_SUBTYPE_IDX = SUBTYPE_TO_IDX["_NA_"]
+
+N_STATES = 8
+N_OUTS = 3
+N_OUTCOMES = len(OUTCOMES)
+N_BQ = 4  # batter GB quartile bins
+N_PQ = 4  # pitcher GB quartile bins
+TABLE_VERSION = 2
+
+
+def legal_transitions(df: pd.DataFrame) -> np.ndarray:
+    """Conserve runners and outs; runners may be stranded only at inning end."""
+    before = df["state"].map(lambda x: int(x).bit_count()).to_numpy() + 1
+    remaining = df["new_state"].map(lambda x: int(x).bit_count()).to_numpy()
+    accounted = remaining + df["runs"].to_numpy() + df["outs_added"].to_numpy()
+    end = df["outs"].to_numpy() + df["outs_added"].to_numpy() == 3
+    return (
+        df["state"].between(0, 7).to_numpy()
+        & df["new_state"].between(0, 7).to_numpy()
+        & df["outs"].between(0, 2).to_numpy()
+        & df["outs_added"].ge(0).to_numpy()
+        & df["runs"].ge(0).to_numpy()
+        & (df["outs"].to_numpy() + df["outs_added"].to_numpy() <= 3)
+        & (accounted <= before)
+        & np.where(end, remaining == 0, accounted == before)
+    )
+
+
+def _key_advancement(state: np.ndarray, outs: np.ndarray, outcome: np.ndarray, subtype: np.ndarray) -> np.ndarray:
+    """Flatten (state, outs, outcome, subtype) → single int64 key."""
+    return ((state * N_OUTS + outs) * N_OUTCOMES + outcome) * N_SUBTYPES + subtype
+
+
+def _key_subtype(state: np.ndarray, outs: np.ndarray, b_q: np.ndarray, p_q: np.ndarray) -> np.ndarray:
+    """Flatten (state, outs, batter_gb_q, pitcher_gb_q) → single int64 key."""
+    return (((state * N_OUTS + outs) * N_BQ + b_q) * N_PQ + p_q)
+
+
+def _sample_indices(
+    cdf: np.ndarray, starts: np.ndarray, ends: np.ndarray, u: np.ndarray
+) -> np.ndarray:
+    """Batched left-side CDF search, clamped to each nonempty group's last entry."""
+    lo, hi = starts.copy(), ends - 1
+    while np.any(lo < hi):
+        mid = (lo + hi) // 2
+        right = cdf[mid] < u
+        lo = np.where((lo < hi) & right, mid + 1, lo)
+        hi = np.where(right, hi, mid)
+    return lo
+
+
+@dataclass
+class AdvancementTable:
+    """Pre-baked flat lookup for advancement.
+
+    For each unique (state, outs, outcome, subtype) key we store:
+    - cdf[key]: cumulative probabilities, length = max number of distinct (new_state, runs, outs_added) entries.
+    - new_state[key], runs[key], outs_added[key]: aligned arrays of outcomes for that key.
+    - lengths[key]: how many entries are valid for that key.
+    """
+    starts: np.ndarray       # (N_KEYS+1,) offsets into the flat arrays
+    cdf: np.ndarray          # (TOTAL,) cumulative probs per key, last entry per key is 1.0
+    new_state: np.ndarray    # (TOTAL,) int8
+    runs: np.ndarray         # (TOTAL,) int8
+    outs_added: np.ndarray   # (TOTAL,) int8
+    training_max_date: str | None = None
+
+    def sample(
+        self,
+        rng: np.random.Generator,
+        state: np.ndarray,
+        outs: np.ndarray,
+        outcome: np.ndarray,
+        subtype: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Return (new_state, runs, outs_added), each (N,) int."""
+        keys = _key_advancement(
+            state.astype(np.int64),
+            outs.astype(np.int64),
+            outcome.astype(np.int64),
+            subtype.astype(np.int64),
+        )
+        starts = self.starts[keys]
+        ends = self.starts[keys + 1]
+        lengths = ends - starts
+
+        if (lengths == 0).any():
+            missing = keys[lengths == 0][:5]
+            raise KeyError(
+                f"Advancement table missing {(lengths == 0).sum()} key(s); first: {missing.tolist()}"
+            )
+
+        indices = _sample_indices(self.cdf, starts, ends, rng.random(size=len(keys)))
+        return tuple(values[indices].astype(np.int64, copy=False) for values in
+                     (self.new_state, self.runs, self.outs_added))
+
+
+@dataclass
+class OutSubtypeTable:
+    """P(subtype | state, outs). Same flat-lookup shape as AdvancementTable."""
+    starts: np.ndarray       # (N_STATES * N_OUTS + 1,)
+    cdf: np.ndarray
+    subtype: np.ndarray      # int subtype indices
+    training_max_date: str | None = None
+
+    def sample(
+        self,
+        rng: np.random.Generator,
+        state: np.ndarray,
+        outs: np.ndarray,
+        b_q: np.ndarray,
+        p_q: np.ndarray,
+    ) -> np.ndarray:
+        keys = _key_subtype(
+            state.astype(np.int64),
+            outs.astype(np.int64),
+            b_q.astype(np.int64),
+            p_q.astype(np.int64),
+        )
+        starts = self.starts[keys]
+        ends = self.starts[keys + 1]
+        if (ends - starts == 0).any():
+            missing = keys[ends - starts == 0][:5]
+            raise KeyError(f"Subtype table missing keys: {missing.tolist()}")
+        indices = _sample_indices(self.cdf, starts, ends, rng.random(size=len(keys)))
+        return self.subtype[indices].astype(np.int64, copy=False)
+
+
+def _build_flat_lookup(
+    df: pd.DataFrame, key_cols: list[str], n_keys: int, kind: str, prob_col: str = "prob"
+) -> tuple:
+    """Take a long-format prob table, group by key_cols, return (starts, cdf, *value_arrays)."""
+    cols = [df[c].to_numpy(np.int64) for c in key_cols]
+    if kind == "advancement":
+        key = _key_advancement(*cols)
+    elif kind == "subtype":
+        key = _key_subtype(*cols)
+    else:
+        raise ValueError(f"unknown lookup kind {kind!r}")
+    df = df.assign(_key=key).sort_values(["_key", prob_col], ascending=[True, False]).reset_index(drop=True)
+
+    counts = np.bincount(df["_key"].to_numpy(), minlength=n_keys)
+    starts = np.concatenate([[0], np.cumsum(counts)]).astype(np.int64)
+
+    # cdf within each key group
+    cdf = np.empty(len(df), dtype=np.float64)
+    for k in range(n_keys):
+        s, e = starts[k], starts[k + 1]
+        if e > s:
+            cdf[s:e] = np.cumsum(df[prob_col].iloc[s:e].to_numpy())
+            # ensure last entry is exactly 1 to avoid float drift
+            cdf[e - 1] = 1.0
+    return starts, cdf, df
+
+
+def load_advancement_table(tables_dir: Path = TABLES_DIR) -> AdvancementTable:
+    df = pd.read_parquet(tables_dir / "advancement.parquet")
+    if df.empty or "table_version" not in df or not df["table_version"].eq(TABLE_VERSION).all():
+        raise ValueError("Stale advancement table; explicitly run python -m v2.simulator.build_advancement_table before scoring")
+    if not legal_transitions(df).all():
+        raise ValueError("Advancement table contains impossible runner/outs transitions")
+    df["subtype_idx"] = df["subtype_key"].map(SUBTYPE_TO_IDX).astype(np.int64)
+    n_keys = N_STATES * N_OUTS * N_OUTCOMES * N_SUBTYPES
+    starts, cdf, df = _build_flat_lookup(
+        df, ["state", "outs", "outcome_idx", "subtype_idx"], n_keys, kind="advancement"
+    )
+    return AdvancementTable(
+        starts=starts,
+        cdf=cdf,
+        new_state=df["new_state"].to_numpy(np.int64),
+        runs=df["runs"].to_numpy(np.int64),
+        outs_added=df["outs_added"].to_numpy(np.int64),
+        training_max_date=str(df["training_max_date"].max()) if "training_max_date" in df else None,
+    )
+
+
+def load_out_subtype_table(tables_dir: Path = TABLES_DIR) -> OutSubtypeTable:
+    df = pd.read_parquet(tables_dir / "out_subtype.parquet")
+    if df.empty or "table_version" not in df or not df["table_version"].eq(TABLE_VERSION).all():
+        raise ValueError("Stale out-subtype table; rebuild the simulator tables together")
+    df["subtype_idx"] = df["subtype_key"].map(SUBTYPE_TO_IDX).astype(np.int64)
+    n_keys = N_STATES * N_OUTS * N_BQ * N_PQ
+    starts, cdf, df = _build_flat_lookup(
+        df, ["state", "outs", "b_q", "p_q"], n_keys, kind="subtype"
+    )
+    return OutSubtypeTable(
+        starts=starts,
+        cdf=cdf,
+        subtype=df["subtype_idx"].to_numpy(np.int64),
+        training_max_date=str(df["training_max_date"].max()) if "training_max_date" in df else None,
+    )
+
+
+def sample_subtypes_for_outs(
+    rng: np.random.Generator,
+    outcome_idx: np.ndarray,
+    state: np.ndarray,
+    outs: np.ndarray,
+    b_q: np.ndarray,
+    p_q: np.ndarray,
+    sub_table: OutSubtypeTable,
+) -> np.ndarray:
+    """Return a (N,) subtype-index array. Non-OUT rows get _NA_ (index 0)."""
+    out = np.full(len(outcome_idx), NA_SUBTYPE_IDX, dtype=np.int64)
+    mask = outcome_idx == OUT_IDX
+    if mask.any():
+        out[mask] = sub_table.sample(rng, state[mask], outs[mask], b_q[mask], p_q[mask])
+    return out

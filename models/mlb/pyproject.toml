@@ -1,0 +1,37 @@
+[project]
+name = "mlbmodel"
+version = "0.1.0"
+description = "Hierarchical Bayesian MLB run-distribution model, benchmarked daily against market prices."
+requires-python = ">=3.13"
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["pipeline"]
+
+[tool.setuptools.packages.find]
+include = ["backend*", "v2*"]
+
+[tool.setuptools.package-data]
+"v2.players" = ["data/*.json"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.pytest.ini_options]
+addopts = "-m 'not live_read and not expensive'"
+markers = [
+    "live_read: opt-in external services and local production artifacts",
+    "expensive: opt-in numerical model fitting",
+    "database: disposable PostgreSQL acceptance",
+]

@@ -1,0 +1,230 @@
+"""Hierarchical multinomial-logit batter outcome model with platoon split.
+
+Per (batter, vs_lhp) cell, Multinomial likelihood over the 8 OUTCOMES with
+non-centered additive logit offsets vs OUT (reference). Each batter has a main
+effect and a platoon delta that activates against LHP; both are partially
+pooled across batters. The Normal hierarchy sits on the logits, so a batter's
+outcome-probability vector is logistic-normal; there is no Dirichlet prior.
+"""
+from __future__ import annotations
+
+import argparse
+import logging
+import time
+from pathlib import Path
+
+import arviz as az
+import numpy as np
+import pandas as pd
+import pymc as pm
+
+from backend.log import setup_logging
+from v2.bayesian._common import (
+    POSTERIORS_DIR,
+    ActorIndex,
+    encode_outcomes,
+    evaluate_gate,
+    league_log_p,
+    write_diagnostics,
+)
+from v2.data.pa_dataset import OUTCOMES, load_pa_dataset
+
+log = logging.getLogger(__name__)
+
+REF_IDX = OUTCOMES.index("OUT")
+NON_REF_IDX = [i for i in range(len(OUTCOMES)) if i != REF_IDX]
+NON_REF_LABELS = [OUTCOMES[i] for i in NON_REF_IDX]
+K_FREE = len(NON_REF_IDX)
+HANDS = ("vs_R", "vs_L")
+
+
+def aggregate_counts(pa_df: pd.DataFrame, batter_idx: ActorIndex) -> tuple[np.ndarray, np.ndarray]:
+    outcome_codes = encode_outcomes(pa_df["outcome"])
+    b = batter_idx.encode(pa_df["batter"].to_numpy())
+    h = (pa_df["p_throws"].to_numpy() == "L").astype(np.int64)
+    counts = np.zeros((batter_idx.n, 2, len(OUTCOMES)), dtype=np.int64)
+    np.add.at(counts, (b, h, outcome_codes), 1)
+    n_per_cell = counts.sum(axis=2)
+    return counts, n_per_cell
+
+
+def build_model(pa_df: pd.DataFrame, frozen_intercept: np.ndarray | None = None) -> tuple[pm.Model, dict]:
+    import pytensor.tensor as pt
+
+    outcome_codes = encode_outcomes(pa_df["outcome"])
+    log_p_lg = league_log_p(outcome_codes)
+    intercept_prior = log_p_lg[NON_REF_IDX] - log_p_lg[REF_IDX]
+
+    batter_idx = ActorIndex.from_series(pa_df["batter"])
+    counts, n_per_cell = aggregate_counts(pa_df, batter_idx)
+
+    coords = {
+        "outcome": list(OUTCOMES),
+        "outcome_free": NON_REF_LABELS,
+        "batter": batter_idx.ids,
+        "hand": list(HANDS),
+    }
+
+    with pm.Model(coords=coords) as model:
+        if frozen_intercept is None:
+            intercept = pm.Normal("intercept", mu=intercept_prior, sigma=0.5, dims="outcome_free")
+        else:
+            # Anchored to the pitcher fit's baseline so both halves share one
+            # league intercept; no free param, nothing to average downstream.
+            intercept = np.asarray(frozen_intercept, dtype=float)
+
+        sigma_batter = pm.HalfNormal("sigma_batter", sigma=0.6, dims="outcome_free")
+        z_batter = pm.Normal("z_batter", 0.0, 1.0, dims=("batter", "outcome_free"))
+        beta_main = sigma_batter[None, :] * z_batter
+
+        sigma_platoon = pm.HalfNormal("sigma_platoon", sigma=0.3, dims="outcome_free")
+        z_platoon = pm.Normal("z_platoon", 0.0, 1.0, dims=("batter", "outcome_free"))
+        beta_platoon = sigma_platoon[None, :] * z_platoon
+
+        logit_R = intercept[None, :] + beta_main
+        logit_L = intercept[None, :] + beta_main + beta_platoon
+        logit_free = pt.stack([logit_R, logit_L], axis=1)
+
+        zeros_ref = pt.zeros((batter_idx.n, 2, 1))
+        cols = []
+        free_iter = iter(range(K_FREE))
+        for i in range(len(OUTCOMES)):
+            if i == REF_IDX:
+                cols.append(zeros_ref)
+            else:
+                fi = next(free_iter)
+                cols.append(logit_free[:, :, fi : fi + 1])
+        logit_full = pt.concatenate(cols, axis=2)
+
+        p = pm.math.softmax(logit_full, axis=2)
+        pm.Multinomial(
+            "outcome_counts",
+            n=n_per_cell,
+            p=p,
+            observed=counts,
+            dims=("batter", "hand", "outcome"),
+        )
+
+    n_per_batter = n_per_cell.sum(axis=1)
+    meta = {
+        "batter_idx": batter_idx,
+        "log_p_league": log_p_lg.tolist(),
+        "intercept_prior": intercept_prior.tolist(),
+        "frozen_intercept": (np.asarray(frozen_intercept, dtype=float).tolist()
+                             if frozen_intercept is not None else None),
+        "n_pa": int(len(pa_df)),
+        "n_batters": int(batter_idx.n),
+        "min_pa_per_batter": int(n_per_batter.min()),
+        "median_pa_per_batter": int(np.median(n_per_batter)),
+        "max_pa_per_batter": int(n_per_batter.max()),
+        "n_pa_vs_lhp": int(n_per_cell[:, 1].sum()),
+        "n_pa_vs_rhp": int(n_per_cell[:, 0].sum()),
+    }
+    return model, meta
+
+
+def fit(
+    pa_df: pd.DataFrame,
+    *,
+    frozen_intercept: np.ndarray | None = None,
+    draws: int = 1500,
+    tune: int = 1500,
+    chains: int = 4,
+    target_accept: float = 0.95,
+    random_seed: int = 20260504,
+) -> tuple[az.InferenceData, dict, float]:
+    model, meta = build_model(pa_df, frozen_intercept=frozen_intercept)
+    t0 = time.time()
+    with model:
+        idata = pm.sample(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            nuts_sampler="numpyro",
+            nuts_sampler_kwargs={"chain_method": "vectorized"},
+            random_seed=random_seed,
+            progressbar=True,
+        )
+    elapsed = time.time() - t0
+    return idata, meta, elapsed
+
+
+def summarize(idata: az.InferenceData) -> dict:
+    gate_vars = [v for v in ("intercept", "sigma_batter", "sigma_platoon") if v in idata.posterior]
+    summary = az.summary(idata, var_names=gate_vars)
+    return {
+        "max_rhat": float(summary["r_hat"].max()),
+        "min_ess_bulk": float(summary["ess_bulk"].min()),
+        "min_ess_tail": float(summary["ess_tail"].min()),
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--start-year", type=int, default=2024)
+    parser.add_argument("--end-year", type=int, default=2026)
+    parser.add_argument("--draws", type=int, default=1500)
+    parser.add_argument("--tune", type=int, default=1500)
+    parser.add_argument("--chains", type=int, default=4)
+    parser.add_argument("--target-accept", type=float, default=0.95)
+    parser.add_argument("--seed", type=int, default=20260504)
+    parser.add_argument("--output-dir", type=Path, default=POSTERIORS_DIR)
+    parser.add_argument("--save-trace", action="store_true")
+    parser.add_argument("--subsample", type=int, default=None)
+    args = parser.parse_args()
+
+    log.info(f"loading PAs {args.start_year}-{args.end_year}...")
+    t_load = time.time()
+    pa_df = load_pa_dataset(args.start_year, args.end_year)
+    log.info(f"loaded {len(pa_df):,} PAs in {time.time()-t_load:.1f}s")
+
+    if args.subsample:
+        pa_df = pa_df.sample(args.subsample, random_state=args.seed).reset_index(drop=True)
+        log.info(f"subsampled to {len(pa_df):,} PAs")
+
+    log.info(f"fitting (chains={args.chains}, draws={args.draws}, tune={args.tune})...")
+    idata, meta, elapsed = fit(
+        pa_df,
+        draws=args.draws,
+        tune=args.tune,
+        chains=args.chains,
+        target_accept=args.target_accept,
+        random_seed=args.seed,
+    )
+    log.info(f"fit complete in {elapsed:.1f}s ({elapsed/60:.2f} min)")
+
+    diag = summarize(idata)
+    n_div = int(idata.sample_stats["diverging"].sum().item()) if "diverging" in idata.sample_stats else 0
+    log.info(f"max_rhat={diag['max_rhat']:.4f}  min_ess_bulk={diag['min_ess_bulk']:.0f}  n_divergent={n_div}")
+
+    gate_passed = evaluate_gate(diag["max_rhat"], diag["min_ess_bulk"])
+    log.info(f"gate_passed={gate_passed}")
+
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    report = {
+        "n_pa": meta["n_pa"],
+        "n_batters": meta["n_batters"],
+        "n_pa_vs_lhp": meta["n_pa_vs_lhp"],
+        "n_pa_vs_rhp": meta["n_pa_vs_rhp"],
+        "fit_seconds": elapsed,
+        "fit_minutes": elapsed / 60,
+        "n_divergent": n_div,
+        "sampler": {"chains": args.chains, "draws": args.draws, "tune": args.tune},
+        **diag,
+        "gate_passed": gate_passed,
+    }
+    write_diagnostics(args.output_dir / "batter_skill.json", report)
+    log.info(f"wrote {args.output_dir / 'batter_skill.json'}")
+
+    if args.save_trace:
+        trace_path = args.output_dir / "batter_skill.nc"
+        idata.to_netcdf(trace_path)
+        log.info(f"wrote {trace_path}")
+
+    return 0 if gate_passed else 1
+
+
+if __name__ == "__main__":
+    setup_logging()
+    raise SystemExit(main())
