@@ -1,0 +1,456 @@
+name: Weekly CFB update
+
+on:
+  # Supabase pg_cron fires this via repository_dispatch Mondays at 7 AM
+  # Pacific: cfb-weekly-update-dispatch at 14:00 UTC in Aug-Oct (PDT) and
+  # cfb-weekly-update-dispatch-pst at 15:00 UTC in Nov-Jan. A failed or
+  # input-blocked run is investigated and rerun deliberately instead of
+  # scheduling a speculative Tuesday retry.
+  repository_dispatch:
+    types: [weekly-update]
+  workflow_dispatch:
+    inputs:
+      season:
+        description: Optional season override
+        required: false
+        type: string
+      week:
+        description: Optional model week override
+        required: false
+        type: string
+      heisman_model_run_id:
+        description: Run containing the versioned heisman-model-SEASON artifact (initial bootstrap)
+        required: false
+        type: string
+      opening_forecast_run_id:
+        description: Run containing the immutable opening-forecast-RUN_ID artifact
+        required: false
+        type: string
+      published_forecast_run_id:
+        description: Run containing the immutable weekly archive for an already-published-week rerun
+        required: false
+        type: string
+      player_runtime_bundle_url:
+        description: HTTPS URL of an exported player runtime ZIP for initial bootstrap
+        required: false
+        type: string
+      player_runtime_bundle_sha256:
+        description: Reviewed SHA256 of the initial player runtime ZIP
+        required: false
+        type: string
+      opening_forecast_bundle_url:
+        description: HTTPS URL of the reviewed preseason runtime ZIP
+        required: false
+        type: string
+      opening_forecast_bundle_sha256:
+        description: Reviewed SHA256 of the preseason runtime ZIP
+        required: false
+        type: string
+      max_calls:
+        description: Shared CFBD call budget for this run (approval required above 100)
+        required: false
+        default: "100"
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: weekly-cfb-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      # Enable with the paired bundle cutover after the current slate finishes.
+      CFB_REQUIRE_DATA_REVISION: ${{ vars.CFB_REQUIRE_DATA_REVISION || '0' }}
+      REQUESTED_SEASON: ${{ inputs.season }}
+      FORECAST_WEEK: ${{ inputs.week || '' }}
+      CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+      ODDS_API_BOOKMAKERS: ${{ secrets.ODDS_API_BOOKMAKERS }}
+      ODDS_API_REGIONS: ${{ secrets.ODDS_API_REGIONS }}
+      ODDS_SOURCE: ${{ vars.ODDS_SOURCE || 'odds_api' }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      HEISMAN_MODEL_RUN_ID: ${{ inputs.heisman_model_run_id || vars.HEISMAN_MODEL_RUN_ID }}
+      OPENING_FORECAST_RUN_ID: ${{ inputs.opening_forecast_run_id || vars.OPENING_FORECAST_RUN_ID }}
+      PLAYER_RUNTIME_BUNDLE_URL: ${{ inputs.player_runtime_bundle_url || vars.PLAYER_RUNTIME_BUNDLE_URL }}
+      PLAYER_RUNTIME_BUNDLE_SHA256: ${{ inputs.player_runtime_bundle_sha256 || vars.PLAYER_RUNTIME_BUNDLE_SHA256 }}
+
+      OPENING_FORECAST_BUNDLE_URL: ${{ inputs.opening_forecast_bundle_url || vars.OPENING_FORECAST_BUNDLE_URL }}
+      OPENING_FORECAST_BUNDLE_SHA256: ${{ inputs.opening_forecast_bundle_sha256 || vars.OPENING_FORECAST_BUNDLE_SHA256 }}
+      CFBD_MAX_CALLS: ${{ inputs.max_calls || '100' }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install poetry==2.1.3
+          poetry install --no-root --no-interaction --no-ansi
+
+      - name: Resolve season
+        shell: bash
+        run: |
+          if [[ -n "$REQUESTED_SEASON" ]]; then
+            season="$REQUESTED_SEASON"
+          else
+            calendar_year=$(date -u +%Y)
+            calendar_month=$(date -u +%m)
+            if [[ "$calendar_month" == "01" ]]; then
+              season=$((calendar_year - 1))
+            else
+              season="$calendar_year"
+            fi
+          fi
+          echo "SEASON=$season" >> "$GITHUB_ENV"
+          echo "CFBD_USAGE_FILE=$RUNNER_TEMP/cfbd-weekly-usage.json" >> "$GITHUB_ENV"
+
+      - name: Restore player ingestion checkpoints and trained model
+        id: player-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            backend/data/raw/players/${{ env.SEASON }}/
+            backend/data/processed/players/opponent_priors/
+            backend/data/processed/players/models/
+            backend/data/processed/ingame/baseline_summary.parquet
+          key: cfb-players-v2-${{ env.SEASON }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: cfb-players-v2-${{ env.SEASON }}-
+
+      - name: Restore frozen preseason forecast
+        id: preseason-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            backend/data/processed/preseason/ratings/
+            backend/data/processed/preseason/score_noise_prior/
+            backend/data/processed/preseason/srs_prior/
+            backend/data/processed/preseason/process_prior/
+            backend/data/processed/preseason/forecast_log/
+          key: cfb-preseason-v1-${{ env.SEASON }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: cfb-preseason-v1-${{ env.SEASON }}-
+
+      - name: Restore pinned opening forecast artifact
+        if: env.OPENING_FORECAST_RUN_ID != ''
+        uses: actions/download-artifact@v7
+        with:
+          name: opening-forecast-${{ env.OPENING_FORECAST_RUN_ID }}
+          run-id: ${{ env.OPENING_FORECAST_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: backend/data/
+
+      - name: Restore pinned Heisman model artifact
+        if: env.HEISMAN_MODEL_RUN_ID != ''
+        uses: actions/download-artifact@v7
+        with:
+          name: heisman-model-${{ env.SEASON }}
+          run-id: ${{ env.HEISMAN_MODEL_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: backend/data/processed/
+
+      # The frozen position grade model and its expectation tables. Runs pinned
+      # before this artifact existed lack it; the bundle bootstrap covers them.
+      - name: Restore pinned position grade model artifact
+        if: env.HEISMAN_MODEL_RUN_ID != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: position-traits-fit-${{ env.SEASON }}
+          run-id: ${{ env.HEISMAN_MODEL_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: backend/data/processed/players/models/
+
+      - name: Bootstrap reviewed runtime bundles
+        if: env.PLAYER_RUNTIME_BUNDLE_URL != '' || env.OPENING_FORECAST_BUNDLE_URL != ''
+        run: |
+          poetry run python - <<'PY'
+          import hashlib
+          import os
+          from urllib.request import urlopen
+          from backend.players.artifacts import install_runtime_bundle
+          from backend.model.preseason import install_preseason_runtime_bundle
+          for prefix, install in (
+              ('OPENING_FORECAST', install_preseason_runtime_bundle),
+              ('PLAYER_RUNTIME', install_runtime_bundle),
+          ):
+              url = os.environ[f'{prefix}_BUNDLE_URL']
+              if not url:
+                  continue
+              expected = os.environ[f'{prefix}_BUNDLE_SHA256']
+              if not url.startswith('https://') or len(expected) != 64:
+                  raise ValueError('Runtime bootstrap requires HTTPS and a reviewed SHA256')
+              with urlopen(url, timeout=60) as response:
+                  bundle = response.read(10_000_001)
+              if len(bundle) > 10_000_000 or hashlib.sha256(bundle).hexdigest() != expected:
+                  raise ValueError('Runtime bundle checksum or size is invalid')
+              install(bundle, int(os.environ['SEASON']))
+          PY
+
+      - name: Validate unified historical data revision before CFBD calls
+        if: env.CFB_REQUIRE_DATA_REVISION == '1'
+        run: poetry run python -m backend.runtime_revision --season "$SEASON"
+
+      - name: Preserve historical data revision receipt
+        if: env.CFB_REQUIRE_DATA_REVISION == '1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: cfb-data-revision-${{ github.run_id }}
+          path: backend/data/processed/runtime/data_revision_*.parquet
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Validate trained Heisman model before CFBD calls
+        run: |
+          poetry run python -c 'import os; from backend.players.artifacts import load_heisman_model; load_heisman_model(int(os.environ["SEASON"]))'
+          poetry run python -c 'from backend.etl import store; from backend.model.ingame import load_baseline_params; load_baseline_params(store.read_processed("ingame", "baseline_summary.parquet"))'
+
+      - name: Validate frozen preseason state before CFBD calls
+        run: |
+          poetry run python -c 'import os; from backend.etl import store; from backend.model.preseason import load_score_noise_prior, load_srs_prior, scoring_priors_from_ratings; from backend.model.process import load_process_prior; season = int(os.environ["SEASON"]); scoring_priors_from_ratings(store.read_preseason_forecast_artifact(season, 1, "ratings"), load_score_noise_prior(season), load_srs_prior(season)); load_process_prior(season)'
+
+      - name: Validate frozen player opponent prior before CFBD calls
+        run: poetry run python -c 'import os; from backend.players.value import load_opponent_prior; load_opponent_prior(int(os.environ["SEASON"]))'
+
+      - name: Verify required secrets
+        shell: bash
+        run: |
+          missing=()
+          for secret_name in CFBD_API_KEY ODDS_API_KEY DATABASE_URL; do
+            if [[ -z "${!secret_name}" ]]; then
+              missing+=("$secret_name")
+            fi
+          done
+          if (( ${#missing[@]} )); then
+            echo "Missing required repository secrets: ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Validate recommendation schema before API calls
+        run: poetry run python -c 'from backend.publish import ensure_recommendation_schema; ensure_recommendation_schema()'
+
+      - name: Run weekly regression gate
+        run: poetry run pytest tests/test_joint_scoring.py -q
+
+      - name: Refresh season data from CFBD
+        id: ingest
+        run: poetry run python -m backend ingest --seasons "$SEASON" --max-calls "$CFBD_MAX_CALLS"
+
+      - name: Rebuild features
+        run: poetry run python -m backend features --seasons "$SEASON"
+
+      - name: Restore paid-source receipts
+        uses: actions/cache@v4
+        with:
+          path: backend/data/raw/tier2/
+          key: cfb-tier2-v1-${{ env.SEASON }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: cfb-tier2-v1-${{ env.SEASON }}-
+
+      - name: Archive Tier 2 forecast context
+        # Research inputs are kept separate from the published scoring model.
+        # Their outage must not suppress an otherwise valid weekly forecast.
+        continue-on-error: true
+        run: poetry run python -m backend tier2-snapshot --season "$SEASON" --weather --adjusted --max-calls "$CFBD_MAX_CALLS"
+
+      # A no-op forecast rerun still needs its original archive for the playoff refresh.
+      - name: Restore explicitly pinned published weekly archive
+        if: inputs.published_forecast_run_id != ''
+        uses: actions/download-artifact@v7
+        with:
+          name: weekly-cfb-${{ inputs.published_forecast_run_id }}
+          run-id: ${{ inputs.published_forecast_run_id }}
+          github-token: ${{ github.token }}
+          path: backend/data/processed/weekly/forecast_log/
+
+      - name: Retrain and publish next week
+        shell: bash
+        env:
+          MOMENTUMCFB_DB_WRITES: "1"
+        run: |
+          arguments=(--season "$SEASON")
+          if [[ -n "$FORECAST_WEEK" ]]; then
+            arguments+=(--week "$FORECAST_WEEK")
+          fi
+          poetry run python -m backend weekly-update "${arguments[@]}"
+
+      # Grading reads only frozen records: the projection the site published
+      # before kickoff, the CFBD closing line, and the final score. It runs
+      # after the forecast so a not-ready week still grades completed games.
+      - name: Grade completed games and publish performance
+        if: ${{ !cancelled() && steps.ingest.outcome == 'success' }}
+        shell: bash
+        env:
+          MOMENTUMCFB_DB_WRITES: "1"
+        run: |
+          poetry run python -m backend grade --season "$SEASON"
+          poetry run python -m backend publish-grading --season "$SEASON"
+
+      # A model artifact contains coefficients, version/seed provenance and
+      # chronological weekly evaluation. Historical raw data is never fetched
+      # or used to retrain implicitly on a fresh production runner.
+      - name: Preserve validated player runtime artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: heisman-model-${{ env.SEASON }}
+          path: |
+            backend/data/processed/players/opponent_priors/${{ env.SEASON }}.parquet
+            backend/data/processed/players/models/heisman_${{ env.SEASON }}.json
+            backend/data/processed/ingame/baseline_summary.parquet
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Preserve frozen position grade model
+        uses: actions/upload-artifact@v7
+        with:
+          name: position-traits-fit-${{ env.SEASON }}
+          path: |
+            backend/data/processed/players/models/position_grade_*.json
+            backend/data/processed/players/models/position_grade_expectations_*.parquet
+          if-no-files-found: warn
+          retention-days: 90
+
+      # Only completed schedule weeks and their active FBS conferences are
+      # fetched, with a hard shared job budget and durable per-chunk resume.
+      - name: Update player value and the Heisman board
+        shell: bash
+        env:
+          MOMENTUMCFB_DB_WRITES: "1"
+        run: |
+          poetry run python -m backend ingest-players --seasons "$SEASON" --max-calls "$CFBD_MAX_CALLS"
+          poetry run python -m backend player-values --seasons "$SEASON"
+          poetry run python -m backend heisman --season "$SEASON"
+          # A trait failure must not block the Heisman publish; the job still fails after it.
+          if ! poetry run python -m backend position-traits --seasons "$SEASON"; then
+            trait_status=1
+            echo "position traits failed"
+          fi
+          poetry run python -m backend publish-players --season "$SEASON"
+          exit "${trait_status:-0}"
+
+      - name: Preserve corrected player output audit
+        uses: actions/upload-artifact@v7
+        with:
+          name: cfb-player-outputs-${{ github.run_id }}
+          path: |
+            backend/data/processed/players/player_values/${{ env.SEASON }}.parquet
+            backend/data/processed/players/position_traits/${{ env.SEASON }}.parquet
+            backend/data/processed/players/player_model_meta.parquet
+            backend/data/processed/runtime/data_revision_${{ env.SEASON }}.parquet
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Preserve player checkpoints even after partial failure
+        if: always() && steps.player-cache.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            backend/data/raw/players/${{ env.SEASON }}/
+            backend/data/processed/players/opponent_priors/
+            backend/data/processed/players/models/
+            backend/data/processed/ingame/baseline_summary.parquet
+          key: ${{ steps.player-cache.outputs.cache-primary-key }}
+
+      - name: Preserve frozen preseason forecast
+        if: always() && steps.preseason-cache.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            backend/data/processed/preseason/ratings/
+            backend/data/processed/preseason/score_noise_prior/
+            backend/data/processed/preseason/srs_prior/
+            backend/data/processed/preseason/process_prior/
+            backend/data/processed/preseason/forecast_log/
+          key: ${{ steps.preseason-cache.outputs.cache-primary-key }}
+
+      - name: Preserve forecast audit artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: weekly-cfb-${{ github.run_id }}
+          path: backend/data/processed/weekly/forecast_log/
+          if-no-files-found: ignore
+          retention-days: 90
+
+      - name: Preserve paid-source receipts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cfb-tier2-${{ github.run_id }}
+          path: backend/data/raw/tier2/
+          if-no-files-found: ignore
+          retention-days: 90
+
+      - name: Preserve weekly performance diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cfb-diagnostics-${{ github.run_id }}
+          path: backend/data/processed/diagnostics/
+          if-no-files-found: ignore
+          retention-days: 90
+
+      # A same-week rerun publishes nothing, so a fresh runner has no weekly
+      # archive unless one was pinned above. The newest archive from a run whose
+      # publish step succeeded is the published one; the refresh still verifies
+      # its manifest hashes. Without one the refresh is skipped, not failed.
+      - name: Restore the latest published weekly archive for the playoff refresh
+        id: published-archive
+        if: env.SEASON == '2026'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          archive_dir=backend/data/processed/weekly/forecast_log
+          if compgen -G "$archive_dir/${SEASON}_*.json" > /dev/null; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/weekly-update.yml/runs?status=completed&per_page=30" \
+            --jq ".workflow_runs[] | select(.id != $GITHUB_RUN_ID) | .id")
+          for run_id in $runs; do
+            published=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs" \
+              --jq '.jobs[].steps[] | select(.name == "Retrain and publish next week") | .conclusion')
+            [[ "$published" == "success" ]] || continue
+            artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts?name=weekly-cfb-$run_id" \
+              --jq '.artifacts[] | select(.expired | not) | .id')
+            [[ -n "$artifact" ]] || continue
+            candidate=$(mktemp -d)
+            gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name "weekly-cfb-$run_id" --dir "$candidate"
+            if compgen -G "$candidate/${SEASON}_*.json" > /dev/null; then
+              mkdir -p "$archive_dir"
+              cp -R "$candidate"/. "$archive_dir"/
+              echo "restored the weekly archive published by run $run_id"
+              echo "available=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "no published $SEASON weekly archive found; skipping the playoff refresh"
+          echo "available=false" >> "$GITHUB_OUTPUT"
+
+      - name: Refresh and publish the compact playoff forecast
+        if: env.SEASON == '2026' && steps.published-archive.outputs.available == 'true'
+        env:
+          MOMENTUMCFB_DB_WRITES: "1"
+          OPENBLAS_NUM_THREADS: "1"
+          VECLIB_MAXIMUM_THREADS: "1"
+        run: poetry run python -m backend.playoffs.refresh --season "$SEASON" --publish
+
+      - name: Preserve playoff forecast validation
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cfb-playoffs-${{ github.run_id }}
+          path: output/cfb_playoffs/
+          if-no-files-found: ignore
+          retention-days: 30

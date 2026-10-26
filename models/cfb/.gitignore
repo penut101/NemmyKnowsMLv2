@@ -1,0 +1,46 @@
+# Local guidance
+AGENTS.md
+CLAUDE.md
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+frontend/.env*
+.claude/
+.cursor/
+.python-version
+
+# Frontend source lives in the momentumweb repository
+frontend/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+venv/
+env/
+
+# Node
+node_modules/
+.next/
+*.log
+*.tsbuildinfo
+
+# Model data and generated artifacts
+backend/data/
+
+# OS
+.DS_Store
+
+# Brainstorm mockups (superpowers visual companion)
+.superpowers/
+
+# Local docs and research notes (never tracked)
+docs/

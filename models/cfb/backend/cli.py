@@ -1,0 +1,547 @@
+import argparse
+import logging
+import sys
+
+from backend.config import EVAL_SEASONS, SEASONS
+
+
+def _seasons_argument(parser: argparse.ArgumentParser, default: list[int]) -> None:
+    parser.add_argument("--seasons", type=int, nargs="+", default=default)
+
+
+def _cfbd_budget_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--max-calls",
+        type=int,
+        default=100,
+        help="session call cap; values above 100 require explicit approval",
+    )
+    parser.add_argument(
+        "--min-remaining",
+        type=int,
+        default=40,
+        help="preserve this many CFBD calls for the weekly model",
+    )
+
+
+def _leakage_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--leakage-games-per-season",
+        type=int,
+        default=2,
+        help="games per season replayed from truncated play prefixes",
+    )
+
+
+def _add_pipeline_commands(sub) -> None:
+    ingest = sub.add_parser("ingest", help="pull CFBD data into raw parquet")
+    _seasons_argument(ingest, SEASONS)
+    ingest.add_argument("--week", type=int, default=None)
+    _cfbd_budget_arguments(ingest)
+
+    features = sub.add_parser(
+        "features", help="build possession and team-game features"
+    )
+    _seasons_argument(features, SEASONS)
+
+    fit = sub.add_parser(
+        "fit", help="fit one in-season week locally without publishing"
+    )
+    fit.add_argument("--season", type=int, required=True)
+    fit.add_argument("--week", type=int, default=None)
+
+    weekly = sub.add_parser(
+        "weekly-update",
+        help="fit, price, validate, and publish the next in-season week",
+    )
+    weekly.add_argument("--season", type=int, required=True)
+    weekly.add_argument("--week", type=int, default=None)
+
+    calibrate = sub.add_parser(
+        "calibrate",
+        help="tune and diagnose chronological joint scoring projections",
+    )
+    calibrate.add_argument("--production-replay", action="store_true")
+    calibrate.add_argument(
+        "--rating-uncertainty",
+        action="store_true",
+        help="validate pure-prior and market uncertainty on cached 2020-2025 splits",
+    )
+    calibrate.add_argument(
+        "--weekly-improvements",
+        action="store_true",
+        help="run fixed cached historical weekly-model experiments",
+    )
+    calibrate.add_argument(
+        "--recommendations",
+        action="store_true",
+        help="calibrate integer-score probabilities on fixed chronological research splits",
+    )
+    calibrate.add_argument("--seasons", type=int, nargs="+", default=None)
+    calibrate.add_argument("--output-directory", default=None)
+
+    preseason = sub.add_parser(
+        "preseason",
+        help="build timestamped preseason ratings and market comparisons",
+    )
+    preseason.add_argument("--season", type=int, required=True)
+    preseason.add_argument("--week", type=int, default=1)
+    preseason.add_argument(
+        "--refresh",
+        action="store_true",
+        help="refresh the source snapshot from CFBD before forecasting",
+    )
+    preseason.add_argument(
+        "--with-odds-api",
+        action="store_true",
+        help="also buy a three-market Odds API snapshot instead of CFBD lines",
+    )
+
+    srs_prior = sub.add_parser(
+        "srs-prior",
+        help="build the frozen points-only carryover prior from cached features",
+    )
+    srs_prior.add_argument("--season", type=int, required=True)
+
+    market_prior = sub.add_parser(
+        "market-prior",
+        help="build the frozen closing-line carryover prior from cached lines",
+    )
+    market_prior.add_argument("--season", type=int, required=True)
+
+    preseason_bundle = sub.add_parser(
+        "preseason-bundle",
+        help="export the frozen preseason runtime ZIP for the weekly workflow",
+    )
+    preseason_bundle.add_argument("--season", type=int, required=True)
+    preseason_bundle.add_argument("--output", required=True)
+
+
+def _add_research_commands(sub) -> None:
+    """Frozen in-game experiments; their verdicts are recorded in the README."""
+    baseline = sub.add_parser(
+        "ingame-baseline",
+        help="rebuild play-boundary states and evaluate the in-game baseline",
+    )
+    _seasons_argument(baseline, SEASONS)
+    _leakage_argument(baseline)
+
+    for name, description in (
+        ("ingame-momentum", "cumulative-evidence momentum over the frozen baseline"),
+        ("ingame-momentum-recency", "recency-weighted momentum over the baseline"),
+    ):
+        momentum = sub.add_parser(name, help=description)
+        _seasons_argument(momentum, SEASONS)
+        _leakage_argument(momentum)
+
+    market_eval = sub.add_parser(
+        "ingame-market-anchor",
+        help="rescore the frozen baseline with the closing line as the anchor",
+    )
+    _seasons_argument(market_eval, EVAL_SEASONS)
+
+
+def _add_serving_commands(sub) -> None:
+    stream = sub.add_parser(
+        "ingame-stream",
+        help="replay stored plays as a live feed and prove streamed "
+        "probabilities equal the stored batch outputs",
+    )
+    stream.add_argument("--season", type=int, required=True)
+    stream.add_argument(
+        "--game-id",
+        type=int,
+        default=None,
+        help="replay one game for diagnosis without writing artifacts",
+    )
+    stream.add_argument(
+        "--outcome-free",
+        action="store_true",
+        help="drive the replay from the serving anchor loader alone",
+    )
+
+    anchors = sub.add_parser(
+        "serving-anchors",
+        help="build outcome-free serving anchors and prove they round-trip",
+    )
+    anchors.add_argument("--season", type=int, required=True)
+    anchors.add_argument(
+        "--week",
+        type=int,
+        default=None,
+        help="projection week of a preseason artifact (default 1); "
+        "market anchors cover the whole season",
+    )
+    anchors.add_argument(
+        "--source",
+        choices=["preseason", "market"],
+        default="preseason",
+        help="anchor on a stored projection artifact or on closing spreads",
+    )
+    anchors.add_argument(
+        "--market-feed",
+        choices=["cfbd", "live-odds"],
+        default=None,
+        help="closing-spread feed (default cfbd); live-odds freezes the latest "
+        "stored pregame Odds API snapshot per game",
+    )
+
+    serve = sub.add_parser(
+        "serve-game",
+        help="score one game from its play feed and serving anchors alone",
+    )
+    serve.add_argument("--season", type=int, required=True)
+    serve.add_argument("--game-id", type=int, required=True)
+    serve.add_argument(
+        "--anchor-source",
+        choices=["calibration", "serving"],
+        default="calibration",
+        help="calibration anchors cover a completed season; serving anchors "
+        "come from a stored artifact and need --week",
+    )
+    serve.add_argument("--week", type=int, default=None)
+
+    verify = sub.add_parser(
+        "serve-verify",
+        help="compare served events against the stored baseline predictions",
+    )
+    verify.add_argument("--season", type=int, required=True)
+    verify.add_argument(
+        "--game-id",
+        type=int,
+        nargs="+",
+        default=None,
+        help="verify only these served games (default: every served game)",
+    )
+
+
+def _add_market_commands(sub) -> None:
+    live = sub.add_parser(
+        "live-odds", help="capture append-only live sportsbook line snapshots"
+    )
+    live.add_argument("--season", type=int, required=True)
+    live.add_argument("--polls", type=int, default=1, help="maximum poll cycles")
+    live.add_argument("--interval-seconds", type=float, default=120.0)
+    live.add_argument(
+        "--lookback-hours",
+        type=float,
+        default=8.0,
+        help="include events that commenced up to this many hours ago",
+    )
+    live.add_argument(
+        "--lookahead-hours",
+        type=float,
+        default=6.0,
+        help="include events commencing up to this many hours ahead",
+    )
+    live.add_argument(
+        "--days-from",
+        type=int,
+        default=None,
+        choices=[1, 2, 3],
+        help="also fetch completed games from up to N days back (extra quota)",
+    )
+    live.add_argument(
+        "--min-quota",
+        type=int,
+        default=50,
+        help="stop polling once remaining API requests fall below this",
+    )
+    live.add_argument(
+        "--max-failures",
+        type=int,
+        default=3,
+        help="stop polling after this many consecutive failed polls",
+    )
+
+    live.add_argument(
+        "--forecast-directory", help="immutable weekly forecast run directory"
+    )
+
+    for name, description in (
+        ("kickoff-check", "read-only readiness gate for the next kickoff window"),
+        (
+            "kickoff-run",
+            "poll one kickoff window, prove the closing snapshot is pregame, "
+            "and rebuild market serving anchors",
+        ),
+    ):
+        kickoff = sub.add_parser(name, help=description)
+        kickoff.add_argument("--season", type=int, required=True)
+        kickoff.add_argument("--week", type=int, default=1)
+        kickoff.add_argument(
+            "--forecast-directory", help="immutable weekly forecast run directory"
+        )
+        kickoff.add_argument(
+            "--game-id",
+            type=int,
+            nargs="+",
+            default=None,
+            help="target explicit games instead of the next kickoff cluster",
+        )
+        kickoff.add_argument("--cluster-minutes", type=float, default=15.0)
+        kickoff.add_argument("--lead-minutes", type=float, default=5.0)
+        kickoff.add_argument("--post-minutes", type=float, default=5.0)
+        kickoff.add_argument("--interval-seconds", type=float, default=120.0)
+        kickoff.add_argument("--min-quota", type=int, default=50)
+        kickoff.add_argument("--max-forecast-age-hours", type=float, default=48.0)
+        kickoff.add_argument("--max-source-age-hours", type=float, default=48.0)
+        kickoff.add_argument("--max-offer-staleness-seconds", type=float, default=300.0)
+        kickoff.add_argument("--min-providers", type=int, default=2)
+        if name == "kickoff-check":
+            kickoff.add_argument(
+                "--forecast-only",
+                action="store_true",
+                help="validate frozen forecast without checking live odds",
+            )
+            kickoff.add_argument("--max-poll-age-minutes", type=float, default=15.0)
+        else:
+            kickoff.add_argument("--lookback-hours", type=float, default=1.0)
+            kickoff.add_argument("--lookahead-hours", type=float, default=2.0)
+            kickoff.add_argument("--max-failures", type=int, default=3)
+            kickoff.add_argument("--max-wait-hours", type=float, default=2.0)
+            kickoff.add_argument("--max-extension-minutes", type=float, default=30.0)
+
+    replay = sub.add_parser(
+        "live-replay",
+        help="verify stored live odds snapshots and replay a point in time",
+    )
+    replay.add_argument("--season", type=int, required=True)
+    replay.add_argument(
+        "--as-of",
+        type=str,
+        default=None,
+        help="ISO timestamp; show the market view available at that time",
+    )
+
+
+def _add_publish_commands(sub) -> None:
+    refresh = sub.add_parser(
+        "refresh-picks",
+        help="re-decide a published week's picks from fresh sportsbook prices",
+    )
+    refresh.add_argument("--season", type=int, required=True)
+    refresh.add_argument("--week", type=int, required=True)
+    publish = sub.add_parser(
+        "publish", help="publish serving tables to the cfb Supabase schema"
+    )
+    publish.add_argument("--season", type=int, required=True)
+    publish.add_argument("--week", type=int, default=1)
+    publish.add_argument(
+        "--source",
+        choices=["preseason", "fit"],
+        default="preseason",
+        help="publish a preseason forecast artifact or an in-season fit artifact",
+    )
+    publish.add_argument(
+        "--skip-backtest",
+        action="store_true",
+        help="skip the full refresh of the backtest history table",
+    )
+
+    for name, description in (
+        ("publish-anchors", "publish a serving anchor artifact to cfb.serving_anchors"),
+        ("fetch-anchors", "hydrate a local serving anchor artifact from the database"),
+    ):
+        anchor_sync = sub.add_parser(name, help=description)
+        anchor_sync.add_argument("--season", type=int, required=True)
+        anchor_sync.add_argument(
+            "--week",
+            type=int,
+            required=True,
+            help="artifact week: 0 is the frozen market capture, >= 1 a "
+            "projection artifact",
+        )
+
+    grade = sub.add_parser(
+        "grade",
+        help="grade completed games against the frozen published projection "
+        "and the CFBD closing line",
+    )
+    grade.add_argument("--season", type=int, required=True)
+    diagnose = sub.add_parser(
+        "diagnose", help="audit frozen weekly forecasts without publishing"
+    )
+    diagnose.add_argument("--season", type=int, required=True)
+    diagnose.add_argument("--week", type=int, required=True)
+    diagnose.add_argument(
+        "--forecast-directory",
+        default=None,
+        help="archived forecast directory for exact pace provenance",
+    )
+    diagnose.add_argument("--output-directory", default=None)
+    diagnose.add_argument(
+        "--shadow-calibration-directory",
+        default=None,
+        help="freeze prospective shadow totals from a historical calibration",
+    )
+    grade.add_argument(
+        "--regrade",
+        action="store_true",
+        help="rebuild every graded row instead of keeping stored grades",
+    )
+
+    publish_grading = sub.add_parser(
+        "publish-grading",
+        help="publish graded games and performance metrics to the cfb schema",
+    )
+    publish_grading.add_argument("--season", type=int, required=True)
+
+    ingest_players = sub.add_parser(
+        "ingest-players",
+        help="snapshot CFBD rosters, rankings, box scores, and play stats",
+    )
+    _seasons_argument(ingest_players, SEASONS)
+    ingest_players.add_argument("--week", type=int, default=None)
+    ingest_players.add_argument(
+        "--refresh",
+        action="store_true",
+        help="refresh a targeted completed --week for source corrections",
+    )
+    _cfbd_budget_arguments(ingest_players)
+
+    ingest_portal = sub.add_parser(
+        "ingest-portal",
+        help="snapshot CFBD transfer portal entries, one call per season",
+    )
+    _seasons_argument(ingest_portal, SEASONS)
+    _cfbd_budget_arguments(ingest_portal)
+
+    qb_starters = sub.add_parser(
+        "qb-starters",
+        help="list teams whose last box-score starting quarterback changed",
+    )
+    qb_starters.add_argument("--season", type=int, required=True)
+
+    player_prior = sub.add_parser(
+        "player-prior", help="Build prior-season player opponent effects offline"
+    )
+    player_prior.add_argument("--season", type=int, required=True)
+    player_prior.add_argument(
+        "--runtime-bundle", help="Export the reviewed player runtime ZIP"
+    )
+
+    player_values = sub.add_parser(
+        "player-values",
+        help="build opponent-adjusted player value snapshots for each week",
+    )
+    _seasons_argument(player_values, SEASONS)
+
+    position_traits = sub.add_parser(
+        "position-traits",
+        help="score weekly position traits and grades with the latest frozen grade model",
+    )
+    _seasons_argument(position_traits, SEASONS)
+
+    heisman = sub.add_parser(
+        "heisman",
+        help="build the Heisman board from a previously trained model artifact",
+    )
+    heisman.add_argument("--season", type=int, required=True)
+    heisman.add_argument("--week", type=int, default=None)
+
+    heisman_train = sub.add_parser(
+        "heisman-train",
+        help="build a portable Heisman model from cached historical snapshots",
+    )
+    heisman_train.add_argument("--season", type=int, required=True)
+    heisman_train.add_argument(
+        "--runtime-bundle",
+        help="export a ZIP with the trained model and frozen WPA parameters",
+    )
+
+    publish_players = sub.add_parser(
+        "publish-players",
+        help="publish player values and the Heisman board to the cfb schema",
+    )
+    publish_players.add_argument("--season", type=int, required=True)
+
+    traits_fit = sub.add_parser(
+        "position-traits-fit",
+        help="set the position grade weights offline, validate them and save the model",
+    )
+    traits_fit.add_argument("--dev-seasons", type=int, nargs="+", required=True)
+    traits_fit.add_argument("--validate", type=int, required=True)
+    traits_fit.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="rebuild each season's trait artifacts even when they are cached",
+    )
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(prog="backend")
+    sub = parser.add_subparsers(dest="command", required=True)
+    _add_pipeline_commands(sub)
+    _add_research_commands(sub)
+    _add_serving_commands(sub)
+    _add_market_commands(sub)
+    _add_publish_commands(sub)
+    paid = sub.add_parser(
+        "tier2-snapshot", help="archive paid weather and adjusted metrics"
+    )
+    paid.add_argument("--season", type=int, required=True)
+    paid.add_argument("--week", type=int)
+    paid.add_argument("--weather", action="store_true")
+    paid.add_argument("--adjusted", action="store_true")
+    paid.add_argument(
+        "--adjusted-season",
+        type=int,
+        help="defaults to previous season; current adjusted data may not exist",
+    )
+    paid.add_argument(
+        "--historical-weather",
+        action="store_true",
+        help="capture season-wide observed weather for diagnostics only",
+    )
+    _cfbd_budget_arguments(paid)
+    weather = sub.add_parser(
+        "weather-evaluate", help="cached observed-weather diagnostic"
+    )
+    weather.add_argument("--predictions", required=True)
+    weather.add_argument("--output-directory", required=True)
+    benchmark = sub.add_parser(
+        "tier2-benchmark", help="compare cached external adjusted metrics"
+    )
+    benchmark.add_argument("--season", type=int, required=True)
+    benchmark.add_argument("--output-directory", required=True)
+    pilot = sub.add_parser(
+        "cfbd-live-pilot", help="bounded live scoreboard and play capture"
+    )
+    pilot.add_argument("--season", type=int, required=True)
+    pilot.add_argument("--week", type=int, required=True)
+    pilot.add_argument(
+        "--forecast", required=True, help="frozen pregame projection parquet"
+    )
+    pilot.add_argument("--game-ids", nargs="+", type=int)
+    pilot.add_argument("--polls", type=int, default=1)
+    pilot.add_argument("--interval", type=int, default=60)
+    pilot.add_argument("--max-games", type=int, default=1)
+    pilot.add_argument(
+        "--compare-espn",
+        action="store_true",
+        help="archive a sequential ESPN scoreboard comparison each poll",
+    )
+    pilot.add_argument("--output-directory")
+    _cfbd_budget_arguments(pilot)
+    live = sub.add_parser(
+        "live-win-probability",
+        help="score in-progress games from the scoreboard; read only by default",
+    )
+    live.add_argument("--watch", action="store_true")
+    live.add_argument("--interval", type=int, default=60)
+    live.add_argument(
+        "--duration", type=int, help="stop a watch worker after this many seconds"
+    )
+    live.add_argument("--publish", action="store_true")
+    _cfbd_budget_arguments(live)
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    logging.basicConfig(
+        level=logging.INFO, format="%(message)s", stream=sys.stdout, force=True
+    )
+    from backend.commands import run
+
+    run(parse_args(argv))
