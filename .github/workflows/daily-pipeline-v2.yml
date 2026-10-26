@@ -1,0 +1,79 @@
+name: Daily Pipeline v2
+
+on:
+  workflow_run:
+    workflows: ["Train v2 Models"]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: daily-pipeline-v2
+  cancel-in-progress: false
+
+jobs:
+  run-pipeline:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@v4
+        # Scoring and training use the same validated simulator release.
+        with:
+          ref: 2d46cd64f004d9493bc10bf73272f60200b984a9
+
+      - name: Restore Statcast cache
+        uses: actions/cache@v4
+        with:
+          path: cache
+          key: statcast-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            statcast-${{ runner.os }}-
+
+      - name: Restore Odds API state
+        uses: actions/cache/restore@v4
+        with:
+          path: cache/odds_api_state.json
+          key: odds-api-state-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            odds-api-state-${{ runner.os }}-
+
+      - name: Restore validated simulator bundle
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            v2/bayesian/posteriors/*.nc
+            v2/bayesian/posteriors/diagnostics.json
+            v2/simulator/tables/*.parquet
+          key: sim-v3-bundle-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: sim-v3-bundle-${{ runner.os }}-
+          fail-on-cache-miss: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -c constraints.txt -r requirements.txt -r v2/requirements.txt && pip install --no-deps -e .
+
+      - name: Verify production artifacts
+        run: python -m v2.pipeline.verify_artifacts
+
+      - name: Run v2 daily pipeline
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          ODDS_SOURCE: ${{ vars.ODDS_SOURCE || 'odds_api' }}
+          PYTHONPATH: "."
+        run: python -m v2.pipeline.daily_run
+
+      - name: Persist Odds API state
+        if: ${{ always() && hashFiles('cache/odds_api_state.json') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: cache/odds_api_state.json
+          key: odds-api-state-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}

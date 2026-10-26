@@ -1,0 +1,228 @@
+"""Sample-based market probabilities and percentile bands.
+
+ML / RL / totals probabilities come straight from the simulator's
+(home_runs, away_runs) sample arrays rather than an analytic fit, so they carry
+the simulator's own variance structure and yield the p10/p50/p90 columns directly.
+
+Pushes (home_runs - away_runs == -spread, or total == line) only happen at
+integer spreads/lines, which are rare in MLB. When they occur the push mass is
+split 50/50 to mirror v1 settlement convention.
+"""
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+
+from backend.simulation import american_to_prob
+from backend.strategy import HOME_FIELD_LOGIT, MARKET_ANCHOR_W_MODEL
+
+
+def market_probs(
+    home_runs: np.ndarray,
+    away_runs: np.ndarray,
+    total_line: float | None,
+    spread_home: float | None,
+    weights: np.ndarray | None = None,
+) -> dict:
+    """ML / RL / totals empirical probabilities from sim arrays. Missing inputs → None keys."""
+    h = np.asarray(home_runs)
+    a = np.asarray(away_runs)
+    n = len(h)
+    if n == 0 or len(a) != n:
+        raise ValueError("home_runs and away_runs must be same non-empty length")
+
+    margin = h - a
+    p_home_win_strict = float(np.average(margin > 0, weights=weights))
+    p_away_win_strict = float(np.average(margin < 0, weights=weights))
+    p_tie = float(np.average(margin == 0, weights=weights))
+    # Ties shouldn't happen (game_sim resolves via extras), but split 50/50 if so.
+    p_home_win = p_home_win_strict + 0.5 * p_tie
+    p_away_win = p_away_win_strict + 0.5 * p_tie
+
+    # Preserve consensus precision when the empirical samples are reweighted.
+    def probability(value):
+        return float(value) if weights is not None else round(float(value), 4)
+
+    out = {
+        "p_home_win": probability(p_home_win),
+        "p_away_win": probability(p_away_win),
+        "p_home_cover": None,
+        "p_away_cover": None,
+        "p_over": None,
+        "p_under": None,
+    }
+
+    if spread_home is not None and not _isnan(spread_home):
+        # Home covers when (h - a) > -spread_home. Push at equality.
+        threshold = -float(spread_home)
+        p_home_strict = float(np.average(margin > threshold, weights=weights))
+        p_push_rl = float(np.average(margin == threshold, weights=weights))
+        p_away_strict = float(np.average(margin < threshold, weights=weights))
+        out["p_home_cover"] = probability(p_home_strict + 0.5 * p_push_rl)
+        out["p_away_cover"] = probability(p_away_strict + 0.5 * p_push_rl)
+
+    if total_line is not None and not _isnan(total_line):
+        totals = h + a
+        line = float(total_line)
+        p_over_strict = float(np.average(totals > line, weights=weights))
+        p_under_strict = float(np.average(totals < line, weights=weights))
+        p_push_t = float(np.average(totals == line, weights=weights))
+        out["p_over"] = probability(p_over_strict + 0.5 * p_push_t)
+        out["p_under"] = probability(p_under_strict + 0.5 * p_push_t)
+
+    return out
+
+
+def paired_market_quotes(home_odds: dict | None, away_odds: dict | None) -> list[dict]:
+    """Pair prices and retain the exact observation timestamps used in scoring."""
+    home_prices, away_prices = _ml_by_book(home_odds), _ml_by_book(away_odds)
+    home_offers = {o.get("book"): o for o in (home_odds or {}).get("offers", [home_odds] if home_odds else [])}
+    away_offers = {o.get("book"): o for o in (away_odds or {}).get("offers", [away_odds] if away_odds else [])}
+    result = []
+    now = pd.Timestamp.now(tz="UTC")
+    for book in sorted(home_prices.keys() & away_prices.keys()):
+        h, a = home_offers[book], away_offers[book]
+        ht, at = h.get("scraped_at"), a.get("scraped_at")
+        pair = {"book": book, "home_moneyline": home_prices[book], "away_moneyline": away_prices[book]}
+        # Legacy callers can calculate a probability without timestamps, but
+        # those quotes cannot pass the frozen-forecast research gate.
+        if pd.notna(ht) or pd.notna(at):
+            if pd.isna(ht) or pd.isna(at):
+                continue
+            ht, at = pd.to_datetime(ht, utc=True), pd.to_datetime(at, utc=True)
+            if abs((ht - at).total_seconds()) > 5 or max(ht, at) > now:
+                continue
+            pair.update(home_quoted_at=ht.isoformat(), away_quoted_at=at.isoformat())
+        for side, offer in (("home", h), ("away", a)):
+            for key in ("spread", "spread_odds"):
+                value = offer.get(key)
+                pair[f"{side}_{key}"] = float(value) if pd.notna(value) else None
+        result.append(pair)
+    return result
+
+
+def consensus_home_prob(home_odds: dict | None, away_odds: dict | None) -> float | None:
+    probs = []
+    for pair in paired_market_quotes(home_odds, away_odds):
+        h = american_to_prob(pair["home_moneyline"])
+        a = american_to_prob(pair["away_moneyline"])
+        probs.append(h / (h + a))
+    return float(np.mean(probs)) if probs else None
+
+
+def consensus_cover_prob(odds: dict | None, opponent_odds: dict | None, spread: float) -> float | None:
+    """De-vig matching same-book +/-1.5 prices, independently of moneylines.
+
+    The September 14 replay found that simulator run-line probabilities added
+    error versus this baseline in both chronological periods.
+    Until a residual model passes validation, published cover probabilities
+    use this baseline; shopping still chooses the best executable price.
+    """
+    def quotes(package):
+        result = {}
+        for offer in (package or {}).get("offers") or ([package] if package else []):
+            book = offer.get("book")
+            try:
+                line = float(offer.get("spread"))
+                price = float(offer.get("spread_odds"))
+            except (TypeError, ValueError):
+                continue
+            if book and line in (-1.5, 1.5) and np.isfinite(price) and abs(price) >= 100:
+                result[(book, line)] = (offer, american_to_prob(price))
+        return result
+
+    own, other = quotes(odds), quotes(opponent_odds)
+    probs = []
+    now = pd.Timestamp.now(tz="UTC")
+    for (book, line), (offer, probability) in own.items():
+        counterpart = other.get((book, -line))
+        if line != spread or counterpart is None:
+            continue
+        opponent, opposite_probability = counterpart
+        ts, opposite_ts = offer.get("scraped_at"), opponent.get("scraped_at")
+        if pd.notna(ts) or pd.notna(opposite_ts):
+            try:
+                ts = pd.to_datetime(ts, utc=True)
+                opposite_ts = pd.to_datetime(opposite_ts, utc=True)
+            except (TypeError, ValueError):
+                continue
+            if (pd.isna(ts) or pd.isna(opposite_ts)
+                    or abs((ts - opposite_ts).total_seconds()) > 5
+                    or max(ts, opposite_ts) > now):
+                continue
+        probs.append(probability / (probability + opposite_probability))
+    return float(np.mean(probs)) if probs else None
+
+
+def anchor_home_prob(p_home_sim: float, p_market_home: float | None) -> float:
+    """Published home win prob: HFA-shifted sim logit blended toward the market.
+
+    The sim carries no home-field advantage, so HOME_FIELD_LOGIT is added to its
+    logit first; the market prob already prices HFA, so the blend double-counts
+    nothing. With no market pair the shifted sim prob passes through unblended.
+    Monotonic in p_home_sim, so it can also transform the win-prob band
+    endpoints without breaking their ordering or pairwise anti-correlation.
+    """
+    logit_sim = _logit(p_home_sim) + HOME_FIELD_LOGIT
+    if p_market_home is None:
+        return round(_sigmoid(logit_sim), 4)
+    blended = MARKET_ANCHOR_W_MODEL * logit_sim + (1.0 - MARKET_ANCHOR_W_MODEL) * _logit(p_market_home)
+    return round(_sigmoid(blended), 4)
+
+
+def shift_cover_prob(p_cover: float | None, home: bool) -> float | None:
+    """Apply the home-field advantage the sim lacks to a run-line cover prob.
+
+    The sim's margin distribution carries no home edge, so it under-rated home
+    covers by ~2.5 points (v2 2026: home covered 48.9% vs 46.9% predicted) and
+    ~90% of run-line picks landed on the away side. The logit shift fitted on
+    1556 games (2026-09-09) is 0.0875, stable across halves and both spread
+    signs, i.e. the same HOME_FIELD_LOGIT already applied to win prob. Away
+    covering is the complement of home covering, so away gets the negative.
+    """
+    if p_cover is None or pd.isna(p_cover):
+        return p_cover
+    shift = HOME_FIELD_LOGIT if home else -HOME_FIELD_LOGIT
+    return round(_sigmoid(_logit(p_cover) + shift), 4)
+
+
+def _ml_by_book(odds: dict | None) -> dict:
+    if odds is None:
+        return {}
+    offers = odds.get("offers") or [odds]
+    out = {}
+    for offer in offers:
+        book = offer.get("book")
+        ml = offer.get("moneyline")
+        if not book or ml is None or not np.isfinite(float(ml)) or abs(float(ml)) < 100:
+            continue
+        out[book] = float(ml)
+    return out
+
+
+def _logit(p: float) -> float:
+    p = min(max(float(p), 1e-4), 1.0 - 1e-4)
+    return float(np.log(p / (1.0 - p)))
+
+
+def _sigmoid(x: float) -> float:
+    return float(1.0 / (1.0 + np.exp(-x)))
+
+
+def runs_percentiles(arr: np.ndarray, weights: np.ndarray | None = None) -> tuple[float, float, float]:
+    """Return (p10, p50, p90) of runs."""
+    a = np.asarray(arr)
+    if weights is not None:
+        order = np.argsort(a)
+        cumulative = np.cumsum(weights[order]) / np.sum(weights)
+        indexes = np.minimum(np.searchsorted(cumulative, [0.1, 0.5, 0.9]), len(a) - 1)
+        return tuple(float(v) for v in a[order][indexes])
+    p10, p50, p90 = np.quantile(a, [0.10, 0.50, 0.90])
+    return float(p10), float(p50), float(p90)
+
+
+def _isnan(x) -> bool:
+    try:
+        return bool(np.isnan(x))
+    except (TypeError, ValueError):
+        return False

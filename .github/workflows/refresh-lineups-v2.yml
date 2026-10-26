@@ -1,0 +1,66 @@
+name: Refresh Lineups v2
+
+on:
+  # Cadence is driven entirely by Supabase pg_cron (refresh-lineups-dispatch),
+  # which fires this every 20 min from ~5 AM to ~7:40 PM PT. The GitHub-native
+  # schedule was removed: it dropped/delayed most fires and produced stray
+  # off-window runs. workflow_dispatch stays for manual/emergency runs.
+  repository_dispatch:
+    types: [refresh-lineups]
+  workflow_dispatch:
+
+concurrency:
+  # Serialize, not cancel: writes are idempotent, so queue overlapping runs.
+  group: refresh-lineups-v2
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@v4
+        # Scoring and training use the same validated simulator release.
+        with:
+          ref: 2d46cd64f004d9493bc10bf73272f60200b984a9
+
+      - name: Restore Statcast cache
+        uses: actions/cache@v4
+        with:
+          path: cache
+          key: statcast-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            statcast-${{ runner.os }}-
+
+      - name: Restore validated simulator bundle
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            v2/bayesian/posteriors/*.nc
+            v2/bayesian/posteriors/diagnostics.json
+            v2/simulator/tables/*.parquet
+          key: sim-v3-bundle-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: sim-v3-bundle-${{ runner.os }}-
+          fail-on-cache-miss: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -c constraints.txt -r requirements.txt -r v2/requirements.txt && pip install --no-deps -e .
+
+      - name: Verify production artifacts
+        run: python -m v2.pipeline.verify_artifacts
+
+      - name: Refresh lineups
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          PYTHONPATH: "."
+        run: python -m v2.pipeline.refresh_lineups

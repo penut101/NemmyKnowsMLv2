@@ -1,0 +1,477 @@
+"""Build per-team rows from sim arrays + odds, write to model_outputs / model_outputs_season.
+
+Row schema mirrors the live Supabase columns. Keyed by (game_pk, team). The
+daily and season tables are replaced together per game inside one transaction.
+The authoritative schedule row serializes publishers and enforces the kickoff boundary.
+
+`win_prob_p10` / `win_prob_p90` are passed in by the caller (computed from
+per-posterior-draw win-prob samples). The writer doesn't bootstrap them, since
+that would only capture MC noise and mislead consumers.
+"""
+from __future__ import annotations
+
+import logging
+from datetime import UTC, datetime
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import JSONB
+
+from backend.db import engine
+from backend.simulation import american_to_prob
+from backend.strategy import HOME_FIELD_LOGIT, MARKET_ANCHOR_W_MODEL
+from v2.bayesian._common import POSTERIORS_DIR
+from v2.markets.ev import (
+    flag_ml,
+    flag_runline,
+    flag_total_play,
+    high_variance_flag,
+    kelly_pair,
+    kelly_total,
+    ml_confidence,
+    our_odds_from_prob,
+    rl_confidence,
+)
+from v2.markets.joint import VERSION as JOINT_VERSION
+from v2.markets.joint import adjust_joint, fresh_odds, market_snapshot
+from v2.markets.probs import (
+    anchor_home_prob,
+    consensus_cover_prob,
+    consensus_home_prob,
+    market_probs,
+    paired_market_quotes,
+    runs_percentiles,
+    shift_cover_prob,
+)
+
+log = logging.getLogger(__name__)
+
+
+def _offers(odds: dict | None) -> list[dict]:
+    if odds is None:
+        return []
+    return odds.get("offers") or [odds]
+
+
+def _price_edge(probability: float, price) -> float:
+    if pd.isna(price):
+        return float("-inf")
+    return probability - american_to_prob(price)
+
+
+def _best_moneyline(odds: dict | None, win_prob: float) -> dict:
+    offers = [offer for offer in _offers(odds) if pd.notna(_get(offer, "moneyline"))]
+    if not offers:
+        return {}
+    return max(offers, key=lambda offer: _price_edge(win_prob, offer["moneyline"]))
+
+
+def _best_runline(
+    odds: dict | None,
+    team_runs: np.ndarray,
+    opponent_runs: np.ndarray,
+    home: bool,
+    opponent_odds: dict | None = None,
+    weights: np.ndarray | None = None,
+) -> tuple[dict, float | None]:
+    """Shop fixed consensus probabilities; unpaired sim estimates are display-only."""
+    candidates = []
+    for offer in _offers(odds):
+        spread = _get(offer, "spread")
+        if pd.isna(spread) or not np.isclose(abs(float(spread)), 1.5):
+            continue
+        price = _get(offer, "spread_odds")
+        if pd.isna(price) or not np.isfinite(float(price)) or abs(float(price)) < 100:
+            continue
+        p_cover = market_probs(team_runs, opponent_runs, None, float(spread), weights)["p_home_cover"]
+        if weights is None:
+            p_cover = shift_cover_prob(p_cover, home)
+            market_cover = consensus_cover_prob(odds, opponent_odds, float(spread))
+            if market_cover is not None:
+                p_cover = market_cover
+        candidates.append((
+            _price_edge(p_cover, _get(offer, "spread_odds")),
+            offer,
+            p_cover,
+        ))
+    if not candidates:
+        return {}, None
+    _, offer, p_cover = max(candidates, key=lambda candidate: candidate[0])
+    return offer, p_cover
+
+
+def _best_total(
+    home_odds: dict | None,
+    away_odds: dict | None,
+    home_runs: np.ndarray,
+    away_runs: np.ndarray,
+    weights: np.ndarray | None = None,
+) -> tuple[dict, float | None, float | None]:
+    offers = _offers(home_odds) + _offers(away_odds)
+    candidates = []
+    for offer in offers:
+        total = _get(offer, "total")
+        if any(pd.isna(value) for value in (total, _get(offer, "total_over_odds"), _get(offer, "total_under_odds"))):
+            continue
+        probs = market_probs(home_runs, away_runs, float(total), None, weights)
+        # Prices condition on settlement. Keep the legacy half-push display
+        # fields, but never shop an integer total as though pushes were wins.
+        push = float(np.average(home_runs + away_runs == float(total), weights=weights))
+        if push >= 1:
+            continue
+        over = (probs["p_over"] - 0.5 * push) / (1 - push)
+        under = (probs["p_under"] - 0.5 * push) / (1 - push)
+        edge = max(
+            _price_edge(over, _get(offer, "total_over_odds")),
+            _price_edge(under, _get(offer, "total_under_odds")),
+        )
+        candidates.append((edge, offer, probs["p_over"], probs["p_under"]))
+    if not candidates:
+        return {}, None, None
+    _, offer, p_over, p_under = max(candidates, key=lambda candidate: candidate[0])
+    return offer, p_over, p_under
+
+
+def build_game_rows(
+    *,
+    game_pk: int,
+    game_date: pd.Timestamp,
+    start_time: pd.Timestamp | None,
+    home_team: str,
+    away_team: str,
+    home_starter: str | None,
+    away_starter: str | None,
+    home_runs: np.ndarray,
+    away_runs: np.ndarray,
+    home_odds: dict | None,
+    away_odds: dict | None,
+    lineup_source: str,
+    lineups_locked: bool,
+    posterior_age_days: int,
+    home_wp_p10: float | None = None,
+    home_wp_p90: float | None = None,
+    lineup_hash: str | None = None,
+    starters_known: bool = True,
+    lineups_live: bool = True,
+    pitching_usage_known: bool = True,
+    prediction_context: dict | None = None,
+) -> list[dict]:
+    """Return two dict rows (home + away) ready to write to model_outputs.
+
+    `home_odds` / `away_odds` come from the `odds` table; either may be None when
+    no odds row matched. Per-row keys we read: moneyline, spread, spread_odds,
+    total, total_over_odds, total_under_odds.
+
+    When starters_known is False a probable starter was missing, so the sim used a
+    league-mean arm in its place. That contaminates both teams' markets, not just
+    the TBD side, so flags are suppressed for both rows; the estimate still writes.
+
+    lineups_live applies the same gate for batting lineups: when it's False the
+    sim ran on the top9-by-season-PA fallback for at least one side (lineup_tag
+    != "live"). That fallback can swing a game 10+ points and flip the favorite
+    (it still bats traded/resting stars and omits recent regulars), so any flag
+    it produces is unreliable. Suppress both rows; xR/win-prob still write.
+
+    Moneyline recommendations require a paired same-book market anchor.
+    Without one, the fallback simulator estimate is display-only for moneyline.
+    """
+    h = np.asarray(home_runs)
+    a = np.asarray(away_runs)
+    n = len(h)
+    now = datetime.now(UTC)
+    home_odds = fresh_odds(home_odds, as_of=now, start_time=start_time)
+    away_odds = fresh_odds(away_odds, as_of=now, start_time=start_time)
+    weights, joint = adjust_joint(h, a, home_odds, away_odds)
+    if weights is None:
+        log.warning("Joint adjustment rejected for game %s: %s; recommendations suppressed", game_pk, joint["reason"])
+
+    # Successful adjustment makes every displayed quantity a summary of one
+    # joint forecast. A rejected adjustment retains the legacy display, with
+    # an explicit reason in provenance and all recommendations suppressed.
+    p_home_sim = market_probs(h, a, None, None)["p_home_win"]
+    p_market_home = consensus_home_prob(home_odds, away_odds)
+    p_home_win = (round(market_probs(h, a, None, None, weights)["p_home_win"], 4) if weights is not None
+                  else anchor_home_prob(p_home_sim, p_market_home))
+    p_away_win = round(1.0 - p_home_win, 4)
+
+    # Transform the per-draw band endpoints through the same monotonic map so
+    # the band brackets the published (anchored) prob; away stays the exact
+    # complement below.
+    if home_wp_p10 is not None:
+        home_wp_p10 = anchor_home_prob(home_wp_p10, p_market_home)
+    if home_wp_p90 is not None:
+        home_wp_p90 = anchor_home_prob(home_wp_p90, p_market_home)
+
+    home_ml_offer = _best_moneyline(home_odds, p_home_win)
+    away_ml_offer = _best_moneyline(away_odds, p_away_win)
+    home_rl_offer, p_home_cover = _best_runline(home_odds, h, a, home=True, opponent_odds=away_odds, weights=weights)
+    away_rl_offer, p_away_cover = _best_runline(away_odds, a, h, home=False, opponent_odds=home_odds, weights=weights)
+    total_offer, p_over, p_under = _best_total(home_odds, away_odds, h, a, weights)
+
+    home_ml = _get(home_ml_offer, "moneyline")
+    away_ml = _get(away_ml_offer, "moneyline")
+    home_spread = _get(home_rl_offer, "spread")
+    away_spread = _get(away_rl_offer, "spread")
+    home_spread_odds = _get(home_rl_offer, "spread_odds")
+    away_spread_odds = _get(away_rl_offer, "spread_odds")
+    total_line = _get(total_offer, "total")
+    home_total_over = _get(total_offer, "total_over_odds")
+    home_total_under = _get(total_offer, "total_under_odds")
+    away_total_over = home_total_over
+    away_total_under = home_total_under
+
+    h_p10, h_p50, h_p90 = runs_percentiles(h, weights)
+    a_p10, a_p50, a_p90 = runs_percentiles(a, weights)
+    total_arr = h + a
+    t_p10, t_p50, t_p90 = runs_percentiles(total_arr, weights)
+
+    # Empirical run-distribution histograms (21 bins, 0..20 runs) for the site.
+    # The capped-bin trick: runs > 20 land in bin 20. Tail mass past 20 is tiny.
+    h_clipped = np.minimum(h, 20)
+    a_clipped = np.minimum(a, 20)
+    mass = weights if weights is not None else np.full(n, 1 / n)
+    h_hist = np.bincount(h_clipped, weights=mass, minlength=21)[:21].round(5).tolist()
+    a_hist = np.bincount(a_clipped, weights=mass, minlength=21)[:21].round(5).tolist()
+
+    # away band is the complement of the home band (perfectly anti-correlated
+    # by construction: every per-draw home_wp_k pairs with away_wp_k = 1 - home_wp_k).
+    if home_wp_p10 is not None and home_wp_p90 is not None:
+        away_wp_p10 = round(1.0 - home_wp_p90, 4)
+        away_wp_p90 = round(1.0 - home_wp_p10, 4)
+    else:
+        away_wp_p10 = away_wp_p90 = None
+
+    home_xR = float(np.average(h, weights=weights))
+    away_xR = float(np.average(a, weights=weights))
+    our_total = round(home_xR + away_xR, 4)
+    home_total_diff = round(our_total - float(total_line), 4) if pd.notna(total_line) else None
+    away_total_diff = home_total_diff
+
+    context = {
+        **(prediction_context or {}),
+        "schema_version": 2,
+        "raw_home_win_prob": float((h > a).mean() + 0.5 * (h == a).mean()),
+        "market_home_win_prob": p_market_home,
+        "blend_version": JOINT_VERSION if weights is not None else "logit-anchor-v1",
+        "blend_weight": MARKET_ANCHOR_W_MODEL,
+        "home_field_logit": HOME_FIELD_LOGIT,
+        "forecast_at": now.isoformat(),
+        "pitching_usage_known": pitching_usage_known,
+        "joint_adjustment": joint,
+        "market_pairs": paired_market_quotes(home_odds, away_odds),
+        "market_offers": market_snapshot(home_odds, away_odds),
+        "win_band_method": "anchored-raw-simulator-parameter-band",
+    }
+    margins, counts = np.unique(h - a, return_counts=True)
+    context["margin_distribution"] = {str(int(v)): float(c / n) for v, c in zip(margins, counts)}
+    for side, runs in (("home", h), ("away", a)):
+        context[f"raw_{side}_expected_runs"] = float(np.mean(runs))
+        values, counts = np.unique(runs, return_counts=True)
+        context[f"{side}_run_distribution"] = {str(int(v)): float(c / n) for v, c in zip(values, counts)}
+    base = {
+        "game_pk": int(game_pk),
+        "date": pd.Timestamp(game_date).to_pydatetime().replace(tzinfo=None),
+        "start_time": pd.Timestamp(start_time).to_pydatetime() if start_time is not None else None,
+        "our_total": our_total,
+        "lineups_locked": lineups_locked,
+        "lineup_source": lineup_source,
+        "lineup_hash": lineup_hash,
+        "prediction_updated_at": now,
+        "posterior_age_days": int(posterior_age_days),
+        "prediction_context": context,
+    }
+
+    home_row = {
+        **base,
+        "team": home_team,
+        "starter": home_starter,
+        "expected_runs": round(home_xR, 4),
+        "expected_runs_p10": round(h_p10, 4),
+        "expected_runs_p50": round(h_p50, 4),
+        "expected_runs_p90": round(h_p90, 4),
+        "total_p10": round(t_p10, 4),
+        "total_p50": round(t_p50, 4),
+        "total_p90": round(t_p90, 4),
+        "win_prob": p_home_win,
+        "win_prob_p10": home_wp_p10,
+        "win_prob_p90": home_wp_p90,
+        "our_odds": our_odds_from_prob(p_home_win),
+        "moneyline": _to_float(home_ml),
+        "spread": _to_float(home_spread),
+        "spread_odds": _to_float(home_spread_odds),
+        "total": _to_float(total_line),
+        "total_over_odds": _to_float(home_total_over),
+        "total_under_odds": _to_float(home_total_under),
+        "p_cover": p_home_cover,
+        "p_over": p_over,
+        "p_under": p_under,
+        "total_diff": home_total_diff,
+        "ev_flag": flag_ml(home_team, p_home_win, home_ml),
+        "run_line_ev_flag": flag_runline(home_team, p_home_cover, home_spread_odds),
+        "total_play": flag_total_play(p_over, p_under, home_total_over, home_total_under, home_total_diff),
+        "ml_confidence": ml_confidence(p_home_win, home_ml),
+        "run_line_confidence": rl_confidence(p_home_cover, home_spread_odds),
+        "high_variance_flag": high_variance_flag(h, weights=weights),
+        "runs_hist": h_hist,
+    }
+    home_row.update(_kelly_block(home_row, p_home_win, p_home_cover, p_over, p_under,
+                                 home_ml, home_spread_odds, home_total_over, home_total_under))
+
+    away_row = {
+        **base,
+        "team": away_team,
+        "starter": away_starter,
+        "expected_runs": round(away_xR, 4),
+        "expected_runs_p10": round(a_p10, 4),
+        "expected_runs_p50": round(a_p50, 4),
+        "expected_runs_p90": round(a_p90, 4),
+        "total_p10": round(t_p10, 4),
+        "total_p50": round(t_p50, 4),
+        "total_p90": round(t_p90, 4),
+        "win_prob": p_away_win,
+        "win_prob_p10": away_wp_p10,
+        "win_prob_p90": away_wp_p90,
+        "our_odds": our_odds_from_prob(p_away_win),
+        "moneyline": _to_float(away_ml),
+        "spread": _to_float(away_spread),
+        "spread_odds": _to_float(away_spread_odds),
+        "total": _to_float(total_line),
+        "total_over_odds": _to_float(away_total_over),
+        "total_under_odds": _to_float(away_total_under),
+        "p_cover": p_away_cover,
+        "p_over": p_over,
+        "p_under": p_under,
+        "total_diff": away_total_diff,
+        "ev_flag": flag_ml(away_team, p_away_win, away_ml),
+        "run_line_ev_flag": flag_runline(away_team, p_away_cover, away_spread_odds),
+        "total_play": flag_total_play(p_over, p_under, away_total_over, away_total_under, away_total_diff),
+        "ml_confidence": ml_confidence(p_away_win, away_ml),
+        "run_line_confidence": rl_confidence(p_away_cover, away_spread_odds),
+        "high_variance_flag": high_variance_flag(a, weights=weights),
+        "runs_hist": a_hist,
+    }
+    away_row.update(_kelly_block(away_row, p_away_win, p_away_cover, p_over, p_under,
+                                 away_ml, away_spread_odds, away_total_over, away_total_under))
+
+    for row, odds, opposite in ((home_row, home_odds, away_odds), (away_row, away_odds, home_odds)):
+        if consensus_cover_prob(odds, opposite, row["spread"]) is None:
+            row["run_line_ev_flag"] = "No Play"
+            row["run_line_confidence"] = float("nan")
+            row["kelly_full_rl"] = row["kelly_quarter_rl"] = 0.0
+
+    if p_market_home is None:
+        for row in (home_row, away_row):
+            row["ev_flag"] = "No Play"
+            row["ml_confidence"] = float("nan")
+            row["kelly_full_ml"] = 0.0
+            row["kelly_quarter_ml"] = 0.0
+
+    if weights is None or not starters_known or not lineups_live or not pitching_usage_known:
+        _suppress_bet(home_row)
+        _suppress_bet(away_row)
+
+    return [home_row, away_row]
+
+
+def _suppress_bet(row: dict) -> None:
+    """Strip every bettable field in place; the run/win-prob estimate stays."""
+    row["ev_flag"] = "No Play"
+    row["run_line_ev_flag"] = "No Play"
+    row["total_play"] = "No Play"
+    row["ml_confidence"] = float("nan")
+    row["run_line_confidence"] = float("nan")
+    for k in ("kelly_full_ml", "kelly_quarter_ml", "kelly_full_rl",
+              "kelly_quarter_rl", "kelly_full_total", "kelly_quarter_total"):
+        row[k] = 0.0
+
+
+def _kelly_block(row, win_prob, p_cover, p_over, p_under,
+                 moneyline, spread_odds, total_over_odds, total_under_odds):
+    full_ml, q_ml = kelly_pair(win_prob, moneyline)
+    full_rl, q_rl = kelly_pair(p_cover, spread_odds) if p_cover is not None else (float("nan"), float("nan"))
+    full_t, q_t = kelly_total(row["total_play"], p_over, p_under, total_over_odds, total_under_odds)
+    return {
+        "kelly_full_ml": full_ml,
+        "kelly_quarter_ml": q_ml,
+        "kelly_full_rl": full_rl,
+        "kelly_quarter_rl": q_rl,
+        "kelly_full_total": full_t,
+        "kelly_quarter_total": q_t,
+    }
+
+
+def _get(d: dict | None, key: str):
+    if d is None:
+        return float("nan")
+    v = d.get(key)
+    return v if v is not None else float("nan")
+
+
+def _to_float(v):
+    if v is None:
+        return None
+    if pd.isna(v):
+        return None
+    return float(v)
+
+
+def publish_forecasts(rows: list[dict]) -> None:
+    """Publish both forecast copies atomically, rejecting late or stale runs."""
+    if not rows:
+        return
+    frame = pd.DataFrame(rows)
+    if frame.duplicated(["game_pk", "team"]).any():
+        raise ValueError("Duplicate forecast sides")
+    with engine.begin() as conn:
+        accepted = []
+        for game_pk, group in frame.groupby("game_pk", sort=True):
+            game = conn.execute(text(
+                "SELECT game_date, start_time, home_team, away_team, status "
+                "FROM games WHERE game_pk = :g FOR UPDATE"
+            ), {"g": int(game_pk)}).mappings().one()
+            now = conn.execute(text("SELECT clock_timestamp()")).scalar_one()
+            start = pd.Timestamp(game["start_time"])
+            if pd.isna(start) or start <= pd.Timestamp(now) or game["status"] in {
+                "Live", "In Progress", "Final", "Postponed", "Cancelled", "Canceled", "If Necessary"
+            }:
+                continue
+            if set(group.team) != {game["home_team"], game["away_team"]}:
+                raise ValueError(f"Forecast must contain both scheduled teams for {game_pk}")
+            if not pd.to_datetime(group["date"]).dt.date.eq(game["game_date"]).all():
+                raise ValueError(f"Forecast date differs from official schedule for {game_pk}")
+            stamps = pd.to_datetime(group["prediction_updated_at"], utc=True)
+            if stamps.isna().any() or stamps.nunique() != 1 or (stamps > now).any():
+                raise ValueError("Forecast requires one valid source snapshot time")
+            newest = conn.execute(text(
+                "SELECT max(prediction_updated_at) FROM ("
+                "SELECT prediction_updated_at FROM model_outputs WHERE game_pk = :g "
+                "UNION ALL SELECT prediction_updated_at FROM model_outputs_season WHERE game_pk = :g) existing"
+            ), {"g": int(game_pk)}).scalar_one()
+            if newest is not None and stamps.iloc[0] <= pd.Timestamp(newest):
+                continue
+            accepted.extend(group.to_dict("records"))
+        if not accepted:
+            return
+        ids = sorted({int(row["game_pk"]) for row in accepted})
+        for table in ("model_outputs", "model_outputs_season"):
+            conn.execute(text(f"DELETE FROM {table} WHERE game_pk = ANY(:ids)"), {"ids": ids})
+            pd.DataFrame(accepted).to_sql(table, con=conn, if_exists="append", index=False,
+                                        dtype={"runs_hist": JSONB, "prediction_context": JSONB})
+        crossed = conn.execute(text(
+            "SELECT game_pk FROM games WHERE game_pk = ANY(:ids) "
+            "AND start_time <= clock_timestamp()"
+        ), {"ids": ids}).first()
+        if crossed:
+            raise RuntimeError("First pitch crossed during publication; both copies rolled back")
+
+
+def posterior_age_days(now: datetime | None = None, posteriors_dir: Path = POSTERIORS_DIR) -> int:
+    """Days since the most recent NetCDF trace mtime."""
+    now = now or datetime.now(UTC)
+    files = list(posteriors_dir.glob("*.nc"))
+    if not files:
+        return -1
+    newest = max(f.stat().st_mtime for f in files)
+    return int((now.timestamp() - newest) // 86400)
