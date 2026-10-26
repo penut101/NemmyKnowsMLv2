@@ -1,0 +1,32 @@
+name: NHL data bootstrap
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  forecast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: models/nhl
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pipx install poetry
+      - run: poetry sync --no-interaction
+      - name: Download public inputs and generate unpublished forecasts
+        run: poetry run python -m backend daily --no-publish
+      - name: Save inputs, forecasts, and source receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nhl-bootstrap-${{ github.run_id }}
+          path: models/nhl/backend/data/
+          if-no-files-found: warn
+          retention-days: 7

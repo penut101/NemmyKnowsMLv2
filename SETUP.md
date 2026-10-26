@@ -37,7 +37,7 @@ Each requires Python 3.11 or 3.12 (upstream CI uses 3.12) and Poetry. For each s
 cd models/nfl # or models/cfb, models/nhl
 poetry env use python3.12
 poetry sync --no-interaction
-poetry run python -m backend.cli --help
+poetry run python -m backend --help
 poetry run pytest -q
 ```
 
@@ -50,3 +50,9 @@ Deploy the root as a Next.js project and configure its environment variables. De
 Root `model-*-ci.yml` workflows adapt upstream verification only. They use disposable PostgreSQL without production secrets. Frontend CI verifies the callback contract and production build.
 
 API subscriptions, database setup, model artifact training/import, production schedules, and hosting are separate from source copying. None are provisioned by creating the repository.
+
+## Independent setup progress (2026-10-26)
+
+The separate Supabase project `NemmyKnowsMLv2` is provisioned in `penut101's Org`, region `us-east-2`, reference `gebpwcieiaguxxbpmybh`. The existing project is untouched. The shared revalidation function and all seven NHL migrations are installed. Revalidation remains inactive until a website URL and secret are configured in Vault.
+
+The manual **NHL data bootstrap** GitHub Actions workflow downloads public inputs and runs the original model without database writes. It saves the input caches, unpublished forecasts, and source receipts as a seven-day artifact. It uses no private provider keys. A successful run is required before claiming current forecasts are available; publication and recurring scheduling are separate steps.

@@ -15,7 +15,7 @@ from backend.etl import store
 MONEYPUCK_URL = (
     "https://moneypuck.com/moneypuck/playerData/careers/gameByGame/all_teams.csv"
 )
-USER_AGENT = "Mozilla/5.0 (momentumnhl; renenunez.dev)"
+USER_AGENT = "Mozilla/5.0 (NemmyKnowsMLv2; github.com/penut101/NemmyKnowsMLv2)"
 REQUEST_TIMEOUT_SECONDS = 180
 # The sheet's situations are even strength, power play, and penalty kill.
 # Natural Stat Trick folds 4v4, 3v3, 5v3, and empty-net play into those
