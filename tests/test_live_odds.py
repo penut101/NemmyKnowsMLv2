@@ -1,0 +1,1501 @@
+import os
+from datetime import datetime, timedelta, timezone
+
+import pandas as pd
+import pytest
+
+from backend.etl import store
+from backend.odds import kickoff, live
+from backend.odds.client import (
+    EventsSnapshot,
+    OddsAPIClient,
+    OddsAPIError,
+    OddsSnapshot,
+    ScoreboardSnapshot,
+)
+
+NOW = datetime(2026, 9, 5, 20, 0, 0, tzinfo=timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def _default_odds_source(monkeypatch):
+    # The capture workflows run this file as a gate with ODDS_SOURCE exported
+    # for the job; the stubbed paid client must still be the one under test.
+    monkeypatch.delenv("ODDS_SOURCE", raising=False)
+
+
+def _odds_event(event_id, home, away, commence, last_update):
+    return {
+        "id": event_id,
+        "commence_time": commence,
+        "home_team": home,
+        "away_team": away,
+        "bookmakers": [
+            {
+                "key": "draftkings",
+                "title": "DraftKings",
+                "last_update": last_update,
+                "markets": [
+                    {
+                        "key": "spreads",
+                        "last_update": last_update,
+                        "outcomes": [
+                            {"name": home, "point": -3.5, "price": -110},
+                            {"name": away, "point": 3.5, "price": -110},
+                        ],
+                    },
+                    {
+                        "key": "totals",
+                        "last_update": last_update,
+                        "outcomes": [
+                            {"name": "Over", "point": 51.5, "price": -105},
+                            {"name": "Under", "point": 51.5, "price": -115},
+                        ],
+                    },
+                ],
+            }
+        ],
+    }
+
+
+def _schedule():
+    return pd.DataFrame(
+        {
+            "game_id": [101, 102],
+            "start_date": [
+                (NOW - timedelta(hours=1)).isoformat(),
+                (NOW + timedelta(hours=3)).isoformat(),
+            ],
+            "home_team": ["Ohio State", "Montana"],
+            "away_team": ["Rutgers", "Idaho"],
+        }
+    )
+
+
+def _snapshot():
+    live_commence = (NOW - timedelta(hours=1)).isoformat()
+    pregame_commence = (NOW + timedelta(hours=3)).isoformat()
+    update = (NOW - timedelta(seconds=30)).isoformat()
+    odds = OddsSnapshot(
+        events=[
+            _odds_event("ev-live", "Ohio State", "Rutgers", live_commence, update),
+            _odds_event("ev-pre", "Montana", "Idaho", pregame_commence, update),
+            _odds_event(
+                "ev-unmatched", "Nobody State", "Anywhere Tech", live_commence, update
+            ),
+        ],
+        fetched_at=NOW,
+        requests_remaining=400,
+        requests_used=100,
+        request_cost=2,
+        configured_bookmakers=("draftkings",),
+    )
+    scoreboard = ScoreboardSnapshot(
+        events=[
+            {
+                "id": "ev-live",
+                "commence_time": live_commence,
+                "completed": False,
+                "home_team": "Ohio State",
+                "away_team": "Rutgers",
+                "scores": [
+                    {"name": "Ohio State", "score": "14"},
+                    {"name": "Rutgers", "score": "7"},
+                ],
+                "last_update": update,
+            },
+            {
+                "id": "ev-pre",
+                "commence_time": pregame_commence,
+                "completed": False,
+                "home_team": "Montana",
+                "away_team": "Idaho",
+                "scores": None,
+                "last_update": None,
+            },
+        ],
+        fetched_at=NOW,
+        requests_remaining=401,
+        requests_used=99,
+        request_cost=1,
+    )
+    return live.build_live_snapshot(
+        2026,
+        odds,
+        scoreboard,
+        _schedule(),
+        (NOW - timedelta(hours=8), NOW + timedelta(hours=6)),
+        None,
+        requested_markets=live.CLOSING_MARKETS,
+    )
+
+
+def test_snapshot_offers_carry_required_provenance():
+    snapshot = _snapshot()
+    offers = snapshot.offers
+
+    assert set(offers["phase"]) == {"live", "pregame"}
+    assert offers[offers["game_id"].eq(101)]["phase"].eq("live").all()
+    assert offers[offers["game_id"].eq(102)]["phase"].eq("pregame").all()
+    for column in (
+        "game_id",
+        "phase",
+        "provider_key",
+        "provider_last_update",
+        "fetched_at",
+        "staleness_seconds",
+    ):
+        assert offers[column].notna().all()
+    assert (offers["staleness_seconds"] == 30.0).all()
+
+    poll = snapshot.poll.iloc[0]
+    assert poll["offer_count"] == len(offers) == 8
+    assert poll["dropped_unmatched_offer_count"] == 4
+    unmatched = snapshot.events[snapshot.events["odds_api_event_id"].eq("ev-unmatched")]
+    assert unmatched["phase"].eq("unknown").all()
+    assert not unmatched["matched"].any()
+
+
+class _QuotaAwareClient:
+    def __init__(self, discovery, odds=None, scoreboard=None):
+        self.discovery = discovery
+        self.odds = odds
+        self.scoreboard = scoreboard
+        self.calls = []
+
+    def ensure_single_quota_region(self):
+        return None
+
+    def get_ncaaf_events(self, commence_from, commence_to):
+        self.calls.append(("events", commence_from, commence_to))
+        return self.discovery
+
+    def get_ncaaf_odds(self, commence_from, commence_to, *, markets, event_ids):
+        self.calls.append(("odds", markets, event_ids))
+        if self.odds is None:
+            raise AssertionError("paid odds should not have been requested")
+        return self.odds
+
+    def get_ncaaf_scores(self, days_from):
+        self.calls.append(("scores", days_from))
+        if self.scoreboard is None:
+            raise AssertionError("scores should not have been requested")
+        return self.scoreboard
+
+
+def _events_snapshot(events, remaining=78):
+    return EventsSnapshot(
+        events=events,
+        fetched_at=NOW,
+        requests_remaining=remaining,
+        requests_used=422,
+        request_cost=0,
+    )
+
+
+def test_live_capture_discovers_for_free_then_buys_requested_markets(
+    monkeypatch,
+):
+    commence = (NOW + timedelta(hours=3)).isoformat()
+    update = (NOW - timedelta(seconds=30)).isoformat()
+    event = _odds_event("ev-pre", "Montana", "Idaho", commence, update)
+    odds = OddsSnapshot(
+        events=[event],
+        fetched_at=NOW,
+        requests_remaining=76,
+        requests_used=424,
+        request_cost=2,
+        configured_bookmakers=("draftkings",),
+    )
+    scoreboard = ScoreboardSnapshot(
+        events=[
+            {
+                "id": "ev-pre",
+                "commence_time": commence,
+                "completed": False,
+                "home_team": "Montana",
+                "away_team": "Idaho",
+                "scores": None,
+                "last_update": None,
+            },
+            {
+                "id": "unrelated",
+                "commence_time": commence,
+                "completed": False,
+                "home_team": "Other",
+                "away_team": "Else",
+            },
+        ],
+        fetched_at=NOW,
+        requests_remaining=75,
+        requests_used=425,
+        request_cost=1,
+    )
+    client = _QuotaAwareClient(_events_snapshot([event]), odds, scoreboard)
+    written = []
+    monkeypatch.setattr(
+        live,
+        "write_live_snapshot",
+        lambda season, snapshot: written.append(snapshot),
+    )
+
+    snapshot = live.capture_live_snapshot(
+        client,
+        2026,
+        _schedule(),
+        lookback_hours=8,
+        lookahead_hours=6,
+        days_from=None,
+        min_quota=50,
+        markets=live.CLOSING_MARKETS,
+    )
+
+    assert [call[0] for call in client.calls] == ["events", "odds", "scores"]
+    assert client.calls[1][1:] == (live.CLOSING_MARKETS, ("ev-pre",))
+    assert snapshot.events["odds_api_event_id"].tolist() == ["ev-pre"]
+    assert set(snapshot.offers["market"]) == {"spreads", "totals"}
+    assert snapshot.poll.iloc[0]["requested_markets"] == '["spreads", "totals"]'
+    assert snapshot.poll.iloc[0]["odds_request_cost"] == 2
+    assert snapshot.poll.iloc[0]["scores_request_cost"] == 1
+    assert written == [snapshot]
+
+    spread_only_event = _odds_event("ev-pre", "Montana", "Idaho", commence, update)
+    spread_only_event["bookmakers"][0]["markets"] = spread_only_event["bookmakers"][0][
+        "markets"
+    ][:1]
+    spread_only_odds = OddsSnapshot(
+        events=[spread_only_event],
+        fetched_at=NOW,
+        requests_remaining=77,
+        requests_used=423,
+        request_cost=1,
+        configured_bookmakers=("draftkings",),
+    )
+    partial = live.capture_live_snapshot(
+        _QuotaAwareClient(_events_snapshot([event]), spread_only_odds, scoreboard),
+        2026,
+        _schedule(),
+        lookback_hours=8,
+        lookahead_hours=6,
+        days_from=None,
+        min_quota=50,
+        markets=live.CLOSING_MARKETS,
+    )
+    assert set(partial.offers["market"]) == {"spreads"}
+    assert partial.poll.iloc[0]["requested_markets"] == '["spreads", "totals"]'
+    assert written[-1] is partial
+
+
+def test_live_capture_spends_nothing_without_relevant_events():
+    commence = (NOW + timedelta(hours=3)).isoformat()
+    irrelevant = {
+        "id": "other",
+        "commence_time": commence,
+        "home_team": "Nobody State",
+        "away_team": "Anywhere Tech",
+    }
+    client = _QuotaAwareClient(_events_snapshot([irrelevant]))
+
+    with pytest.raises(live.LivePollSkipped, match="free event discovery"):
+        live.capture_live_snapshot(
+            client,
+            2026,
+            _schedule(),
+            lookback_hours=8,
+            lookahead_hours=6,
+            days_from=None,
+            min_quota=50,
+        )
+
+    assert [call[0] for call in client.calls] == ["events"]
+
+
+def test_live_capture_requires_the_requested_kickoff_target():
+    commence = (NOW + timedelta(hours=3)).isoformat()
+    other_game = {
+        "id": "ev-pre",
+        "commence_time": commence,
+        "home_team": "Montana",
+        "away_team": "Idaho",
+    }
+    client = _QuotaAwareClient(_events_snapshot([other_game]))
+
+    with pytest.raises(live.LivePollSkipped, match="missing target games: 101"):
+        live.capture_live_snapshot(
+            client,
+            2026,
+            _schedule(),
+            lookback_hours=8,
+            lookahead_hours=6,
+            days_from=None,
+            min_quota=50,
+            required_game_ids=(101,),
+        )
+
+    assert [call[0] for call in client.calls] == ["events"]
+
+
+def test_postkick_score_is_captured_when_books_pull_the_spread(monkeypatch):
+    current = datetime.now(timezone.utc)
+    commence = (current - timedelta(minutes=1)).isoformat()
+    event = {
+        "id": "ev-live",
+        "commence_time": commence,
+        "home_team": "Montana",
+        "away_team": "Idaho",
+    }
+    odds = OddsSnapshot(
+        events=[],
+        fetched_at=current,
+        requests_remaining=78,
+        requests_used=422,
+        request_cost=0,
+        configured_bookmakers=("draftkings",),
+    )
+    scoreboard = ScoreboardSnapshot(
+        events=[
+            {
+                **event,
+                "completed": False,
+                "scores": [
+                    {"name": "Montana", "score": "0"},
+                    {"name": "Idaho", "score": "0"},
+                ],
+                "last_update": current.isoformat(),
+            }
+        ],
+        fetched_at=current,
+        requests_remaining=77,
+        requests_used=423,
+        request_cost=1,
+    )
+    schedule = pd.DataFrame(
+        {
+            "game_id": [501],
+            "start_date": [commence],
+            "home_team": ["Montana"],
+            "away_team": ["Idaho"],
+        }
+    )
+    client = _QuotaAwareClient(
+        _events_snapshot([event], remaining=78), odds, scoreboard
+    )
+    monkeypatch.setattr(live, "write_live_snapshot", lambda season, snapshot: None)
+
+    snapshot = live.capture_live_snapshot(
+        client,
+        2026,
+        schedule,
+        lookback_hours=1,
+        lookahead_hours=1,
+        days_from=None,
+        min_quota=50,
+        required_game_ids=(501,),
+    )
+
+    assert [call[0] for call in client.calls] == ["events", "odds", "scores"]
+    assert snapshot.offers.empty
+    assert snapshot.events["phase"].tolist() == ["live"]
+    assert snapshot.poll.iloc[0]["odds_request_cost"] == 0
+    assert snapshot.poll.iloc[0]["scores_request_cost"] == 1
+
+
+def test_live_capture_checks_shared_quota_before_paid_calls(monkeypatch):
+    commence = (NOW + timedelta(hours=3)).isoformat()
+    event = {
+        "id": "ev-pre",
+        "commence_time": commence,
+        "home_team": "Montana",
+        "away_team": "Idaho",
+    }
+    client = _QuotaAwareClient(_events_snapshot([event], remaining=62))
+    future_markets = (
+        live.LIVE_MARKETS,
+        live.CLOSING_MARKETS,
+        live.LIVE_MARKETS,
+        live.LIVE_MARKETS,
+        live.LIVE_MARKETS,
+    )
+
+    with pytest.raises(live.QuotaFloorReached, match="would cross"):
+        live.capture_live_snapshot(
+            client,
+            2026,
+            _schedule(),
+            lookback_hours=8,
+            lookahead_hours=6,
+            days_from=None,
+            min_quota=50,
+            future_poll_markets=future_markets,
+        )
+
+    assert [call[0] for call in client.calls] == ["events"]
+
+    update = (NOW - timedelta(seconds=30)).isoformat()
+    priced_event = _odds_event("ev-pre", "Montana", "Idaho", commence, update)
+    priced_event["bookmakers"][0]["markets"] = priced_event["bookmakers"][0]["markets"][
+        :1
+    ]
+    odds = OddsSnapshot(
+        events=[priced_event],
+        fetched_at=NOW,
+        requests_remaining=62,
+        requests_used=438,
+        request_cost=1,
+        configured_bookmakers=("draftkings",),
+    )
+    scoreboard = ScoreboardSnapshot(
+        events=[{**event, "completed": False, "scores": None}],
+        fetched_at=NOW,
+        requests_remaining=61,
+        requests_used=439,
+        request_cost=1,
+    )
+    exact_floor = _QuotaAwareClient(
+        _events_snapshot([event], remaining=63), odds, scoreboard
+    )
+    monkeypatch.setattr(live, "write_live_snapshot", lambda season, snapshot: None)
+    snapshot = live.capture_live_snapshot(
+        exact_floor,
+        2026,
+        _schedule(),
+        lookback_hours=8,
+        lookahead_hours=6,
+        days_from=None,
+        min_quota=50,
+        future_poll_markets=future_markets,
+    )
+    assert snapshot.poll.iloc[0]["scores_requests_remaining"] == 61
+    assert [call[0] for call in exact_floor.calls] == ["events", "odds", "scores"]
+
+
+def test_paid_partial_failure_preserves_quota_provenance(tmp_path, monkeypatch):
+    commence = (NOW + timedelta(hours=3)).isoformat()
+    update = (NOW - timedelta(seconds=30)).isoformat()
+    event = _odds_event("ev-pre", "Montana", "Idaho", commence, update)
+    event["bookmakers"][0]["markets"] = event["bookmakers"][0]["markets"][:1]
+    odds = OddsSnapshot(
+        events=[event],
+        fetched_at=NOW,
+        requests_remaining=77,
+        requests_used=423,
+        request_cost=1,
+        configured_bookmakers=("draftkings",),
+    )
+
+    class Client(_QuotaAwareClient):
+        def get_ncaaf_scores(self, days_from):
+            self.calls.append(("scores", days_from))
+            raise OddsAPIError("score provider unavailable")
+
+    client = Client(_events_snapshot([event]), odds)
+    monkeypatch.setattr(live, "OddsAPIClient", lambda: client)
+    monkeypatch.setattr(live, "RAW_DIR", tmp_path)
+
+    completed = live.run_live_polling(
+        2026,
+        _schedule(),
+        polls=1,
+        interval_seconds=0,
+        lookback_hours=8,
+        lookahead_hours=6,
+        days_from=None,
+        min_quota=50,
+        max_failures=1,
+        progress=lambda message: None,
+    )
+
+    polls = live.read_live_frames(2026)["polls"]
+    assert completed == 0
+    assert polls["poll_status"].tolist() == ["error"]
+    assert polls["odds_request_cost"].tolist() == [1]
+    assert polls["odds_requests_remaining"].tolist() == [77]
+    assert polls["scores_request_cost"].isna().all()
+
+
+def test_post_scores_quota_change_fails_closed(monkeypatch):
+    commence = (NOW + timedelta(hours=3)).isoformat()
+    update = (NOW - timedelta(seconds=30)).isoformat()
+    event = _odds_event("ev-pre", "Montana", "Idaho", commence, update)
+    event["bookmakers"][0]["markets"] = event["bookmakers"][0]["markets"][:1]
+    odds = OddsSnapshot(
+        events=[event],
+        fetched_at=NOW,
+        requests_remaining=69,
+        requests_used=431,
+        request_cost=1,
+        configured_bookmakers=("draftkings",),
+    )
+    scoreboard = ScoreboardSnapshot(
+        events=[],
+        fetched_at=NOW,
+        requests_remaining=59,
+        requests_used=441,
+        request_cost=1,
+    )
+    client = _QuotaAwareClient(
+        _events_snapshot([event], remaining=70), odds, scoreboard
+    )
+    monkeypatch.setattr(live, "write_live_snapshot", lambda season, snapshot: None)
+
+    with pytest.raises(live.PartialPaidPollError, match="reserved for future"):
+        live.capture_live_snapshot(
+            client,
+            2026,
+            _schedule(),
+            lookback_hours=8,
+            lookahead_hours=6,
+            days_from=None,
+            min_quota=50,
+            future_poll_markets=(
+                live.LIVE_MARKETS,
+                live.CLOSING_MARKETS,
+                live.LIVE_MARKETS,
+                live.LIVE_MARKETS,
+                live.LIVE_MARKETS,
+            ),
+        )
+
+
+def test_polling_passes_full_window_reserve_and_required_targets(monkeypatch):
+    client = _QuotaAwareClient(_events_snapshot([]))
+    monkeypatch.setattr(live, "OddsAPIClient", lambda: client)
+    calls = []
+    clock = [0.0]
+    sleeps = []
+
+    def capture(
+        client,
+        season,
+        schedule,
+        lookback_hours,
+        lookahead_hours,
+        days_from,
+        min_quota,
+        required_game_ids,
+        markets,
+        future_poll_markets,
+        metered,
+    ):
+        calls.append((markets, future_poll_markets, required_game_ids))
+        clock[0] += 0.5
+        return _snapshot()
+
+    def advance(seconds):
+        sleeps.append(seconds)
+        clock[0] += seconds
+
+    monkeypatch.setattr(live, "capture_live_snapshot", capture)
+
+    market_plan = (
+        live.LIVE_MARKETS,
+        live.CLOSING_MARKETS,
+        live.LIVE_MARKETS,
+    )
+    completed = live.run_live_polling(
+        2026,
+        _schedule(),
+        polls=3,
+        interval_seconds=2,
+        lookback_hours=8,
+        lookahead_hours=6,
+        days_from=None,
+        min_quota=50,
+        max_failures=1,
+        required_game_ids=(101,),
+        poll_markets=market_plan,
+        progress=lambda message: None,
+        sleep=advance,
+        monotonic=lambda: clock[0],
+    )
+
+    assert completed == 3
+    assert calls == [
+        (live.LIVE_MARKETS, market_plan[1:], (101,)),
+        (live.CLOSING_MARKETS, market_plan[2:], (101,)),
+        (live.LIVE_MARKETS, (), (101,)),
+    ]
+    assert sleeps == [1.5, 1.5]
+
+    # Replay of the 2026-09-10 capture: the provider moved kickoff from
+    # 00:00 to 00:05 at the second poll. The planner must move the totals
+    # pull to the last pregame poll before the new kickoff, keep polling past
+    # the scheduled window until the game is observed live, then stop.
+    kickoff_at = pd.Timestamp("2026-09-11T00:00:00Z")
+    moved_at = kickoff_at + pd.Timedelta(minutes=5)
+    drift_target = kickoff.KickoffTarget(
+        game_ids=(101,),
+        first_kickoff=kickoff_at,
+        last_kickoff=kickoff_at,
+        labels=("Florida A&M at Miami (101)",),
+        kickoffs=(kickoff_at,),
+    )
+    wall = [kickoff_at - pd.Timedelta(minutes=5)]
+    planner = kickoff.KickoffPollPlanner(
+        drift_target,
+        interval_seconds=120,
+        post_minutes=5,
+        max_polls=6 + 15,
+        progress=lambda message: None,
+        now=lambda: wall[0],
+    )
+    commence = [kickoff_at, moved_at, moved_at, moved_at, moved_at, moved_at]
+    phases = ["pregame"] * 5 + ["live"]
+    observed = []
+
+    def drifting_capture(
+        client,
+        season,
+        schedule,
+        lookback_hours,
+        lookahead_hours,
+        days_from,
+        min_quota,
+        required_game_ids,
+        markets,
+        future_poll_markets,
+        metered,
+    ):
+        index = len(observed)
+        observed.append((wall[0], markets, len(future_poll_markets)))
+        snapshot = live.LiveSnapshot(
+            snapshot_id=f"poll-{index}",
+            poll=_snapshot().poll,
+            events=pd.DataFrame(
+                {
+                    "game_id": [101],
+                    "commence_time": [commence[index]],
+                    "phase": [phases[index]],
+                }
+            ),
+            offers=pd.DataFrame(),
+        )
+        return snapshot
+
+    def advance_wall(seconds):
+        # The wall clock moves between polls; the planner must read it after
+        # the sleep, at poll time, or every plan is one interval early.
+        wall[0] = wall[0] + pd.Timedelta(seconds=120)
+
+    monkeypatch.setattr(live, "capture_live_snapshot", drifting_capture)
+    completed = live.run_live_polling(
+        2026,
+        _schedule(),
+        polls=planner.max_polls,
+        interval_seconds=120,
+        lookback_hours=1,
+        lookahead_hours=2,
+        days_from=None,
+        min_quota=20,
+        max_failures=3,
+        required_game_ids=(101,),
+        poll_markets=planner,
+        progress=lambda message: None,
+        sleep=advance_wall,
+        monotonic=lambda: 0.0,
+    )
+    assert completed == 6
+    assert planner.pending == set()
+    assert [markets for _, markets, _ in observed] == [
+        live.LIVE_MARKETS,
+        live.LIVE_MARKETS,
+        live.LIVE_MARKETS,
+        live.LIVE_MARKETS,
+        live.CLOSING_MARKETS,
+        live.LIVE_MARKETS,
+    ]
+    assert observed[4][0] == moved_at - pd.Timedelta(minutes=2)
+    # The reservation follows the moved kickoff plus the post window.
+    assert observed[0][2] == 5 and observed[5][2] == 3
+
+    kickoff_at = pd.Timestamp("2026-08-29T16:00:00Z")
+    target = kickoff.KickoffTarget(
+        game_ids=(101,),
+        first_kickoff=kickoff_at,
+        last_kickoff=kickoff_at,
+        labels=("North Carolina at TCU (101)",),
+        kickoffs=(kickoff_at,),
+    )
+    window = kickoff.plan_kickoff_window(
+        target,
+        as_of=kickoff_at - pd.Timedelta(minutes=5),
+        interval_seconds=120,
+    )
+    planned = kickoff.plan_kickoff_poll_markets(target, window, 120)
+    assert planned == (
+        live.LIVE_MARKETS,
+        live.LIVE_MARKETS,
+        live.CLOSING_MARKETS,
+        live.LIVE_MARKETS,
+        live.LIVE_MARKETS,
+        live.LIVE_MARKETS,
+    )
+    assert sum(live.live_poll_quota_cost(markets) for markets in planned) == 13
+
+    boundary_window = kickoff.plan_kickoff_window(
+        target,
+        as_of=kickoff_at - pd.Timedelta(minutes=5),
+        interval_seconds=300,
+    )
+    assert kickoff.plan_kickoff_poll_markets(target, boundary_window, 300) == (
+        live.CLOSING_MARKETS,
+        live.LIVE_MARKETS,
+        live.LIVE_MARKETS,
+    )
+
+    same_time = kickoff.KickoffTarget(
+        game_ids=(101, 102),
+        first_kickoff=kickoff_at,
+        last_kickoff=kickoff_at,
+        labels=("Game one", "Game two"),
+        kickoffs=(kickoff_at, kickoff_at),
+    )
+    same_time_plan = kickoff.plan_kickoff_poll_markets(same_time, window, 120)
+    assert sum("totals" in markets for markets in same_time_plan) == 1
+
+    later = kickoff_at + pd.Timedelta(minutes=5)
+    staggered = kickoff.KickoffTarget(
+        game_ids=(101, 102),
+        first_kickoff=kickoff_at,
+        last_kickoff=later,
+        labels=("Game one", "Game two"),
+        kickoffs=(kickoff_at, later),
+    )
+    staggered_window = kickoff.plan_kickoff_window(
+        staggered,
+        as_of=kickoff_at - pd.Timedelta(minutes=5),
+        interval_seconds=120,
+    )
+    staggered_plan = kickoff.plan_kickoff_poll_markets(staggered, staggered_window, 120)
+    assert [
+        index for index, markets in enumerate(staggered_plan) if "totals" in markets
+    ] == [2, 4]
+
+
+def test_live_odds_rejects_multi_region_quota_configuration():
+    assert OddsAPIClient(api_key="test", regions="us").quota_region_units == 1
+    client = OddsAPIClient(api_key="test", regions="us,us2")
+
+    with pytest.raises(OddsAPIError, match="would charge 2x"):
+        client.ensure_single_quota_region()
+
+
+def test_events_endpoint_uses_the_free_filtered_discovery_route():
+    class Response:
+        status_code = 200
+        text = ""
+        headers = {
+            "x-requests-remaining": "78",
+            "x-requests-used": "422",
+            "x-requests-last": "0",
+        }
+
+        @staticmethod
+        def json():
+            return []
+
+    class Session:
+        def __init__(self):
+            self.request = None
+
+        def get(self, url, params, timeout):
+            self.request = (url, params, timeout)
+            return Response()
+
+    client = OddsAPIClient(api_key="test", regions="us")
+    client.session = Session()
+    snapshot = client.get_ncaaf_events(
+        NOW - timedelta(hours=1), NOW + timedelta(hours=1)
+    )
+
+    url, params, timeout = client.session.request
+    assert url.endswith("/sports/americanfootball_ncaaf/events")
+    assert params["commenceTimeFrom"] == "2026-09-05T19:00:00Z"
+    assert params["commenceTimeTo"] == "2026-09-05T21:00:00Z"
+    assert "markets" not in params
+    assert timeout == 60
+    assert snapshot.request_cost == 0
+    assert snapshot.requests_remaining == 78
+
+
+def test_snapshots_are_append_only_and_replayable(tmp_path, monkeypatch):
+    monkeypatch.setattr(live, "RAW_DIR", tmp_path)
+    snapshot = _snapshot()
+    live.write_live_snapshot(2026, snapshot)
+
+    with pytest.raises(FileExistsError):
+        live.write_live_snapshot(2026, snapshot)
+
+    problems, frames = live.verify_live_snapshots(2026)
+    assert problems == []
+    available = live.offers_available_at(
+        frames["polls"], frames["offers"], pd.Timestamp(NOW)
+    )
+    assert len(available) == 8
+    before = live.offers_available_at(
+        frames["polls"], frames["offers"], pd.Timestamp(NOW) - pd.Timedelta(hours=1)
+    )
+    assert before.empty
+
+    # Tampering with a stored snapshot must be detected by the replay check,
+    # even when the mutation keeps the row count unchanged.
+    offers_path = next((tmp_path / "live_odds" / "2026" / "offers").glob("*.parquet"))
+    tampered = pd.read_parquet(offers_path)
+    tampered.loc[0, "point"] = tampered.loc[0, "point"] + 1.0
+    tampered.to_parquet(offers_path, index=False)
+    problems, _ = live.verify_live_snapshots(2026)
+    assert any("offers_sha256" in problem for problem in problems)
+
+
+def test_live_schedule_uses_the_freshest_stored_snapshot(tmp_path, monkeypatch):
+    raw_path = tmp_path / "games" / "2026.parquet"
+    preseason_path = tmp_path / "preseason" / "2026" / "games.parquet"
+    raw_path.parent.mkdir(parents=True)
+    preseason_path.parent.mkdir(parents=True)
+    raw_path.touch()
+    preseason_path.touch()
+    os.utime(raw_path, (1, 1))
+    os.utime(preseason_path, (2, 2))
+    raw = pd.DataFrame(
+        {
+            "id": [1],
+            "start_date": [NOW],
+            "home_team": ["Old State"],
+            "away_team": ["Old Tech"],
+            "home_classification": ["fbs"],
+            "away_classification": ["fbs"],
+        }
+    )
+    preseason = raw.assign(id=2, home_team="Fresh State", away_team="Fresh Tech")
+    monkeypatch.setattr(live, "RAW_DIR", tmp_path)
+    monkeypatch.setattr("backend.etl.store.read_games", lambda season: raw)
+    monkeypatch.setattr(
+        "backend.etl.store.read_preseason_source",
+        lambda season, source: preseason,
+    )
+
+    schedule = live.load_division_one_schedule(2026)
+    assert schedule["game_id"].tolist() == [2]
+
+    os.utime(raw_path, (3, 3))
+    schedule = live.load_division_one_schedule(2026)
+    assert schedule["game_id"].tolist() == [1]
+
+    raw_path.unlink()
+    preseason_path.unlink()
+    coverage = preseason.rename(columns={"id": "game_id"}).assign(
+        game_id=3,
+        home_team="Frozen State",
+        away_team="Frozen Tech",
+    )
+    processed_path = (
+        tmp_path
+        / "processed"
+        / "preseason"
+        / "forecast_log"
+        / "2026_01_20260828T150144955330Z"
+        / "schedule_coverage.parquet"
+    )
+    processed_path.parent.mkdir(parents=True)
+    coverage.to_parquet(processed_path, index=False)
+    monkeypatch.setattr(store, "PROCESSED_DIR", tmp_path / "processed")
+    schedule = live.load_division_one_schedule(2026)
+    assert schedule["game_id"].tolist() == [3]
+
+
+def test_kickoff_window_requires_pregame_anchor_and_postkick_provider_state(
+    monkeypatch,
+    tmp_path,
+):
+    # This is the live acceptance boundary: a window is ready only after a
+    # provider-backed postkick state exists, while the selected anchor still
+    # points to a fresh multi-provider snapshot captured before kickoff.
+    starts_at = pd.Timestamp("2026-08-29T16:00:00Z")
+    target = kickoff.KickoffTarget(
+        game_ids=(101,),
+        first_kickoff=starts_at,
+        last_kickoff=starts_at,
+        labels=("North Carolina at TCU (101)",),
+    )
+    monkeypatch.setattr(
+        kickoff,
+        "load_division_one_schedule",
+        lambda season: pd.DataFrame(
+            {
+                "game_id": [101],
+                "start_date": [starts_at],
+                "home_team": ["TCU"],
+                "away_team": ["North Carolina"],
+            }
+        ),
+    )
+    pregame = starts_at - pd.Timedelta(minutes=1)
+    live_at = starts_at + pd.Timedelta(minutes=1)
+    frames = {
+        "events": pd.DataFrame(
+            {
+                "game_id": [101, 101],
+                "fetched_at": [pregame, live_at],
+                "phase": ["pregame", "live"],
+            }
+        ),
+        "offers": pd.DataFrame(
+            {
+                "game_id": [101] * 7,
+                "snapshot_id": ["close"] * 6 + ["live"],
+                "fetched_at": [pregame] * 6 + [live_at],
+                "phase": ["pregame"] * 6 + ["live"],
+                "market": [
+                    "spreads",
+                    "spreads",
+                    "totals",
+                    "totals",
+                    "totals",
+                    "totals",
+                    "spreads",
+                ],
+                "selection": [
+                    "home",
+                    "home",
+                    "over",
+                    "under",
+                    "over",
+                    "under",
+                    "home",
+                ],
+                "provider_key": ["a", "b", "a", "a", "b", "b", "a"],
+                "provider_last_update": [
+                    starts_at - pd.Timedelta(seconds=30),
+                    starts_at - pd.Timedelta(seconds=45),
+                    starts_at - pd.Timedelta(seconds=25),
+                    starts_at - pd.Timedelta(seconds=25),
+                    starts_at - pd.Timedelta(seconds=40),
+                    starts_at - pd.Timedelta(seconds=40),
+                    live_at,
+                ],
+                "point": [-3.5, -3.5, 51.5, 51.5, 51.5, 51.5, -4.0],
+                "price": [-110, -110, -105, -115, -108, -112, -110],
+            }
+        ),
+    }
+    anchors = pd.DataFrame(
+        {
+            "game_id": [101],
+            "season": [2026],
+            "closing_snapshot_id": ["close"],
+            "closing_fetched_at": [pregame],
+            "latest_provider_update": [starts_at - pd.Timedelta(seconds=30)],
+        }
+    )
+
+    problems, details = kickoff.validate_completed_window(target, frames, anchors)
+    assert problems == []
+    assert "ignored 1 live offers" in details[0]
+
+    without_totals = {
+        **frames,
+        "offers": frames["offers"][frames["offers"]["market"].ne("totals")],
+    }
+    problems, _ = kickoff.validate_completed_window(target, without_totals, anchors)
+    assert any("0 paired providers updated" in problem for problem in problems)
+
+    postkick_provider = {**frames, "offers": frames["offers"].copy()}
+    postkick_provider["offers"].loc[
+        postkick_provider["offers"]["market"].eq("totals")
+        & postkick_provider["offers"]["provider_key"].eq("b"),
+        "provider_last_update",
+    ] = live_at
+    problems, _ = kickoff.validate_completed_window(target, postkick_provider, anchors)
+    assert any("total provider update at or after" in problem for problem in problems)
+
+    split_pair = {**frames, "offers": frames["offers"].copy()}
+    split_pair["offers"].loc[
+        split_pair["offers"]["market"].eq("totals")
+        & split_pair["offers"]["provider_key"].eq("a")
+        & split_pair["offers"]["selection"].eq("under"),
+        "provider_last_update",
+    ] = live_at
+    problems, _ = kickoff.validate_completed_window(target, split_pair, anchors)
+    assert any("total provider update at or after" in problem for problem in problems)
+
+    leaked = anchors.assign(closing_snapshot_id="live", closing_fetched_at=live_at)
+    problems, _ = kickoff.validate_completed_window(target, frames, leaked)
+    assert any("post-kickoff snapshot" in problem for problem in problems)
+    assert any("closing snapshot has 0 providers" in problem for problem in problems)
+
+    # One book holding a static number does not stale the window while two
+    # providers refreshed inside the limit; fewer fresh providers does.
+    static_book = {**frames, "offers": frames["offers"].copy()}
+    static_book["offers"].loc[
+        static_book["offers"]["provider_key"].eq("a"), "provider_last_update"
+    ] = starts_at - pd.Timedelta(minutes=10)
+    problems, _ = kickoff.validate_completed_window(target, static_book, anchors)
+    assert any("1 providers updated within 300s" in problem for problem in problems)
+    assert any("1 paired providers updated" in problem for problem in problems)
+    problems, _ = kickoff.validate_completed_window(
+        target, static_book, anchors, min_providers=1
+    )
+    assert problems == []
+
+    # The provider's kickoff, not the frozen schedule, bounds the close: when
+    # commence_time moves later, a snapshot after the scheduled kickoff is
+    # still pregame, and totals close in the last poll that requested them.
+    moved = starts_at + pd.Timedelta(minutes=5)
+    late_close = starts_at + pd.Timedelta(minutes=3)
+    live_late = moved + pd.Timedelta(seconds=20)
+    drifted_events = pd.DataFrame(
+        {
+            "game_id": [101, 101, 101],
+            "fetched_at": [pregame, late_close, live_late],
+            "commence_time": [starts_at, moved, moved],
+            "phase": ["pregame", "pregame", "live"],
+        }
+    )
+    late_spreads = frames["offers"][frames["offers"]["snapshot_id"].eq("close")]
+    late_spreads = late_spreads[late_spreads["market"].eq("spreads")].assign(
+        snapshot_id="late",
+        fetched_at=late_close,
+        provider_last_update=late_close - pd.Timedelta(seconds=30),
+    )
+    early_totals = frames["offers"][frames["offers"]["market"].eq("totals")].assign(
+        provider_last_update=moved - pd.Timedelta(seconds=240)
+    )
+    drifted = {
+        "events": drifted_events,
+        "offers": pd.concat([late_spreads, early_totals], ignore_index=True),
+    }
+    late_anchor = anchors.assign(
+        closing_snapshot_id="late",
+        closing_fetched_at=late_close,
+        latest_provider_update=late_close - pd.Timedelta(seconds=30),
+    )
+    problems, details = kickoff.validate_completed_window(target, drifted, late_anchor)
+    assert problems == []
+    assert any("+300s from the frozen schedule" in detail for detail in details)
+    assert any(
+        "paired-total providers (2 fresh) in close" in detail for detail in details
+    )
+    stale_totals = {
+        **drifted,
+        "offers": drifted["offers"].assign(
+            provider_last_update=lambda offers: offers["provider_last_update"].where(
+                offers["market"].ne("totals"), moved - pd.Timedelta(seconds=400)
+            )
+        ),
+    }
+    problems, _ = kickoff.validate_completed_window(target, stale_totals, late_anchor)
+    assert any("0 paired providers updated" in problem for problem in problems)
+
+    # Fresh-runner acceptance: use one frozen weekly artifact even with a
+    # missing/stale opening forecast. Its schedule also drives market anchors.
+    import json
+
+    from backend.odds.forecast import load_weekly_capture_forecast
+    from backend.serving import market
+
+    created = starts_at - pd.Timedelta(days=3)
+    metadata = {"season": [2026], "week": [2], "as_of": [created.isoformat()]}
+    directory = tmp_path / "weekly"
+    directory.mkdir()
+    forecast = {
+        "source_manifest": pd.DataFrame(
+            {
+                "season": [2026],
+                "week": [2],
+                "forecast_created_at": [created],
+                "projection_games": [1],
+            }
+        ),
+        "ratings": pd.DataFrame({**metadata, "team_id": [1]}),
+        "unit_ratings": pd.DataFrame({**metadata, "team_id": [1]}),
+        "projections": pd.DataFrame(
+            {
+                **metadata,
+                "game_id": [101],
+                "start_date": [starts_at],
+                "home_margin": [4.0],
+                "margin_sd": [18.0],
+            }
+        ),
+        "market_comparisons": pd.DataFrame({"game_id": [101]}),
+        "schedule_coverage": pd.DataFrame(
+            {
+                "game_id": [101],
+                "start_date": [starts_at],
+                "model_week": [2],
+                "home_team": ["TCU"],
+                "away_team": ["North Carolina"],
+            }
+        ),
+    }
+    for name, frame in forecast.items():
+        frame.to_parquet(directory / f"{name}.parquet", index=False)
+    monkeypatch.setattr(store, "PROCESSED_DIR", tmp_path / "processed")
+    monkeypatch.setattr(live, "RAW_DIR", tmp_path / "raw")
+    monkeypatch.setattr(
+        kickoff, "load_division_one_schedule", live.load_division_one_schedule
+    )
+    arguments = {"forecast_directory": str(directory), "max_forecast_age_hours": 240}
+    problems, _, _ = kickoff.check_forecast_readiness(
+        2026, 1, as_of=pregame, **arguments
+    )
+    assert problems == []
+    frozen = load_weekly_capture_forecast(directory, 2026)
+    assert frozen["anchors"]["game_id"].tolist() == [101]
+    assert frozen["anchors"]["home_margin"].tolist() == [4.0]
+    actual_target = kickoff.resolve_kickoff_target(
+        2026, frames, as_of=pregame, schedule=frozen["schedule_coverage"]
+    )
+    assert actual_target.game_ids == (101,)
+    runtime = store.PROCESSED_DIR / "serving" / "market_margin_sd.json"
+    runtime.parent.mkdir(parents=True)
+    runtime.write_text(
+        json.dumps(
+            {
+                "margin_sd": 15.0,
+                "method": "frozen development fit",
+                "development_seasons": list(market.DEVELOPMENT_SEASONS),
+            }
+        )
+    )
+    monkeypatch.setattr(live, "verify_live_snapshots", lambda season: ([], frames))
+    frames["offers"]["commence_time"] = starts_at
+    built = market.build_live_market_anchors(2026, schedule=frozen["schedule_coverage"])
+    assert built["model_week"].tolist() == [2]
+    assert built["closing_snapshot_id"].tolist() == ["close"]
+    problems, _ = kickoff.validate_completed_window(
+        actual_target, frames, built, schedule=frozen["schedule_coverage"]
+    )
+    assert problems == []
+    kickoff._write_market_anchors(2026, built)
+    assert store.read_processed("serving", "anchors_2026_00.parquet")[
+        "home_margin"
+    ].tolist() == [3.5]
+
+    # Missing, mixed, stale, and post-kickoff artifacts cannot silently fall
+    # back to canonical preseason files or stamp themselves with today's date.
+    problems, _, _ = kickoff.check_forecast_readiness(
+        2026, 1, as_of=created + pd.Timedelta(days=11), **arguments
+    )
+    assert any("weekly forecast age" in problem for problem in problems)
+    forecast["schedule_coverage"].assign(game_id=999).to_parquet(
+        directory / "schedule_coverage.parquet"
+    )
+    problems, _, _ = kickoff.check_forecast_readiness(
+        2026, 1, as_of=pregame, **arguments
+    )
+    assert any("different games" in problem for problem in problems)
+    forecast["schedule_coverage"].to_parquet(directory / "schedule_coverage.parquet")
+    forecast["ratings"].assign(as_of=created + pd.Timedelta(hours=1)).to_parquet(
+        directory / "ratings.parquet"
+    )
+    problems, _, _ = kickoff.check_forecast_readiness(
+        2026, 1, as_of=pregame, **arguments
+    )
+    assert any("different forecast run" in problem for problem in problems)
+    (directory / "ratings.parquet").unlink()
+    problems, _, _ = kickoff.check_forecast_readiness(
+        2026, 1, as_of=pregame, **arguments
+    )
+    assert any("weekly forecast is not ready" in problem for problem in problems)
+
+
+def test_flatten_offers_survives_parquet_nested_arrays(tmp_path):
+    # Odds snapshots are read back from parquet, which turns every nested
+    # list into a numpy array; truthiness checks on those raised as soon as
+    # a bookmaker carried more than one market (spreads + totals).
+    from backend.odds.markets import flatten_odds_api_offers
+
+    events = pd.DataFrame(
+        [
+            {
+                **_odds_event(
+                    "ev-1",
+                    "Alabama Crimson Tide",
+                    "Georgia Bulldogs",
+                    NOW.isoformat(),
+                    NOW.isoformat(),
+                ),
+                "execution_eligibility_verified": False,
+                "source_fetched_at": NOW.isoformat(),
+            }
+        ]
+    )
+    path = tmp_path / "odds_api.parquet"
+    events.to_parquet(path, index=False)
+    schedule = pd.DataFrame(
+        {
+            "game_id": [7],
+            "start_date": [NOW.isoformat()],
+            "home_team": ["Alabama"],
+            "away_team": ["Georgia"],
+        }
+    )
+    offers, coverage = flatten_odds_api_offers(pd.read_parquet(path), schedule)
+    assert coverage["matched"].all()
+    assert len(offers) == 4  # two spreads outcomes + over + under
+    assert set(offers["market"]) == {"spreads", "totals"}
+
+
+def test_odds_team_alias_matches_the_canonical_cfbd_game():
+    from backend.odds.markets import match_event
+
+    schedule = pd.DataFrame(
+        {
+            "game_id": [401856769],
+            "start_date": ["2026-09-05T00:00:00Z"],
+            "home_team": ["Kansas"],
+            "away_team": ["Long Island University"],
+        }
+    )
+
+    game_id, score = match_event(
+        "2026-09-05T00:00:00Z",
+        "Kansas Jayhawks",
+        "LIU Sharks",
+        schedule,
+    )
+
+    assert game_id == 401856769
+    assert score == 1.0
+
+    shared_prefixes = pd.DataFrame(
+        {
+            "game_id": [1, 2],
+            "start_date": ["2026-09-05T00:00:00Z"] * 2,
+            "home_team": ["Alabama", "Alabama State"],
+            "away_team": ["Miami", "Miami (OH)"],
+        }
+    )
+    assert match_event(
+        "2026-09-05T00:00:00Z",
+        "Alabama State Hornets",
+        "Miami (OH) RedHawks",
+        shared_prefixes,
+    ) == (2, 1.0)
+    # Equally plausible duplicated fixtures cannot select an arbitrary game.
+    # A missing fixture cannot fall back to the similarly named school.
+    assert (
+        match_event(
+            "2026-09-05T00:00:00Z",
+            "Alabama State Hornets",
+            "Miami (OH) RedHawks",
+            shared_prefixes.iloc[:1],
+        )[0]
+        is None
+    )
+    ambiguous = pd.concat([schedule, schedule.assign(game_id=2)], ignore_index=True)
+    assert (
+        match_event("2026-09-05T00:00:00Z", "Kansas Jayhawks", "LIU Sharks", ambiguous)[
+            0
+        ]
+        is None
+    )
+
+
+def test_espn_fallback_captures_pregame_lines_then_live_state_without_quota(
+    monkeypatch,
+):
+    from unittest.mock import Mock
+
+    from backend.odds import espn
+
+    kickoff_at = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+    kickoff_at += timedelta(minutes=10)
+    schedule = pd.DataFrame(
+        {
+            "game_id": [102],
+            "start_date": [kickoff_at.isoformat()],
+            "home_team": ["Montana"],
+            "away_team": ["Idaho"],
+        }
+    )
+
+    def quote(odds, line):
+        return {"close": {"odds": odds, "line": line}}
+
+    def serve(state, commence):
+        response = Mock(status_code=200)
+        response.json.return_value = {
+            "events": [
+                {
+                    "id": "401",
+                    "date": commence.strftime("%Y-%m-%dT%H:%MZ"),
+                    "status": {"type": {"state": state, "completed": False}},
+                    "competitions": [
+                        {
+                            "competitors": [
+                                {
+                                    "homeAway": "home",
+                                    "score": "7",
+                                    "team": {"displayName": "Montana Grizzlies"},
+                                },
+                                {
+                                    "homeAway": "away",
+                                    "score": "3",
+                                    "team": {"displayName": "Idaho Vandals"},
+                                },
+                            ],
+                            "odds": [
+                                {
+                                    "provider": {"id": "100", "name": "Draft Kings"},
+                                    "pointSpread": {
+                                        "home": quote("-110", "-3.5"),
+                                        "away": quote("EVEN", "+3.5"),
+                                    },
+                                    "total": {
+                                        "over": quote("-105", "o51.5"),
+                                        "under": quote("-115", "u51.5"),
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+        monkeypatch.setattr(espn.requests, "get", Mock(return_value=response))
+
+    monkeypatch.setattr(live, "write_live_snapshot", lambda season, snapshot: None)
+
+    def capture():
+        return live.capture_live_snapshot(
+            espn.EspnOddsClient(),
+            2026,
+            schedule,
+            lookback_hours=1,
+            lookahead_hours=2,
+            days_from=None,
+            min_quota=20,
+            required_game_ids=(102,),
+            markets=live.CLOSING_MARKETS,
+            metered=False,
+        )
+
+    serve("pre", kickoff_at)
+    pregame = capture()
+    assert set(pregame.offers["provider_key"]) == {"draftkings"}
+    assert set(pregame.offers["market"]) == {"spreads", "totals"}
+    assert pregame.offers["phase"].eq("pregame").all()
+    assert pregame.offers["staleness_seconds"].eq(0).all()
+    away_spread = pregame.offers[
+        pregame.offers["market"].eq("spreads") & pregame.offers["selection"].eq("away")
+    ].iloc[0]
+    assert (away_spread["point"], away_spread["price"]) == (3.5, 100)
+    assert pd.isna(pregame.poll.iloc[0]["odds_requests_remaining"])
+
+    # ESPN keeps a game upcoming, with its line posted, for minutes after the
+    # scheduled start. Until its state leaves "pre" that line is still pregame.
+    serve("pre", kickoff_at - timedelta(minutes=12))
+    delayed = capture()
+    assert delayed.events["phase"].tolist() == ["pregame"]
+    assert delayed.events["status_source"].tolist() == ["game_state"]
+    assert delayed.offers["phase"].eq("pregame").all()
+    assert set(delayed.offers["market"]) == {"spreads", "totals"}
+
+    # After kickoff ESPN shows the closing line; it must not be stored as live.
+    serve("in", kickoff_at - timedelta(minutes=11))
+    started = capture()
+    assert started.offers.empty
+    assert started.events["phase"].tolist() == ["live"]
+    assert started.events["home_score"].tolist() == [7.0]
+
+
+def test_unmetered_polling_requests_closing_markets_on_every_poll(monkeypatch):
+    # With a free source any poll can turn out to be the last pregame one for
+    # a game whose kickoff slips, so each poll carries the closing markets.
+    monkeypatch.setenv("ODDS_SOURCE", "espn")
+    requested = []
+
+    def capture(*args, markets, metered, **kwargs):
+        requested.append((markets, metered))
+        return _snapshot()
+
+    monkeypatch.setattr(live, "capture_live_snapshot", capture)
+    completed = live.run_live_polling(
+        2026,
+        _schedule(),
+        polls=2,
+        interval_seconds=0,
+        lookback_hours=1,
+        lookahead_hours=2,
+        days_from=None,
+        min_quota=20,
+        max_failures=1,
+        poll_markets=(live.LIVE_MARKETS, live.LIVE_MARKETS),
+        progress=lambda message: None,
+        sleep=lambda seconds: None,
+    )
+    assert completed == 2
+    assert requested == [(live.CLOSING_MARKETS, False)] * 2
+
+
+def test_kickoff_window_follows_reported_game_state_past_the_scheduled_start():
+    # Replay of 2026-10-14: ESPN still listed FIU at Jacksonville State as
+    # upcoming, with its line posted, almost three minutes after the scheduled
+    # start. The closing line is the last one read before ESPN said it began.
+    scheduled = pd.Timestamp("2026-10-14T00:00:00Z")
+    early = scheduled - pd.Timedelta(minutes=2)
+    closing = scheduled + pd.Timedelta(minutes=2)
+    live_at = scheduled + pd.Timedelta(minutes=4)
+    target = kickoff.KickoffTarget(
+        game_ids=(101,),
+        first_kickoff=scheduled,
+        last_kickoff=scheduled,
+        labels=("Florida International at Jacksonville State (101)",),
+    )
+    schedule = pd.DataFrame(
+        {
+            "game_id": [101],
+            "start_date": [scheduled],
+            "home_team": ["Jacksonville State"],
+            "away_team": ["Florida International"],
+        }
+    )
+    events = pd.DataFrame(
+        {
+            "game_id": [101, 101, 101],
+            "fetched_at": [early, closing, live_at],
+            "phase": ["pregame", "pregame", "live"],
+            "commence_time": [scheduled.isoformat()] * 3,
+            "status_source": ["game_state"] * 3,
+        }
+    )
+    offers = pd.DataFrame(
+        {
+            "game_id": [101] * 3,
+            "snapshot_id": ["close"] * 3,
+            "fetched_at": [closing] * 3,
+            "phase": ["pregame"] * 3,
+            "market": ["spreads", "totals", "totals"],
+            "selection": ["home", "over", "under"],
+            "provider_key": ["draftkings"] * 3,
+            "provider_last_update": [closing] * 3,
+            "point": [-3.0, 44.5, 44.5],
+            "price": [-110, -110, -110],
+        }
+    )
+    anchors = pd.DataFrame(
+        {
+            "game_id": [101],
+            "season": [2026],
+            "closing_snapshot_id": ["close"],
+            "closing_fetched_at": [closing],
+            "latest_provider_update": [closing],
+        }
+    )
+    frames = {"events": events, "offers": offers}
+
+    problems, details = kickoff.validate_completed_window(
+        target, frames, anchors, min_providers=1, schedule=schedule
+    )
+    assert problems == []
+    assert "+240s from the frozen schedule" in details[0]
+
+    # A feed that only reports a commence time gives no such proof, so a
+    # snapshot read after that time is still rejected.
+    timed = {**frames, "events": events.assign(status_source="scores")}
+    problems, _ = kickoff.validate_completed_window(
+        target, timed, anchors, min_providers=1, schedule=schedule
+    )
+    assert any("post-kickoff snapshot" in problem for problem in problems)

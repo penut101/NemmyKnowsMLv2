@@ -1,0 +1,360 @@
+"""Market closing lines flattened into outcome-free serving anchors.
+
+The live model anchors on the closing spread because a serve starts after
+kickoff, when that line is fixed, and because on the 2021-2025 backtest the
+model margin (MAE 13.40) trails the closing line (12.14) in every bucket.
+One game's closing spread is the provider median and ``home_margin`` is its
+negation. The market prices no margin SD, so ``margin_sd`` is one frozen
+constant fitted on development-season residuals; each row records the method
+so the constant cannot be mistaken for a per-game estimate.
+"""
+
+import json
+from math import isfinite
+
+import numpy as np
+import pandas as pd
+
+from backend.etl import store
+from backend.model.calibration import DEVELOPMENT_SEASONS
+
+# Market anchors cover a whole season, not one projection week; the artifact
+# is stored under week 00 so the untouched serving loader and serve-game
+# (--anchor-source serving --week 0) find it by the ordinary naming rule.
+MARKET_ANCHOR_WEEK = 0
+
+CROSS_CHECK_ARTIFACT = ("backtest", "predictions_filtered.parquet")
+
+MARKET_ANCHOR_COLUMNS = [
+    "game_id",
+    "season",
+    "model_week",
+    "home_margin",
+    "margin_sd",
+    "closing_spread",
+    "n_spread_offers",
+    "margin_sd_method",
+    "market_anchor_source",
+]
+
+LIVE_MARKET_PROVENANCE_COLUMNS = [
+    "closing_snapshot_id",
+    "closing_fetched_at",
+    "latest_provider_update",
+]
+
+
+def _median_offer_field(
+    lines: pd.DataFrame, field: str, value_column: str, count_column: str
+) -> pd.DataFrame:
+    records = []
+    for game_id, offers in zip(lines["game_id"], lines["lines"]):
+        for offer in offers:
+            value = offer.get(field)
+            if value is not None and isfinite(float(value)):
+                records.append((game_id, float(value)))
+    if not records:
+        raise ValueError(f"lines carry no priced {field} offers to flatten")
+    flat = pd.DataFrame(records, columns=["game_id", field])
+    grouped = flat.groupby("game_id")[field].agg(
+        **{value_column: "median", count_column: "size"}
+    )
+    return grouped.reset_index()
+
+
+def flatten_closing_lines(lines: pd.DataFrame) -> pd.DataFrame:
+    """Resolve one closing spread per game from the nested provider offers.
+
+    The closing spread is the median across every priced provider spread,
+    which is exactly the resolution the backtest market comparison used.
+    """
+    return _median_offer_field(lines, "spread", "closing_spread", "n_spread_offers")
+
+
+def flatten_closing_totals(lines: pd.DataFrame) -> pd.DataFrame:
+    """Resolve one closing total per game, the median provider over/under."""
+    return _median_offer_field(lines, "overUnder", "closing_total", "n_total_offers")
+
+
+def flatten_closing_moneylines(lines: pd.DataFrame) -> pd.DataFrame:
+    """Resolve one closing moneyline per side and game, the provider median."""
+    home = _median_offer_field(
+        lines, "homeMoneyline", "closing_home_moneyline", "n_home_moneyline_offers"
+    )
+    away = _median_offer_field(
+        lines, "awayMoneyline", "closing_away_moneyline", "n_away_moneyline_offers"
+    )
+    return home.merge(away, on="game_id", how="outer")
+
+
+def flatten_live_closing_lines(
+    offers: pd.DataFrame, events: pd.DataFrame | None = None
+) -> pd.DataFrame:
+    """Resolve one pregame Odds API spread per game without live leakage.
+
+    Each game uses the latest stored snapshot that the capture classified as
+    pregame. The closing spread is the median home-team spread across the
+    providers in that snapshot. Quotes first observed after kickoff are never
+    eligible, even if no pregame quote was captured for the game. A pregame
+    quote read after its commence time is eligible only when ``events`` shows
+    the feed reported the game's own state in that snapshot.
+    """
+    required = {
+        "game_id",
+        "snapshot_id",
+        "fetched_at",
+        "commence_time",
+        "phase",
+        "provider_key",
+        "provider_last_update",
+        "market",
+        "selection",
+        "point",
+    }
+    missing = sorted(required - set(offers.columns))
+    if missing:
+        raise ValueError("live odds offers are missing columns: " + ", ".join(missing))
+
+    spreads = offers[
+        offers["market"].eq("spreads")
+        & offers["selection"].eq("home")
+        & offers["phase"].eq("pregame")
+    ].copy()
+    spreads["point"] = pd.to_numeric(spreads["point"], errors="coerce")
+    spreads["fetched_at"] = pd.to_datetime(
+        spreads["fetched_at"], utc=True, errors="coerce"
+    )
+    spreads["commence_time"] = pd.to_datetime(
+        spreads["commence_time"], utc=True, errors="coerce"
+    )
+    spreads["provider_last_update"] = pd.to_datetime(
+        spreads["provider_last_update"], utc=True, errors="coerce"
+    )
+    spreads = spreads.dropna(
+        subset=[
+            "game_id",
+            "snapshot_id",
+            "fetched_at",
+            "commence_time",
+            "provider_key",
+            "provider_last_update",
+            "point",
+        ]
+    )
+    finite = np.isfinite(spreads["point"].to_numpy(float))
+    before_commence = spreads["fetched_at"].le(spreads["commence_time"])
+    if events is not None and "status_source" in events:
+        reported = events[events["status_source"].eq("game_state")]
+        before_commence |= pd.MultiIndex.from_frame(
+            spreads[["snapshot_id", "game_id"]]
+        ).isin(pd.MultiIndex.from_frame(reported[["snapshot_id", "game_id"]]))
+    spreads = spreads[finite & before_commence]
+    if spreads.empty:
+        raise ValueError("live odds captures carry no eligible pregame home spreads")
+
+    # A provider should contribute at most one home spread to the consensus.
+    # Keep its most recently updated quote if a payload contains duplicates.
+    spreads = spreads.sort_values("provider_last_update", kind="stable")
+    spreads = spreads.drop_duplicates(
+        ["game_id", "snapshot_id", "provider_key"], keep="last"
+    )
+    snapshots = (
+        spreads.groupby(["game_id", "snapshot_id"], as_index=False)
+        .agg(closing_fetched_at=("fetched_at", "max"))
+        .sort_values(["game_id", "closing_fetched_at"], kind="stable")
+    )
+    latest = snapshots.drop_duplicates("game_id", keep="last")
+    selected = spreads.merge(
+        latest[["game_id", "snapshot_id"]],
+        on=["game_id", "snapshot_id"],
+        how="inner",
+        validate="many_to_one",
+    )
+    return (
+        selected.groupby(["game_id", "snapshot_id"], as_index=False)
+        .agg(
+            closing_spread=("point", "median"),
+            n_spread_offers=("provider_key", "nunique"),
+            closing_fetched_at=("fetched_at", "max"),
+            latest_provider_update=("provider_last_update", "max"),
+        )
+        .rename(columns={"snapshot_id": "closing_snapshot_id"})
+    )
+
+
+def _schedule_model_weeks(season: int) -> pd.DataFrame:
+    """Chronological model week per game from the schedule alone."""
+    schedule = store.read_games(season).rename(columns={"id": "game_id"})
+    schedule = schedule.dropna(subset=["week"])
+    regular = schedule["season_type"].eq("regular")
+    if not regular.any():
+        raise ValueError(f"season {season} schedule has no regular-season games")
+    max_regular_week = int(schedule.loc[regular, "week"].max())
+    model_week = np.where(
+        regular, schedule["week"], max_regular_week + schedule["week"]
+    )
+    return pd.DataFrame(
+        {"game_id": schedule["game_id"], "model_week": model_week.astype(int)}
+    )
+
+
+def fit_market_margin_sd(
+    seasons: tuple[int, ...] = DEVELOPMENT_SEASONS,
+) -> tuple[float, str]:
+    """Fit the frozen market ``margin_sd`` constant on development seasons.
+
+    The constant is the residual standard deviation of the final home margin
+    around ``-closing_spread`` pooled over the development seasons with
+    stored lines. Holdout sensitivity is flat near this value, so nothing
+    sharper than a constant is warranted yet.
+    """
+    residuals = []
+    fitted_seasons = []
+    for season in seasons:
+        try:
+            closing = flatten_closing_lines(store.read_lines(season))
+        except FileNotFoundError:
+            continue
+        schedule = store.read_games(season).rename(columns={"id": "game_id"})
+        completed = schedule[schedule["completed"].fillna(False)]
+        completed = completed[["game_id", "home_points", "away_points"]].dropna()
+        merged = completed.merge(closing, on="game_id", how="inner")
+        if merged.empty:
+            continue
+        residuals.append(
+            merged["home_points"] - merged["away_points"] + merged["closing_spread"]
+        )
+        fitted_seasons.append(season)
+    if not residuals:
+        raise ValueError(
+            "no development season has both stored lines and final scores; "
+            "cannot fit the market margin_sd constant"
+        )
+    pooled = pd.concat(residuals, ignore_index=True)
+    margin_sd = float(pooled.std(ddof=1))
+    method = (
+        "constant residual sd of final margin around -closing_spread, "
+        f"development seasons {min(fitted_seasons)}-{max(fitted_seasons)} "
+        f"({len(pooled)} games)"
+    )
+    return margin_sd, method
+
+
+def load_market_margin_sd() -> tuple[float, str]:
+    """Use the reviewed development fit on runners without historical raw data."""
+    path = store.PROCESSED_DIR / "serving" / "market_margin_sd.json"
+    if not path.exists():
+        return fit_market_margin_sd()
+    record = json.loads(path.read_text())
+    value = float(record["margin_sd"])
+    if (
+        not isfinite(value)
+        or value <= 0
+        or record["development_seasons"] != list(DEVELOPMENT_SEASONS)
+        or not record["method"]
+    ):
+        raise ValueError("invalid frozen market margin uncertainty artifact")
+    return value, str(record["method"])
+
+
+def _build_market_anchors(
+    closing: pd.DataFrame,
+    season: int,
+    source: str,
+    schedule: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    weeks = (
+        _schedule_model_weeks(season)
+        if schedule is None
+        else schedule[["game_id", "model_week"]]
+    )
+    anchors = closing.merge(weeks, on="game_id", how="inner", validate="one_to_one")
+    if anchors.empty:
+        raise ValueError(
+            f"season {season}: no lined game appears in the stored schedule"
+        )
+    margin_sd, method = load_market_margin_sd()
+    anchors["season"] = season
+    anchors["home_margin"] = -anchors["closing_spread"]
+    anchors["margin_sd"] = margin_sd
+    anchors["margin_sd_method"] = method
+    anchors["market_anchor_source"] = source
+    columns = MARKET_ANCHOR_COLUMNS + [
+        column for column in LIVE_MARKET_PROVENANCE_COLUMNS if column in anchors.columns
+    ]
+    return (
+        anchors[columns]
+        .sort_values(["model_week", "game_id"], kind="stable")
+        .reset_index(drop=True)
+    )
+
+
+def build_market_anchors(season: int) -> pd.DataFrame:
+    """Build market anchors from CFBD's nested provider line payloads."""
+    closing = flatten_closing_lines(store.read_lines(season))
+    return _build_market_anchors(closing, season, "cfbd_lines")
+
+
+def build_live_market_anchors(
+    season: int, *, schedule: pd.DataFrame | None = None
+) -> pd.DataFrame:
+    """Build market anchors from append-only pregame Odds API captures."""
+    from backend.odds.live import verify_live_snapshots
+
+    problems, frames = verify_live_snapshots(season)
+    if problems:
+        raise ValueError("invalid live odds captures: " + "; ".join(problems))
+    closing = flatten_live_closing_lines(frames["offers"], frames["events"])
+    return _build_market_anchors(closing, season, "odds_api_live_capture", schedule)
+
+
+def cross_check_closing_spreads(
+    anchors: pd.DataFrame, season: int
+) -> tuple[int, list[str]]:
+    """Compare flattened closing spreads with the resolved backtest column.
+
+    ``backtest/predictions_filtered.parquet`` carries the closing spread each
+    backtest game was compared against; every one of them must reproduce
+    exactly from the raw lines. Seasons absent from the backtest (a live
+    season) have nothing to check and pass with zero comparisons.
+    """
+    location = "/".join(CROSS_CHECK_ARTIFACT)
+    try:
+        reference = store.read_processed(
+            *CROSS_CHECK_ARTIFACT, columns=["game_id", "season", "closing_spread"]
+        )
+    except FileNotFoundError:
+        return 0, []
+    reference = reference[
+        reference["season"].eq(season) & reference["closing_spread"].notna()
+    ]
+    if reference.empty:
+        return 0, []
+    merged = reference.merge(
+        anchors[["game_id", "closing_spread"]].rename(
+            columns={"closing_spread": "flattened_spread"}
+        ),
+        on="game_id",
+        how="left",
+    )
+    problems = []
+    missing = merged["flattened_spread"].isna()
+    if missing.any():
+        problems.append(
+            f"{location}: {int(missing.sum())} of {len(merged)} backtest "
+            f"closing spreads for {season} have no flattened market anchor"
+        )
+    mismatched = merged[
+        ~missing & merged["flattened_spread"].ne(merged["closing_spread"])
+    ]
+    if not mismatched.empty:
+        examples = ", ".join(
+            f"game {int(row.game_id)} flattened {row.flattened_spread} "
+            f"vs backtest {row.closing_spread}"
+            for row in mismatched.head(3).itertuples()
+        )
+        problems.append(
+            f"{location}: {len(mismatched)} flattened closing spreads "
+            f"disagree with the backtest resolution ({examples})"
+        )
+    return len(merged), problems

@@ -1,0 +1,1097 @@
+"""Publish serving tables to the cfb schema of the momentum Supabase project.
+
+Supabase is the only interface between this model and the website; the
+tables written here are that API surface:
+
+- teams                 team identity dimension (logos, colors), full refresh
+- team_ratings          one row per team per published (season, week)
+- team_unit_ratings     descriptive opponent-adjusted unit companions
+- game_projections      current forecast, one row per game
+- market_comparisons    best priced offer vs model, one row per game
+- backtest_predictions  frozen walk-forward history, full refresh
+- graded_games          frozen live-season grading record, one row per game
+- performance_metrics   live-season aggregates per source and segment
+
+Writes are DELETE plus append (TRUNCATE for full refreshes) so policies and
+indexes survive; ``to_sql(if_exists="replace")`` would drop them.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+
+import pandas as pd
+from sqlalchemy import text
+
+from backend.config import PROCESSED_DIR, RAW_DIR
+from backend.db import CFB_SCHEMA
+from backend.grading import (
+    GRADED_GAME_COLUMNS,
+    PERFORMANCE_METRIC_COLUMNS,
+    read_grading_artifacts,
+)
+
+log = logging.getLogger(__name__)
+
+# Identity only. Conference and classification are deliberately absent: every
+# consumer already loads team_ratings, which carries both.
+TEAMS_COLUMNS = [
+    "team_id",
+    "team",
+    "color",
+    "alternate_color",
+    "logo_light",
+    "logo_dark",
+]
+
+TEAM_RATINGS_COLUMNS = [
+    "season",
+    "week",
+    "as_of",
+    "model_version",
+    "team_id",
+    "team",
+    "conference",
+    "classification",
+    "offense_points",
+    "defense_points",
+    "power_rating",
+    "scoring_environment",
+    "expected_possessions",
+    "power_rating_sd",
+    "missing_input_count",
+    "market_rating",
+    "market_rating_sd",
+    "market_rating_games",
+    "forecast_alignment_points",
+]
+
+TEAM_UNIT_RATINGS_COLUMNS = [
+    "season",
+    "week",
+    "as_of",
+    "model_version",
+    "source_season",
+    "team_id",
+    "team",
+    "classification",
+    "unit_history_missing",
+    "rush_offense",
+    "pass_offense",
+    "rush_defense",
+    "pass_defense",
+    "pass_block",
+    "run_block",
+]
+
+GAME_PROJECTIONS_COLUMNS = [
+    "game_id",
+    "season",
+    "week",
+    "as_of",
+    "model_version",
+    "start_date",
+    "home_team_id",
+    "home_team",
+    "away_team_id",
+    "away_team",
+    "neutral_site",
+    "home_field_points",
+    "expected_home_points",
+    "expected_away_points",
+    "home_margin",
+    "home_spread",
+    "model_total",
+    "margin_sd",
+    "total_sd",
+    "margin_total_correlation",
+    "distribution",
+    "degrees_of_freedom",
+    "home_classification",
+    "away_classification",
+    "home_missing_input_count",
+    "away_missing_input_count",
+    "conference_game",
+    "home_qb_out",
+    "away_qb_out",
+    "qb_availability_points",
+]
+
+GAME_PROJECTIONS_OPTIONAL_COLUMNS = [
+    "pure_home_margin",
+    "pure_home_spread",
+    "market_home_spread",
+    "market_weight",
+    "market_informed_home_margin",
+    "market_informed_home_spread",
+    "market_history_home_margin",
+    "market_history_weight",
+    "market_informed_total",
+    "market_total_weight",
+    "market_informed_home_points",
+    "market_informed_away_points",
+]
+
+# The newest migration that replaces the recommendations eligibility check.
+RECOMMENDATION_ELIGIBILITY_CONSTRAINT = "recommendation_eligibility_v11"
+RECOMMENDATION_ELIGIBILITY_MIGRATION = (
+    "sql/20261012190441_moneyline_pricing_context.sql"
+)
+
+MARKET_COMPARISONS_COLUMNS = [
+    "game_id",
+    "start_date",
+    "home_team",
+    "away_team",
+    "model_home_spread",
+    "model_total",
+    "margin_sd",
+    "total_sd",
+    "model_as_of",
+    "market_available",
+    "priced_offer_available",
+    "executable_offer_available",
+    "review_status",
+    "recommendation_status",
+    "best_offer_market",
+    "best_offer_selection",
+    "best_offer_point",
+    "best_offer_price",
+    "best_offer_provider",
+    "best_offer_provider_key",
+    "best_offer_provider_last_update",
+    "best_offer_event_link",
+    "best_offer_market_link",
+    "best_offer_bet_link",
+    "best_offer_edge_points",
+    "best_offer_edge_standardized",
+    "best_offer_model_cover_probability",
+    "best_offer_model_fair_price",
+    "best_offer_expected_value_per_unit",
+]
+
+BACKTEST_PREDICTIONS_COLUMNS = [
+    "game_id",
+    "season",
+    "week",
+    "week_index",
+    "season_type",
+    "home_team",
+    "away_team",
+    "neutral_site",
+    "home_points",
+    "away_points",
+    "margin",
+    "closing_spread",
+    "model_margin",
+    "actual_margin",
+]
+
+# Serving anchor artifacts are keyed by artifact week: anchor_week 0 is the
+# frozen market closing-spread capture, anchor_week >= 1 is a projection
+# artifact for that week. The market columns are NULL on projection rows.
+SERVING_ANCHORS_COLUMNS = [
+    "season",
+    "anchor_week",
+    "game_id",
+    "model_week",
+    "home_margin",
+    "margin_sd",
+    "closing_spread",
+    "n_spread_offers",
+    "margin_sd_method",
+    "market_anchor_source",
+    "closing_snapshot_id",
+    "closing_fetched_at",
+    "latest_provider_update",
+]
+
+_SERVING_ANCHOR_CONTRACT = ["game_id", "model_week", "home_margin", "margin_sd"]
+
+_TIMESTAMP_COLUMNS = {
+    "as_of",
+    "start_date",
+    "model_as_of",
+    "best_offer_provider_last_update",
+    "closing_fetched_at",
+    "latest_provider_update",
+    "forecast_as_of",
+    "source_ingested_at",
+    "graded_at",
+    "computed_at",
+    "decision_at",
+    "market_fetched_at",
+    "provider_last_update",
+    "provider_start_date",
+}
+
+
+def _artifact_dir(source: str, kind: str):
+    if source == "preseason":
+        return PROCESSED_DIR / "preseason" / kind
+    return PROCESSED_DIR / kind
+
+
+def _serving_frame(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    """Project onto the serving columns and convert values for Postgres.
+
+    Timestamps become tz-aware datetimes and every NaN becomes None:
+    Postgres double precision would accept a literal NaN, but PostgREST
+    cannot serialize it to JSON, so NULL is the only safe missing value.
+    """
+    out = df.reindex(columns=columns)
+    for column in columns:
+        if column in _TIMESTAMP_COLUMNS:
+            out[column] = pd.to_datetime(out[column], utc=True, format="ISO8601")
+        out[column] = out[column].astype(object).where(out[column].notna(), None)
+    return out
+
+
+_HEX_COLOR = re.compile(r"^#[0-9a-f]{6}$")
+
+
+def _hex_color(value) -> str | None:
+    """CFBD stores a missing color as the literal string '#null', which would
+    reach the browser as an invalid CSS color; anything not a six-digit hex
+    becomes NULL so the site can fall back deliberately."""
+    if not isinstance(value, str):
+        return None
+    color = value.strip().lower()
+    return color if _HEX_COLOR.match(color) else None
+
+
+# The site renders logos at about 20px; the 128px CFBD variant keeps a full
+# week of schedule images under 1MB instead of ~9MB at 500px.
+LOGO_TARGET_WIDTH = 128
+
+
+def _logo(logos, dark: bool) -> str | None:
+    """CFBD ships each logo at eight widths in a light and a dark variant
+    (.../logos/128/333.png, .../logos-dark/128/333.png). Pick the narrowest
+    variant at or above the target width, or the widest available below it."""
+    marker = "/logos-dark/" if dark else "/logos/"
+    candidates = []
+    for url in logos if logos is not None else ():
+        if not isinstance(url, str) or marker not in url:
+            continue
+        segment = url.rsplit(marker, 1)[1].split("/", 1)[0]
+        if segment.isdigit():
+            candidates.append((int(segment), url))
+    if not candidates:
+        return None
+    at_or_above = [c for c in candidates if c[0] >= LOGO_TARGET_WIDTH]
+    return min(at_or_above)[1] if at_or_above else max(candidates)[1]
+
+
+def teams_path(season: int):
+    return RAW_DIR / "preseason" / str(season) / "teams.parquet"
+
+
+def load_teams(season: int) -> pd.DataFrame:
+    """Team identity from the season's preseason /teams snapshot.
+
+    Every division is kept, not just D1: game_projections can name a
+    non-D1 opponent, and the site resolves logos by team_id alone.
+    """
+    raw = pd.read_parquet(teams_path(season))
+    out = pd.DataFrame(
+        {
+            "team_id": pd.to_numeric(raw["id"], errors="coerce").astype("Int64"),
+            "team": raw["school"],
+            "color": raw["color"].map(_hex_color),
+            "alternate_color": raw["alternate_color"].map(_hex_color),
+            "logo_light": raw["logos"].map(lambda v: _logo(v, dark=False)),
+            "logo_dark": raw["logos"].map(lambda v: _logo(v, dark=True)),
+        }
+    )
+    out = out.dropna(subset=["team_id"]).drop_duplicates(subset=["team_id"])
+    return _serving_frame(out, TEAMS_COLUMNS)
+
+
+def load_team_ratings(
+    source: str, season: int, week: int, run_directory=None
+) -> pd.DataFrame:
+    path = (
+        run_directory / "ratings.parquet"
+        if run_directory
+        else _artifact_dir(source, "ratings") / f"{season}_{week:02d}.parquet"
+    )
+    # The preseason run keeps its market-free prior under ``ratings`` and
+    # writes the ratings to publish beside it.
+    published = (
+        run_directory / "published_ratings.parquet"
+        if run_directory
+        else _artifact_dir(source, "published_ratings") / path.name
+    )
+    ratings = pd.read_parquet(published if published.exists() else path)
+    market_path = (
+        run_directory / "market_ratings.parquet"
+        if run_directory
+        else _artifact_dir(source, "market_ratings") / path.name
+    )
+    if market_path.exists():
+        market = pd.read_parquet(market_path)
+        if not market.empty:
+            keys = ["team_id", "season", "week", "as_of"]
+            columns = [*keys, "market_rating", "market_rating_sd", "games_with_lines"]
+            market = market[columns].rename(
+                columns={"games_with_lines": "market_rating_games"}
+            )
+            ratings["as_of"] = pd.to_datetime(ratings["as_of"], utc=True)
+            market["as_of"] = pd.to_datetime(market["as_of"], utc=True)
+            ratings = ratings.merge(
+                market, on=keys, how="outer", validate="one_to_one", indicator=True
+            )
+            if ratings["_merge"].eq("right_only").any():
+                raise ValueError("Market ratings must match the model rating snapshot")
+    return _serving_frame(ratings, TEAM_RATINGS_COLUMNS)
+
+
+def load_team_unit_ratings(
+    source: str, season: int, week: int, run_directory=None
+) -> pd.DataFrame:
+    path = (
+        run_directory / "unit_ratings.parquet"
+        if run_directory
+        else _artifact_dir(source, "unit_ratings") / f"{season}_{week:02d}.parquet"
+    )
+    return _serving_frame(pd.read_parquet(path), TEAM_UNIT_RATINGS_COLUMNS)
+
+
+def load_game_projections(
+    source: str, season: int, week: int, run_directory=None
+) -> pd.DataFrame:
+    path = (
+        run_directory / "projections.parquet"
+        if run_directory
+        else _artifact_dir(source, "projections") / f"{season}_{week:02d}.parquet"
+    )
+    projections = pd.read_parquet(path)
+    # Use the schedule captured by the same completed forecast run.
+    schedule_path = (
+        run_directory / "forecast_schedule.parquet"
+        if run_directory
+        else RAW_DIR / "preseason" / str(season) / "games.parquet"
+        if source == "preseason"
+        else RAW_DIR / "games" / f"{season}.parquet"
+    )
+    if schedule_path.exists():
+        schedule = pd.read_parquet(schedule_path)
+        if "conference_game" in schedule:
+            key = "game_id" if "game_id" in schedule else "id"
+            projections["conference_game"] = projections["game_id"].map(
+                schedule.set_index(key)["conference_game"]
+            )
+    return _serving_frame(
+        projections,
+        [*GAME_PROJECTIONS_COLUMNS, *GAME_PROJECTIONS_OPTIONAL_COLUMNS],
+    )
+
+
+def _table_exists(conn, table: str) -> bool:
+    return (
+        conn.execute(
+            text("SELECT to_regclass(:table_name)"),
+            {"table_name": f"{CFB_SCHEMA}.{table}"},
+        ).scalar()
+        is not None
+    )
+
+
+def _table_columns(conn, table: str) -> set[str]:
+    return {
+        str(row.column_name)
+        for row in conn.execute(
+            text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = :table_schema AND table_name = :table_name"
+            ),
+            {"table_schema": CFB_SCHEMA, "table_name": table},
+        )
+    }
+
+
+def load_market_comparisons(
+    source: str, season: int, week: int, run_directory=None
+) -> pd.DataFrame:
+    directory = _artifact_dir(source, "market_comparisons")
+    path = (
+        run_directory / "market_comparisons.parquet"
+        if run_directory
+        else directory / f"{season}_{week:02d}.parquet"
+    )
+    return _serving_frame(pd.read_parquet(path), MARKET_COMPARISONS_COLUMNS)
+
+
+def load_backtest_predictions() -> pd.DataFrame:
+    path = PROCESSED_DIR / "backtest" / "predictions_filtered.parquet"
+    return _serving_frame(pd.read_parquet(path), BACKTEST_PREDICTIONS_COLUMNS)
+
+
+def publish_serving_anchors(season: int, anchor_week: int) -> int:
+    """Publish one stored serving anchor artifact to cfb.serving_anchors.
+
+    A CI capture runner is ephemeral, so the anchor artifact must reach the
+    database to survive the job; fetch_serving_anchors hydrates it back into
+    any local store.
+    """
+    from backend.db import engine
+    from backend.serving.anchors import (
+        load_serving_anchors,
+        serving_anchor_artifact,
+    )
+
+    # The loader round-trip is the artifact's validity proof; a frame that
+    # fails it must never reach serving consumers.
+    load_serving_anchors("serving", season=season, week=anchor_week)
+    parts = serving_anchor_artifact(season, anchor_week)
+    frame = pd.read_parquet(PROCESSED_DIR.joinpath(*parts))
+    frame = frame.assign(season=season, anchor_week=anchor_week)
+    rows = _serving_frame(frame, SERVING_ANCHORS_COLUMNS)
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                f"DELETE FROM {CFB_SCHEMA}.serving_anchors "
+                "WHERE season = :s AND anchor_week = :w"
+            ),
+            {"s": season, "w": anchor_week},
+        )
+        rows.to_sql(
+            "serving_anchors",
+            con=conn,
+            schema=CFB_SCHEMA,
+            if_exists="append",
+            index=False,
+        )
+    with engine.connect() as conn:
+        return int(
+            conn.execute(
+                text(
+                    f"SELECT count(*) FROM {CFB_SCHEMA}.serving_anchors "
+                    "WHERE season = :s AND anchor_week = :w"
+                ),
+                {"s": season, "w": anchor_week},
+            ).scalar()
+        )
+
+
+def fetch_serving_anchors(season: int, anchor_week: int) -> int:
+    """Hydrate the local serving anchor artifact from cfb.serving_anchors."""
+    from backend.db import engine
+    from backend.etl import store
+    from backend.serving.anchors import (
+        load_serving_anchors,
+        serving_anchor_artifact,
+    )
+
+    with engine.connect() as conn:
+        frame = pd.read_sql_query(
+            text(
+                "SELECT "
+                + ", ".join(c for c in SERVING_ANCHORS_COLUMNS if c != "anchor_week")
+                + f" FROM {CFB_SCHEMA}.serving_anchors "
+                "WHERE season = :s AND anchor_week = :w ORDER BY game_id"
+            ),
+            conn,
+            params={"s": season, "w": anchor_week},
+        )
+    if frame.empty:
+        raise ValueError(
+            f"cfb.serving_anchors holds no rows for season {season} "
+            f"anchor week {anchor_week}"
+        )
+    # Projection artifacts carry no market columns; drop the all-NULL ones so
+    # the hydrated parquet matches the shape the builders write locally.
+    optional = [c for c in frame.columns if c not in _SERVING_ANCHOR_CONTRACT]
+    frame = frame.drop(columns=[c for c in optional if frame[c].isna().all()])
+    store.write_processed(frame, *serving_anchor_artifact(season, anchor_week))
+    stored = load_serving_anchors("serving", season=season, week=anchor_week)
+    return len(stored)
+
+
+def weekly_forecast_is_published(
+    season: int,
+    week: int,
+    model_version: str,
+) -> bool:
+    """Require current projections and decisions for the remaining games.
+
+    Output calibration can advance the forecast version without changing the
+    underlying team ratings, so the version gate belongs to projections.
+    """
+    from backend.db import engine
+    from backend.recommendations import POLICY_VERSION
+
+    with engine.connect() as conn:
+        if not all(
+            _table_exists(conn, table) for table in ("team_ratings", "game_projections")
+        ):
+            return False
+        return bool(
+            conn.execute(
+                text(
+                    "SELECT EXISTS ("
+                    f"SELECT 1 FROM {CFB_SCHEMA}.team_ratings "
+                    "WHERE season = :season AND week = :week) AND EXISTS ("
+                    f"SELECT 1 FROM {CFB_SCHEMA}.game_projections "
+                    "WHERE season = :season AND week = :week "
+                    "AND model_version = :model_version) AND NOT EXISTS ("
+                    f"SELECT 1 FROM {CFB_SCHEMA}.game_projections p "
+                    "CROSS JOIN (VALUES ('h2h'), ('spreads'), ('totals')) m(market) "
+                    "WHERE p.season = :season AND p.week = :week "
+                    "AND p.start_date > clock_timestamp() AND ("
+                    "p.model_version IS DISTINCT FROM :model_version OR NOT EXISTS ("
+                    f"SELECT 1 FROM {CFB_SCHEMA}.recommendations r "
+                    "WHERE r.game_id = p.game_id AND r.market = m.market "
+                    "AND (r.status = 'recommended' OR r.policy_version = :policy))))"
+                ),
+                {
+                    "season": season,
+                    "week": week,
+                    "model_version": model_version,
+                    "policy": POLICY_VERSION,
+                },
+            ).scalar()
+        )
+
+
+def publish(
+    season: int,
+    week: int,
+    source: str = "preseason",
+    include_backtest: bool = True,
+) -> dict[str, int]:
+    """Publish the serving tables for one (season, week) in one transaction."""
+    from backend.db import engine
+
+    # Team identity comes from the preseason /teams snapshot, which an
+    # in-season fit publish does not produce; skip it rather than fail.
+    teams = load_teams(season) if teams_path(season).exists() else None
+    from backend.etl.store import completed_forecast_run
+
+    run_directory = completed_forecast_run(
+        "preseason" if source == "preseason" else "weekly", season, week
+    )
+    ratings = load_team_ratings(source, season, week, run_directory)
+    try:
+        unit_ratings = load_team_unit_ratings(source, season, week, run_directory)
+    except FileNotFoundError:
+        unit_ratings = None
+    projections = load_game_projections(source, season, week, run_directory)
+    market = load_market_comparisons(source, season, week, run_directory)
+    backtest = load_backtest_predictions() if include_backtest else None
+
+    # Delete projections by game id, not by week, so a game that moved weeks
+    # between publishes cannot survive as a duplicate row.
+    game_ids = [int(g) for g in projections["game_id"]]
+
+    from backend.odds.markets import OFFER_COLUMNS
+    from backend.recommendations import build_recommendations
+
+    offers_path = run_directory / "market_offers.parquet"
+    offers = (
+        pd.read_parquet(offers_path)
+        if offers_path.exists()
+        else pd.DataFrame(columns=OFFER_COLUMNS)
+    )
+    schedule_path = run_directory / "forecast_schedule.parquet"
+    if not schedule_path.exists():
+        schedule_path = (
+            RAW_DIR / "preseason" / str(season) / "games.parquet"
+            if source == "preseason"
+            else RAW_DIR / "games" / f"{season}.parquet"
+        )
+    schedule = pd.read_parquet(schedule_path) if schedule_path.exists() else None
+    if schedule is not None and "id" not in schedule:
+        schedule = schedule.rename(columns={"game_id": "id"})
+    decisions = build_recommendations(projections, offers, games=schedule)
+
+    with engine.begin() as conn:
+        if not _table_exists(conn, "recommendations"):
+            raise ValueError(
+                "Apply sql/003_recommendations.sql before publishing CFB picks"
+            )
+        # Publication, rather than the artifact date, decides whether a record
+        # was available before kickoff. Old artifacts cannot backfill picks.
+        upcoming_ids = set(
+            decisions.loc[decisions["reason"].ne("not_pregame"), "game_id"]
+        )
+        locked_ids = set(
+            conn.execute(
+                text(
+                    f"SELECT game_id FROM {CFB_SCHEMA}.game_projections "
+                    "WHERE game_id = ANY(:ids) AND start_date <= clock_timestamp()"
+                ),
+                {"ids": game_ids},
+            ).scalars()
+        )
+        game_ids = sorted(upcoming_ids - locked_ids)
+        projections = projections[projections["game_id"].isin(game_ids)]
+        market = market[market["game_id"].isin(game_ids)]
+        decisions = decisions[decisions["game_id"].isin(game_ids)]
+        _publish_recommendations(conn, decisions)
+        if teams is not None:
+            # A dimension with no natural version: replace it wholesale so a
+            # rebrand or a reclassification cannot leave a stale row behind.
+            conn.execute(text(f"DELETE FROM {CFB_SCHEMA}.teams"))
+            teams.to_sql(
+                "teams",
+                con=conn,
+                schema=CFB_SCHEMA,
+                if_exists="append",
+                index=False,
+            )
+
+        conn.execute(
+            text(
+                f"DELETE FROM {CFB_SCHEMA}.team_ratings WHERE season = :s AND week = :w"
+            ),
+            {"s": season, "w": week},
+        )
+        ratings.to_sql(
+            "team_ratings",
+            con=conn,
+            schema=CFB_SCHEMA,
+            if_exists="append",
+            index=False,
+        )
+
+        if unit_ratings is not None and _table_exists(conn, "team_unit_ratings"):
+            conn.execute(
+                text(
+                    f"DELETE FROM {CFB_SCHEMA}.team_unit_ratings "
+                    "WHERE season = :s AND week = :w"
+                ),
+                {"s": season, "w": week},
+            )
+            unit_ratings.to_sql(
+                "team_unit_ratings",
+                con=conn,
+                schema=CFB_SCHEMA,
+                if_exists="append",
+                index=False,
+            )
+
+        conn.execute(
+            text(
+                f"DELETE FROM {CFB_SCHEMA}.game_projections WHERE game_id = ANY(:ids)"
+            ),
+            {"ids": game_ids},
+        )
+        projection_columns = _table_columns(conn, "game_projections")
+        projections[
+            [column for column in projections.columns if column in projection_columns]
+        ].to_sql(
+            "game_projections",
+            con=conn,
+            schema=CFB_SCHEMA,
+            if_exists="append",
+            index=False,
+        )
+
+        if market is not None:
+            conn.execute(
+                text(
+                    f"DELETE FROM {CFB_SCHEMA}.market_comparisons "
+                    "WHERE game_id = ANY(:ids)"
+                ),
+                {"ids": [int(g) for g in market["game_id"]]},
+            )
+            market.to_sql(
+                "market_comparisons",
+                con=conn,
+                schema=CFB_SCHEMA,
+                if_exists="append",
+                index=False,
+            )
+
+        if backtest is not None:
+            # Full refresh: TRUNCATE + append preserves RLS and indexes.
+            conn.execute(text(f"TRUNCATE TABLE {CFB_SCHEMA}.backtest_predictions"))
+            backtest.to_sql(
+                "backtest_predictions",
+                con=conn,
+                schema=CFB_SCHEMA,
+                if_exists="append",
+                index=False,
+            )
+
+    # Read back stored totals so the caller reports what the website will see.
+    tables = [
+        "teams",
+        "team_ratings",
+        "game_projections",
+        "market_comparisons",
+        "recommendations",
+        "backtest_predictions",
+    ]
+    with engine.connect() as conn:
+        if _table_exists(conn, "team_unit_ratings"):
+            tables.insert(2, "team_unit_ratings")
+        return {
+            table: int(
+                conn.execute(
+                    text(f"SELECT count(*) FROM {CFB_SCHEMA}.{table}")
+                ).scalar()
+            )
+            for table in tables
+        }
+
+
+def fetch_published_projections(season: int) -> pd.DataFrame:
+    """Read the frozen published projection record for one season."""
+    from backend.db import engine
+
+    with engine.connect() as conn:
+        return pd.read_sql_query(
+            text(
+                f"SELECT * FROM {CFB_SCHEMA}.game_projections "
+                "WHERE season = :s ORDER BY as_of, game_id"
+            ),
+            conn,
+            params={"s": season},
+        )
+
+
+def fetch_graded_games(season: int) -> pd.DataFrame:
+    """Read the stored grading record so graded rows are never rebuilt."""
+    from backend.db import engine
+
+    with engine.connect() as conn:
+        if not _table_exists(conn, "graded_games"):
+            return pd.DataFrame(columns=GRADED_GAME_COLUMNS)
+        return pd.read_sql_query(
+            text(
+                "SELECT "
+                + ", ".join(GRADED_GAME_COLUMNS)
+                + f" FROM {CFB_SCHEMA}.graded_games WHERE season = :s ORDER BY game_id"
+            ),
+            conn,
+            params={"s": season},
+        )
+
+
+def publish_grading(season: int) -> dict[str, int]:
+    """Publish the local grading artifacts for one season in one transaction."""
+    from backend.db import engine
+
+    graded, metrics = read_grading_artifacts(season)
+    graded_rows = _serving_frame(graded, GRADED_GAME_COLUMNS)
+    metric_rows = _serving_frame(metrics, PERFORMANCE_METRIC_COLUMNS)
+
+    with engine.begin() as conn:
+        for table, rows in (
+            ("graded_games", graded_rows),
+            ("performance_metrics", metric_rows),
+        ):
+            conn.execute(
+                text(f"DELETE FROM {CFB_SCHEMA}.{table} WHERE season = :s"),
+                {"s": season},
+            )
+            if not rows.empty:
+                rows.to_sql(
+                    table,
+                    con=conn,
+                    schema=CFB_SCHEMA,
+                    if_exists="append",
+                    index=False,
+                )
+    with engine.connect() as conn:
+        return {
+            table: int(
+                conn.execute(
+                    text(
+                        f"SELECT count(*) FROM {CFB_SCHEMA}.{table} WHERE season = :s"
+                    ),
+                    {"s": season},
+                ).scalar()
+            )
+            for table in ("graded_games", "performance_metrics")
+        }
+
+
+def _publish_position_traits(conn, traits: pd.DataFrame, season: int) -> bool:
+    """Whether ``cfb.position_traits`` takes part in this player publish.
+
+    It is skipped, with one log line and never an error, when the season has no
+    trait artifact or the table has not been migrated yet.
+    """
+    if traits.empty:
+        log.info(f"position traits {season}: no artifact, skipping cfb.position_traits")
+        return False
+    if not _table_exists(conn, "position_traits"):
+        log.info(
+            f"position traits {season}: {CFB_SCHEMA}.position_traits is absent, skipping it"
+        )
+        return False
+    return True
+
+
+def publish_players(season: int) -> dict[str, int]:
+    """Publish player values, the Heisman board, its history, and model meta."""
+    from backend.db import engine
+    from backend.players.pipeline import read_player_artifacts
+
+    artifacts = read_player_artifacts(season)
+    by_season = ("player_values", "heisman_board")
+    full_refresh = ("heisman_history", "player_model_meta")
+    with engine.begin() as conn:
+        # Traits are optional: a missing artifact or table must not block the Heisman publish.
+        if _publish_position_traits(
+            conn, artifacts.get("position_traits", pd.DataFrame()), season
+        ):
+            by_season = (*by_season, "position_traits")
+        required_evaluation = {
+            "heisman_evaluation_kind",
+            "heisman_evaluation_week",
+            "heisman_evaluation_seasons",
+            "heisman_winner_pool_coverage",
+            "heisman_ballot_share_covered",
+        }
+        missing = required_evaluation - set(_table_columns(conn, "player_model_meta"))
+        rank_nullable = conn.execute(
+            text(
+                "SELECT is_nullable FROM information_schema.columns "
+                "WHERE table_schema = :schema AND table_name = 'heisman_history' "
+                "AND column_name = 'actual_winner_predicted_rank'"
+            ),
+            {"schema": CFB_SCHEMA},
+        ).scalar()
+        if missing or rank_nullable != "YES":
+            raise ValueError(
+                "Heisman weekly evaluation requires sql/002_heisman_weekly_evaluation.sql "
+                "before publishing; existing serving tables were preserved"
+            )
+        for table in by_season:
+            conn.execute(
+                text(f"DELETE FROM {CFB_SCHEMA}.{table} WHERE season = :s"),
+                {"s": season},
+            )
+        for table in full_refresh:
+            conn.execute(text(f"TRUNCATE TABLE {CFB_SCHEMA}.{table}"))
+        for table in (*by_season, *full_refresh):
+            rows = artifacts[table]
+            if rows.empty:
+                continue
+            columns = _table_columns(conn, table)
+            rows[[column for column in rows.columns if column in columns]].to_sql(
+                table,
+                con=conn,
+                schema=CFB_SCHEMA,
+                if_exists="append",
+                index=False,
+                chunksize=2000,
+            )
+    with engine.connect() as conn:
+        return {
+            table: int(
+                conn.execute(
+                    text(f"SELECT count(*) FROM {CFB_SCHEMA}.{table}")
+                ).scalar()
+            )
+            for table in (*by_season, *full_refresh)
+        }
+
+
+def _publish_recommendations(conn, decisions):
+    from datetime import datetime
+
+    from backend.recommendations import RECOMMENDATION_COLUMNS
+
+    if decisions.empty:
+        return 0
+    rows = _serving_frame(decisions, RECOMMENDATION_COLUMNS)
+    import json
+
+    import numpy as np
+
+    def parquet_json(value):
+        # Arrow restores nested JSON lists as ndarrays at the artifact boundary.
+        if isinstance(value, (np.ndarray, np.generic)):
+            return value.tolist()
+        raise TypeError(f"Unsupported decision JSON type: {type(value).__name__}")
+
+    def json_value(value):
+        if isinstance(value, (pd.Timestamp, datetime)):
+            return value.isoformat()
+        return parquet_json(value)
+
+    payload = json.dumps(rows.to_dict("records"), allow_nan=False, default=json_value)
+    records = (
+        f"jsonb_populate_recordset(NULL::{CFB_SCHEMA}.recommendation_decisions, "
+        "CAST(:decisions AS jsonb)) AS fresh"
+    )
+    columns = ", ".join(RECOMMENDATION_COLUMNS)
+    values = ", ".join(f"fresh.{c}" for c in RECOMMENDATION_COLUMNS)
+    # Publish one batch, including one cache invalidation, per table.
+    updates = ", ".join(
+        f"{c} = excluded.{c}"
+        for c in RECOMMENDATION_COLUMNS
+        if c not in {"game_id", "market"}
+    )
+    conn.execute(
+        text(
+            f"INSERT INTO {CFB_SCHEMA}.recommendation_decisions ({columns}) "
+            f"SELECT {values} FROM {records} WHERE fresh.start_date > clock_timestamp() "
+            f"ON CONFLICT (game_id, market) DO UPDATE SET {updates}, "
+            "published_at = clock_timestamp() "
+            f"WHERE {CFB_SCHEMA}.recommendation_decisions.start_date > clock_timestamp() "
+            "AND excluded.start_date > clock_timestamp() "
+            f"AND excluded.decision_at > {CFB_SCHEMA}.recommendation_decisions.decision_at"
+        ),
+        {"decisions": payload},
+    )
+    # Keep the original pick visible as void if the schedule moves.
+    conn.execute(
+        text(
+            f"UPDATE {CFB_SCHEMA}.recommendations AS original SET outcome = 'void', "
+            f"profit_units = 0, graded_at = clock_timestamp() FROM {records} "
+            "WHERE original.game_id = fresh.game_id AND original.market = fresh.market "
+            "AND original.start_date <> fresh.start_date "
+            "AND original.home_team = fresh.home_team AND original.away_team = fresh.away_team "
+            "AND original.decision_at < fresh.decision_at "
+            "AND original.status = 'recommended' AND original.outcome = 'pending'"
+        ),
+        {"decisions": payload},
+    )
+    conn.execute(
+        text(
+            f"INSERT INTO {CFB_SCHEMA}.recommendations ({columns}) "
+            f"SELECT {values} FROM {records} WHERE fresh.start_date > clock_timestamp() "
+            f"ON CONFLICT (game_id, market) DO UPDATE SET {updates}, published_at = clock_timestamp() "
+            f"WHERE {CFB_SCHEMA}.recommendations.status = 'no_play' "
+            f"AND {CFB_SCHEMA}.recommendations.outcome = 'pending' "
+            f"AND {CFB_SCHEMA}.recommendations.start_date > clock_timestamp() "
+            f"AND excluded.start_date > clock_timestamp() "
+            f"AND excluded.decision_at > {CFB_SCHEMA}.recommendations.decision_at"
+        ),
+        {"decisions": payload},
+    )
+    return len(rows)
+
+
+def fetch_qb_availability(season):
+    """Explicit quarterback availability reports for a season; see
+    backend.model.availability for how they enter a forecast."""
+    from backend.db import engine
+
+    with engine.connect() as conn:
+        return pd.read_sql_query(
+            text(
+                f"SELECT season, week, team, player, status, source, reported_at "
+                f"FROM {CFB_SCHEMA}.qb_availability WHERE season = :s"
+            ),
+            conn,
+            params={"s": season},
+        )
+
+
+def fetch_recommendations(season):
+    from backend.db import engine
+
+    with engine.connect() as conn:
+        return pd.read_sql_query(
+            text(
+                f"SELECT * FROM {CFB_SCHEMA}.recommendations WHERE season = :s ORDER BY game_id, market"
+            ),
+            conn,
+            params={"s": season},
+        )
+
+
+def publish_recommendation_grades(season):
+    from backend.db import engine
+    from backend.etl import store
+    from backend.recommendations import CLOSING_LINE_COLUMNS, SETTLEMENT_COLUMNS
+
+    grades = store.read_processed("grading", f"recommendations_{season}.parquet")
+    try:
+        backfill = store.read_processed(
+            "grading", f"recommendation_closing_{season}.parquet"
+        )
+    except FileNotFoundError:
+        backfill = pd.DataFrame(columns=["game_id", "market", "decision_at"])
+    if grades.empty and backfill.empty:
+        return 0
+    closing_updates = ", ".join(f"{c} = :{c}" for c in CLOSING_LINE_COLUMNS)
+    settled = 0
+    with engine.begin() as conn:
+        if not grades.empty:
+            settled = conn.execute(
+                text(
+                    f"UPDATE {CFB_SCHEMA}.recommendations SET outcome = :outcome, "
+                    "home_points = :home_points, away_points = :away_points, "
+                    f"profit_units = :profit_units, graded_at = :graded_at, {closing_updates} "
+                    "WHERE game_id = :game_id AND market = :market AND decision_at = :decision_at "
+                    "AND season = :season "
+                    "AND outcome = 'pending'"
+                ),
+                _serving_frame(grades, SETTLEMENT_COLUMNS)
+                .assign(season=season)
+                .to_dict("records"),
+            ).rowcount
+        if not backfill.empty:
+            # Picks settled before closing lines were recorded receive theirs
+            # once; the database trigger admits no other change to a settled pick.
+            conn.execute(
+                text(
+                    f"UPDATE {CFB_SCHEMA}.recommendations SET {closing_updates} "
+                    "WHERE game_id = :game_id AND market = :market AND decision_at = :decision_at "
+                    "AND season = :season AND closing_source IS NULL "
+                    "AND outcome IN ('win', 'loss', 'push')"
+                ),
+                _serving_frame(
+                    backfill,
+                    ["game_id", "market", "decision_at", *CLOSING_LINE_COLUMNS],
+                )
+                .assign(season=season)
+                .to_dict("records"),
+            )
+    return settled
+
+
+def ensure_recommendation_schema():
+    """Fail before paid data refreshes when the serving migration is missing."""
+    from backend.db import engine
+    from backend.recommendations import RECOMMENDATION_COLUMNS
+
+    with engine.connect() as conn:
+        required = set(RECOMMENDATION_COLUMNS) | {
+            "outcome",
+            "profit_units",
+            "graded_at",
+        }
+        if not _table_exists(
+            conn, "recommendation_performance"
+        ) or not required.issubset(_table_columns(conn, "recommendations")):
+            raise ValueError(
+                "Apply sql/003_recommendations.sql before refreshing CFB recommendations"
+            )
+        if not _table_exists(conn, "current_recommendations") or not required.issubset(
+            _table_columns(conn, "recommendation_decisions")
+        ):
+            raise ValueError(
+                "Apply sql/20261019183818_current_recommendations.sql before "
+                "refreshing CFB recommendations"
+            )
+        if not {"closing_point", "clv_points"}.issubset(
+            _table_columns(conn, "recommendations")
+        ):
+            raise ValueError(
+                "Apply sql/009_recommendation_closing_line_value.sql before "
+                "refreshing CFB recommendations"
+            )
+        if not conn.execute(
+            text(
+                "SELECT EXISTS (SELECT 1 FROM pg_constraint "
+                "WHERE conrelid = 'cfb.recommendations'::regclass "
+                "AND conname = :constraint)"
+            ),
+            {"constraint": RECOMMENDATION_ELIGIBILITY_CONSTRAINT},
+        ).scalar_one():
+            raise ValueError(
+                f"Apply {RECOMMENDATION_ELIGIBILITY_MIGRATION} "
+                "before refreshing CFB recommendations"
+            )

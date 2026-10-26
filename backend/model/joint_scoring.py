@@ -1,0 +1,1130 @@
+from dataclasses import dataclass, replace
+from datetime import datetime
+from math import isfinite, isnan
+
+import numpy as np
+import pandas as pd
+
+from backend.model.outputs import GameProjection, TeamRating
+from backend.model.scoring_calibration import bounded_model_total, calibrated_scores
+
+MODEL_VERSION = "joint_scoring_v13"
+HFA_PRIOR_POINTS = 2.5
+HFA_PRIOR_SD_POINTS = 1.5
+MAX_POOL_ITERATIONS = 50
+POOL_TOLERANCE_PPP = 0.001
+# Variance floor for the points-only rating's game noise, matching the score
+# residual floor, so a one-game slate cannot collapse the observation weight.
+SRS_NOISE_FLOOR = 4.0
+SRS_FALLBACK_TOLERANCE_POINTS = 1e-5
+
+
+@dataclass(frozen=True, slots=True)
+class JointScoringConfig:
+    rating_half_life_weeks: float = 6.0
+    strength_prior_sd_ppp: float = 0.55
+    covariance_shrinkage: float = 0.1
+    student_t_degrees_of_freedom: float = 7.0
+    score_covariance_scale: float = 1.0
+    # Prior correlation between a team's offense and defense strength. Net
+    # strength (offense + defense) varies far more between teams than scoring
+    # environment (offense - defense), and a positive correlation shrinks the
+    # environment direction harder while leaving net strength as identified.
+    # Zero would restore the independent priors that only calibrate margins.
+    strength_prior_correlation: float = 0.5
+    # Prior SD of a team's pace offset in possessions per game. The pace
+    # ridge is identified only through each team's own games, so a loose
+    # prior lets sample noise reach the projected total.
+    pace_prior_sd: float = 1.0
+    # Prior SD in PPP of a conference pool's shift from the level its teams'
+    # priors imply (FCS is one pool). Crossover games identify the shift, so
+    # a pool can move as a block instead of every team being shrunk toward a
+    # stale level. Zero disables the pool parameters.
+    pool_prior_sd_ppp: float = 0.0
+    # Prior SD of the dimensionless crossover gain: the share of the gap
+    # between two pools' fitted levels that the stronger pool's side scores
+    # beyond the rating margin. Ratings are fitted to a blend of points and
+    # competitive-possession EPA, which discounts garbage-time scoring, and
+    # games between distant pools (FBS over FCS, Power Five over Group of
+    # Five) carry far more of it than the blend allows. The gain is estimated
+    # from points residuals and shrunk toward zero. Zero disables it.
+    crossover_prior_sd: float = 0.0
+    matchup_total_calibration: bool = False
+    scoring_prior_games: float = 0.0
+    # joint_scoring_v12: the projected margin is a fixed blend of the joint
+    # fit's margin and a points-only ridge rating (SRS) fitted on the same
+    # cutoff with a loose prior SD in points around the previous season's
+    # final points-only rating (JointScoringPriors.srs_prior_means). The
+    # SRS carries information the blended points-and-EPA fit shrinks away
+    # (the crossover gain restarts from zero each season, the FCS pool, and
+    # the tighter strength prior), so the blend reduced holdout margin MAE
+    # by 0.19 on all Division I games with a close and 0.07 on FBS versus
+    # FBS, negative in every season 2020 through 2025, with totals untouched.
+    # Zero disables the blend. The margin SD is multiplied by
+    # margin_sd_scale because the joint fit's margin SD ran about eight
+    # percent wide (80 percent interval coverage 0.85 against 0.80).
+    srs_blend_weight: float = 0.0
+    srs_prior_sd_points: float = 9.0
+    margin_sd_scale: float = 1.0
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.srs_blend_weight <= 1.0:
+            raise ValueError("srs_blend_weight must be between zero and one")
+        if not isfinite(self.srs_prior_sd_points) or self.srs_prior_sd_points <= 0:
+            raise ValueError("srs_prior_sd_points must be positive")
+        if not isfinite(self.margin_sd_scale) or self.margin_sd_scale <= 0:
+            raise ValueError("margin_sd_scale must be positive")
+        if isnan(self.rating_half_life_weeks) or self.rating_half_life_weeks <= 0:
+            raise ValueError("rating_half_life_weeks must be positive")
+        if not isfinite(self.strength_prior_sd_ppp) or self.strength_prior_sd_ppp <= 0:
+            raise ValueError("strength_prior_sd_ppp must be positive")
+        if not 0 <= self.covariance_shrinkage < 1:
+            raise ValueError("covariance_shrinkage must be in [0, 1)")
+        if (
+            not isfinite(self.student_t_degrees_of_freedom)
+            or self.student_t_degrees_of_freedom <= 2
+        ):
+            raise ValueError("student_t_degrees_of_freedom must exceed 2")
+        if (
+            not isfinite(self.score_covariance_scale)
+            or self.score_covariance_scale <= 0
+        ):
+            raise ValueError("score_covariance_scale must be positive")
+        if not -1 < self.strength_prior_correlation < 1:
+            raise ValueError("strength_prior_correlation must be inside (-1, 1)")
+        if not isfinite(self.pace_prior_sd) or self.pace_prior_sd <= 0:
+            raise ValueError("pace_prior_sd must be positive")
+        if not isfinite(self.pool_prior_sd_ppp) or self.pool_prior_sd_ppp < 0:
+            raise ValueError("pool_prior_sd_ppp must be finite and not negative")
+        if not isfinite(self.crossover_prior_sd) or self.crossover_prior_sd < 0:
+            raise ValueError("crossover_prior_sd must be finite and not negative")
+        if not isfinite(self.scoring_prior_games) or self.scoring_prior_games < 0:
+            raise ValueError("scoring_prior_games must be finite and not negative")
+
+
+# joint_scoring_v6: on the 2020 through 2025 historical-carryover walk-forward
+# (4,227 FBS games) the independent priors left totals over-dispersed (actual
+# on model total slope 0.61, pace component 0.51) while margins were
+# calibrated (0.96). Correlating offense and defense at 0.5 and tightening the
+# pace prior to one possession moved the total slope to 0.88 and cut total MAE
+# from 13.37 to 13.11 with margin MAE unchanged (12.85 to 12.84).
+# joint_scoring_v9: with the pool, crossover and tempo terms in place the
+# strength prior that forecasts best moved from 0.45 to 0.40 PPP (FBS cohort
+# joint log loss 8.4528 to 8.4518 on 2020 through 2022 and 8.3940 to 8.3918
+# on 2023 through 2025), and the looser prior was over-rating teams that
+# started strong: same-tier favourites of 14 or more points fell 1.4 points
+# short of the model at 0.45 and 0.7 at 0.40. Teams with preseason ratings
+# carry their own prior SD (6.05 points, about 0.36 PPP with complete
+# inputs), so this value governs the research paths and teams without one.
+DEFAULT_CONFIG = JointScoringConfig(
+    rating_half_life_weeks=float("inf"),
+    strength_prior_sd_ppp=0.40,
+    covariance_shrinkage=0.8,
+    student_t_degrees_of_freedom=500.0,
+    score_covariance_scale=1.125,
+    strength_prior_correlation=0.5,
+    pace_prior_sd=1.0,
+    # joint_scoring_v7 and v8: on the same walk-forward extended to every
+    # regular season Division I game with a closing line (6,403 games),
+    # conference pool shifts, the pool-gap crossover gain and strength scaled
+    # by the game's expected possessions cut the FBS over FCS bias from +6.1
+    # to +1.3 points (+1.0 from week 4) and the Power Five over Group of Five
+    # bias from +3.1 to +0.2, with same-tier FBS margin MAE 12.62 to 12.61
+    # and the FBS cohort joint log loss 8.4259 to 8.4212.
+    pool_prior_sd_ppp=0.2,
+    crossover_prior_sd=0.6,
+    matchup_total_calibration=True,
+    # Selected on 2020-2022 D1 totals, validated on 2023-2025.
+    # Independent of pace, team strength, and market prices.
+    scoring_prior_games=100.0,
+    # joint_scoring_v12: selected on the 2020 through 2022 walk-forward
+    # (margin MAE -0.10, paired t -2.6) and confirmed on 2023 through 2025
+    # (-0.19, t -5.6, all Division I with a close; FBS versus FBS -0.07).
+    # The weight surface is flat between 0.4 and 0.6, so the fixed half
+    # carries no fitted parameter. The SD scalar is the dev-fitted ratio of
+    # realized to projected margin dispersion under the blend.
+    srs_blend_weight=0.5,
+    srs_prior_sd_points=9.0,
+    margin_sd_scale=0.915,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class JointScoringPriors:
+    """Pure preseason state on one common possession scale.
+
+    Strength SDs describe independent offense and defense priors in PPP.
+    Expected possessions describe each team's pace against an average opponent.
+    Score noise carries the previous season's sample independently of team SDs.
+    """
+
+    strength_means: dict[int, tuple[float, float]]
+    strength_sds: dict[int, tuple[float, float]]
+    expected_possessions: dict[int, float]
+    base_possessions: float
+    score_noise_covariance: np.ndarray | None = None
+    score_noise_games: int = 0
+    score_noise_season: int | None = None
+    score_noise_as_of: datetime | None = None
+    base_ppp: float | None = None
+    # Prior means in points for the points-only rating, normally the previous
+    # season's final points-only rating bridged by team name. Teams absent
+    # here shrink toward their classification's fitted level. When None, the
+    # strength prior means converted to points stand in, which reproduces
+    # only part of the blend's gain because the joint fit's ridge compresses
+    # them.
+    srs_prior_means: dict[int, float] | None = None
+
+    def __post_init__(self) -> None:
+        if self.srs_prior_means is not None and not all(
+            isfinite(value) for value in self.srs_prior_means.values()
+        ):
+            raise ValueError("srs prior means must be finite")
+        if self.base_ppp is not None and (
+            not isfinite(self.base_ppp)
+            or self.base_ppp <= 0
+            or self.score_noise_covariance is None
+        ):
+            raise ValueError(
+                "scoring baseline requires positive PPP and dated prior state"
+            )
+        if self.score_noise_covariance is not None:
+            noise = np.asarray(self.score_noise_covariance, dtype=float)
+            if (
+                noise.shape != (2, 2)
+                or not np.isfinite(noise).all()
+                or not np.allclose(noise, noise.T)
+                or np.linalg.eigvalsh(noise).min() <= 0
+                or self.score_noise_games < 2
+                or self.score_noise_games != int(self.score_noise_games)
+                or self.score_noise_season is None
+                or self.score_noise_as_of is None
+                or self.score_noise_as_of.tzinfo is None
+                or self.score_noise_as_of.utcoffset() is None
+            ):
+                raise ValueError("invalid prior-season score noise")
+        elif (
+            self.score_noise_games
+            or self.score_noise_season is not None
+            or self.score_noise_as_of is not None
+        ):
+            raise ValueError("prior-season score noise covariance is required")
+        if not isfinite(self.base_possessions) or self.base_possessions <= 0:
+            raise ValueError("prior base_possessions must be positive")
+        team_ids = set(self.strength_means)
+        if (
+            not team_ids
+            or set(self.strength_sds) != team_ids
+            or set(self.expected_possessions) != team_ids
+        ):
+            raise ValueError(
+                "complete strength, uncertainty and pace priors are required"
+            )
+        for team_id in team_ids:
+            if not all(isfinite(value) for value in self.strength_means[team_id]):
+                raise ValueError("strength prior means must be finite")
+            positive = (*self.strength_sds[team_id], self.expected_possessions[team_id])
+            if not all(isfinite(value) and value > 0 for value in positive):
+                raise ValueError("prior strength SDs and possessions must be positive")
+
+
+def _solve_ridge(
+    design: np.ndarray,
+    target: np.ndarray,
+    weights: np.ndarray,
+    prior_mean: np.ndarray,
+    prior_sd: np.ndarray,
+    prior_precision: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    if prior_precision is None:
+        prior_precision = np.diag(1.0 / np.square(prior_sd))
+    normal = design.T @ (weights[:, None] * design) + prior_precision
+    rhs = design.T @ (weights * target) + prior_precision @ prior_mean
+    covariance = np.linalg.inv(normal)
+    return covariance @ rhs, covariance
+
+
+def _strength_prior_precision(
+    prior_sd: np.ndarray, n_teams: int, correlation: float
+) -> np.ndarray:
+    """Precision of the strength prior with each team's offense and defense
+    correlated; the home-field parameter stays independent.
+
+    The correlation reallocates prior variance between the two directions
+    instead of adding any: the marginal SDs are scaled so the net-strength
+    direction keeps the variance the independent prior gave it, and only the
+    scoring-environment direction tightens by (1 - rho) / (1 + rho).
+    """
+    precision = np.diag(1.0 / np.square(prior_sd))
+    if correlation:
+        scale = 1.0 / np.sqrt(1.0 + correlation)
+        offense_sd = prior_sd[:n_teams] * scale
+        defense_sd = prior_sd[n_teams : 2 * n_teams] * scale
+        covariance = correlation * offense_sd * defense_sd
+        determinant = np.square(offense_sd * defense_sd) - np.square(covariance)
+        team = np.arange(n_teams)
+        precision[team, team] = np.square(defense_sd) / determinant
+        precision[n_teams + team, n_teams + team] = np.square(offense_sd) / determinant
+        precision[team, n_teams + team] = -covariance / determinant
+        precision[n_teams + team, team] = -covariance / determinant
+    return precision
+
+
+@dataclass(frozen=True, slots=True)
+class PointsRatingFit:
+    rating: np.ndarray
+    home_field: float
+    # Joint team/HFA covariance before centering; matchup differences cancel
+    # the rating origin. Team SDs must use the same FBS centering as rating.
+    parameter_covariance: np.ndarray
+    observation_variance: float
+
+    def rating_variance(self, classifications: np.ndarray) -> np.ndarray:
+        weights = (classifications == "fbs").astype(float)
+        if not weights.any():
+            weights[:] = 1.0
+        weights /= weights.sum()
+        covariance = self.parameter_covariance[:-1, :-1]
+        return np.maximum(
+            np.diag(covariance)
+            - 2 * (covariance @ weights)
+            + weights @ covariance @ weights,
+            0.0,
+        )
+
+
+def _fit_points_rating(
+    training: pd.DataFrame,
+    team_index: dict[int, int],
+    classifications: np.ndarray,
+    recency: np.ndarray,
+    prior_mean_points: np.ndarray,
+    teams_with_priors: np.ndarray,
+    prior_sd_points: float,
+) -> PointsRatingFit:
+    """Points-only ridge margin rating on the same cutoff as the joint fit.
+
+    Home margin is r_home - r_away + hfa on non-neutral fields. Ratings
+    shrink toward the supplied prior means in points; teams without one
+    shrink toward their classification's fitted mean, iterated to a fixed
+    point. Rows are weighted by recency over the residual margin variance of
+    a first pass, so the prior SD is a points-scale statement. Returns the
+    ratings centered on the FBS mean, home-field points, and conditional
+    covariance. Estimated noise and fallback pool means are treated as fixed.
+    """
+    n_teams = len(team_index)
+    n_games = len(training)
+    home_index = training["home_team_id"].map(team_index).to_numpy(int)
+    away_index = training["away_team_id"].map(team_index).to_numpy(int)
+    home_field = (~training["neutral_site"].astype(bool)).to_numpy(float)
+    margin = (training["home_points"] - training["away_points"]).to_numpy(float)
+    design = np.zeros((n_games, n_teams + 1))
+    design[np.arange(n_games), home_index] = 1.0
+    design[np.arange(n_games), away_index] -= 1.0
+    design[:, -1] = home_field
+    prior_sd = np.full(n_teams + 1, prior_sd_points)
+    prior_sd[-1] = HFA_PRIOR_SD_POINTS
+    prior_mean = np.append(prior_mean_points, HFA_PRIOR_POINTS)
+    missing = ~teams_with_priors
+    classes = pd.Series(classifications)
+
+    def solve(noise: float) -> tuple[np.ndarray, np.ndarray]:
+        weights = recency / noise
+        mean = prior_mean.copy()
+        parameters, covariance = _solve_ridge(design, margin, weights, mean, prior_sd)
+        for _ in range(30 if missing.any() else 0):
+            updated = mean.copy()
+            for _, members in classes.groupby(classes).groups.items():
+                selection = np.asarray(members)
+                gap = missing[selection]
+                if gap.any():
+                    updated[selection[gap]] = parameters[selection].mean()
+            shift = float(np.abs(updated - mean).max())
+            mean = updated
+            parameters, covariance = _solve_ridge(
+                design, margin, weights, mean, prior_sd
+            )
+            if shift < SRS_FALLBACK_TOLERANCE_POINTS:
+                break
+        return parameters, covariance
+
+    centered = margin - np.average(margin, weights=recency)
+    noise = max(
+        float(np.average(np.square(centered), weights=recency)), SRS_NOISE_FLOOR
+    )
+    residual = margin - design @ solve(noise)[0]
+    noise = max(
+        float(np.average(np.square(residual), weights=recency)), SRS_NOISE_FLOOR
+    )
+    parameters, covariance = solve(noise)
+    rating = parameters[:-1]
+    center = classifications == "fbs"
+    rating = rating - (rating[center].mean() if center.any() else rating.mean())
+    return PointsRatingFit(rating, float(parameters[-1]), covariance, noise)
+
+
+def fit_season_points_rating(
+    games: pd.DataFrame,
+    prior_means_by_team: dict[str, float] | None = None,
+    prior_sd_points: float = DEFAULT_CONFIG.srs_prior_sd_points,
+) -> pd.DataFrame:
+    """Final points-only rating of every completed game in a season frame.
+
+    ``prior_means_by_team`` maps team name to the rating carried from the
+    season before in points; names bridge season-to-season ID changes. It is
+    the state the weekly blend carries across seasons, so a season's final
+    rating shrinks about one fifth of the way toward the previous one.
+    Returns team_id, team, classification and srs_rating.
+    """
+    training = games
+    if "completed" in training:
+        training = training[training["completed"].fillna(False).astype(bool)]
+    training = training.dropna(subset=["home_points", "away_points"])
+    if training.empty:
+        raise ValueError("a season points rating needs completed games")
+    catalog = _team_catalog(games)
+    team_index = {
+        int(team_id): index for index, team_id in enumerate(catalog["team_id"])
+    }
+    n_teams = len(catalog)
+    prior = np.zeros(n_teams)
+    has_prior = np.zeros(n_teams, dtype=bool)
+    for index, team in enumerate(catalog["team"]):
+        carried = (prior_means_by_team or {}).get(team)
+        if carried is not None:
+            prior[index] = float(carried)
+            has_prior[index] = True
+    fitted = _fit_points_rating(
+        training,
+        team_index,
+        catalog["classification"].fillna("").str.lower().to_numpy(),
+        np.ones(len(training)),
+        prior,
+        has_prior,
+        prior_sd_points,
+    )
+    return pd.DataFrame(
+        {
+            "team_id": catalog["team_id"].astype(int).to_numpy(),
+            "team": catalog["team"].to_numpy(),
+            "classification": catalog["classification"].to_numpy(),
+            "srs_rating": fitted.rating,
+        }
+    )
+
+
+def _regularized_covariance(
+    residuals: np.ndarray, floor: float, shrinkage: float
+) -> np.ndarray:
+    covariance = np.cov(residuals, rowvar=False, ddof=1)
+    covariance = np.atleast_2d(covariance).astype(float)
+    diagonal = np.diag(np.diag(covariance))
+    return (1 - shrinkage) * covariance + shrinkage * diagonal + np.eye(2) * floor
+
+
+def _pool_offsets(
+    parameters: np.ndarray,
+    n_teams: int,
+    fbs_mask: np.ndarray,
+    fcs_mask: np.ndarray,
+) -> tuple[float, float]:
+    """Return the fitted FCS minus FBS mean offense and defense strengths."""
+    offense = parameters[:n_teams]
+    defense = parameters[n_teams : 2 * n_teams]
+    return (
+        float(offense[fcs_mask].mean() - offense[fbs_mask].mean()),
+        float(defense[fcs_mask].mean() - defense[fbs_mask].mean()),
+    )
+
+
+def margin_total_distribution(
+    score_covariance: np.ndarray,
+) -> tuple[float, float, float]:
+    """Rotate a home/away score covariance into margin and total space.
+
+    Returns the margin SD, the total SD, and their correlation clipped so the
+    joint Student-t stays well defined.
+    """
+    transform = np.array([[1.0, -1.0], [1.0, 1.0]])
+    covariance = transform @ score_covariance @ transform.T
+    margin_sd = float(np.sqrt(covariance[0, 0]))
+    total_sd = float(np.sqrt(covariance[1, 1]))
+    correlation = float(covariance[0, 1] / (margin_sd * total_sd))
+    return margin_sd, total_sd, float(np.clip(correlation, -0.999, 0.999))
+
+
+def _team_catalog(games: pd.DataFrame) -> pd.DataFrame:
+    home = games[["home_team_id", "home_team", "home_classification"]].rename(
+        columns={
+            "home_team_id": "team_id",
+            "home_team": "team",
+            "home_classification": "classification",
+        }
+    )
+    away = games[["away_team_id", "away_team", "away_classification"]].rename(
+        columns={
+            "away_team_id": "team_id",
+            "away_team": "team",
+            "away_classification": "classification",
+        }
+    )
+    for side, frame in (("home", home), ("away", away)):
+        column = f"{side}_conference"
+        frame["conference"] = games[column].to_numpy() if column in games else None
+    catalog = pd.concat([home, away], ignore_index=True).drop_duplicates(
+        ["team_id", "team"]
+    )
+    classification = catalog["classification"].fillna("").str.lower()
+    catalog["pool"] = np.where(
+        classification.eq("fbs"),
+        catalog["conference"].fillna("FBS Independents"),
+        classification.where(classification.ne(""), "unknown"),
+    )
+    duplicate_ids = catalog.groupby("team_id")["team"].nunique()
+    duplicate_names = catalog.groupby("team")["team_id"].nunique()
+    if duplicate_ids.gt(1).any() or duplicate_names.gt(1).any():
+        raise ValueError("team IDs and names do not map one-to-one")
+    return catalog.reset_index(drop=True)
+
+
+@dataclass(slots=True)
+class JointScoringFit:
+    season: int
+    week: int
+    as_of: datetime
+    teams: pd.DataFrame
+    offense_ppp: np.ndarray
+    defense_ppp: np.ndarray
+    pace: np.ndarray
+    base_ppp: float
+    base_possessions: float
+    hfa_ppp: float
+    crossover_gain: float
+    pool_level: np.ndarray
+    parameter_covariance: np.ndarray
+    score_residual_covariance: np.ndarray
+    config: JointScoringConfig
+    training_games: int
+    preseason_base_ppp: float | None = None
+    srs_rating: np.ndarray | None = None
+    srs_hfa_points: float = 0.0
+    srs_rating_sd: np.ndarray | None = None
+
+    @property
+    def home_field_points(self) -> float:
+        """Home-field points a projected margin carries on a non-neutral field."""
+        weight = self.config.srs_blend_weight
+        return (
+            1.0 - weight
+        ) * self.base_possessions * self.hfa_ppp + weight * self.srs_hfa_points
+
+    @property
+    def model_version(self) -> str:
+        if self.config.srs_blend_weight:
+            return MODEL_VERSION
+        if self.preseason_base_ppp is not None and self.config.scoring_prior_games:
+            return "joint_scoring_v11"
+        return (
+            "joint_scoring_v10"
+            if self.config.matchup_total_calibration
+            else "joint_scoring_v9"
+        )
+
+    @property
+    def team_index(self) -> dict[int, int]:
+        return {
+            int(team_id): index for index, team_id in enumerate(self.teams["team_id"])
+        }
+
+    def ratings(self) -> list[TeamRating]:
+        ratings = []
+        for row in self.teams.itertuples():
+            index = self.team_index[int(row.team_id)]
+            vector = np.zeros(len(self.parameter_covariance))
+            vector[index] = self.base_possessions
+            vector[len(self.teams) + index] = self.base_possessions
+            variance = float(vector @ self.parameter_covariance @ vector)
+            ratings.append(
+                TeamRating(
+                    season=self.season,
+                    week=self.week,
+                    as_of=self.as_of,
+                    model_version=self.model_version,
+                    team_id=int(row.team_id),
+                    team=row.team,
+                    offense_points=float(
+                        self.base_possessions * self.offense_ppp[index]
+                    ),
+                    defense_points=float(
+                        self.base_possessions * self.defense_ppp[index]
+                    ),
+                    expected_possessions=float(
+                        self.base_possessions + 0.5 * self.pace[index]
+                    ),
+                    power_rating_sd=float(np.sqrt(max(variance, 0.0))),
+                )
+            )
+        return sorted(ratings, key=lambda rating: rating.power_rating, reverse=True)
+
+    def blended_ratings(self) -> list[TeamRating]:
+        """Team strength as the projected margin uses it.
+
+        At the average pace, a rating difference plus the home-field points
+        is the projected margin: the joint fit's rating with its pool-level
+        crossover, blended with the points-only rating. The blend moves a
+        team's offense and defense equally, as it moves a game's two scores,
+        and keeps the joint fit's origin. ``ratings`` stays the joint fit
+        alone, which is the state next season's priors carry.
+        """
+        ratings = self.ratings()
+        weight = self.config.srs_blend_weight
+        if not weight:
+            return ratings
+        if self.srs_rating is None or self.srs_rating_sd is None:
+            raise ValueError("srs_blend_weight requires a fitted SRS")
+        index = self.team_index
+        joint = np.array([rating.power_rating for rating in ratings])
+        order = np.array([index[rating.team_id] for rating in ratings])
+        crossover = (
+            0.5 * self.crossover_gain * self.base_possessions * self.pool_level[order]
+        )
+        shift = (
+            (1.0 - weight) * (joint + crossover)
+            + weight * self.srs_rating[order]
+            - joint
+        )
+        fbs = (
+            self.teams["classification"].fillna("").str.lower().eq("fbs").to_numpy()
+        )[order]
+        shift -= shift[fbs].mean() if fbs.any() else shift.mean()
+        blended = [
+            replace(
+                rating,
+                offense_points=rating.offense_points + 0.5 * move,
+                defense_points=rating.defense_points + 0.5 * move,
+                # The two ratings are fitted to the same games, so their
+                # errors are treated as moving together rather than averaging
+                # out; this is the widest SD the blend can have.
+                power_rating_sd=(1.0 - weight) * rating.power_rating_sd
+                + weight * float(sd),
+            )
+            for rating, move, sd in zip(ratings, shift, self.srs_rating_sd[order])
+        ]
+        return sorted(blended, key=lambda rating: rating.power_rating, reverse=True)
+
+    def project(self, schedule: pd.DataFrame) -> list[GameProjection]:
+        projections = []
+        index = self.team_index
+        n_teams = len(self.teams)
+        classifications = self.teams["classification"].fillna("").str.lower().to_numpy()
+        for game in schedule.itertuples():
+            home = index[int(game.home_team_id)]
+            away = index[int(game.away_team_id)]
+            home_field = (
+                0.0
+                if bool(game.neutral_site)
+                else (self.base_possessions * self.hfa_ppp)
+            )
+            possessions = self.base_possessions + 0.5 * (
+                self.pace[home] + self.pace[away]
+            )
+            base_points = self.base_ppp * possessions
+            home_strength = possessions * (
+                self.offense_ppp[home] - self.defense_ppp[away]
+            )
+            away_strength = possessions * (
+                self.offense_ppp[away] - self.defense_ppp[home]
+            )
+            # Half of the gain times the pool-level margin gap, per side.
+            crossover = (
+                0.25
+                * self.crossover_gain
+                * self.base_possessions
+                * (self.pool_level[home] - self.pool_level[away])
+            )
+            expected_home = base_points + home_strength + 0.5 * home_field + crossover
+            expected_away = base_points + away_strength - 0.5 * home_field - crossover
+            uncalibrated_total = max(float(expected_home), 0.0) + max(
+                float(expected_away), 0.0
+            )
+            if self.config.matchup_total_calibration:
+                expected_home, expected_away = calibrated_scores(
+                    expected_home,
+                    expected_away,
+                    classifications[home],
+                    classifications[away],
+                )
+
+            # Stabilize only the common scoring level after fitting strength.
+            # Changing the fitting intercept would also move spreads and MLs.
+            baseline_adjustment = 0.0
+            if self.preseason_base_ppp is not None and self.config.scoring_prior_games:
+                support = self.config.scoring_prior_games
+                shift = (
+                    support
+                    / (support + self.training_games)
+                    * (self.preseason_base_ppp - self.base_ppp)
+                )
+                home_score = max(float(expected_home), 0.0)
+                away_score = max(float(expected_away), 0.0)
+                margin = home_score - away_score
+                total = float(
+                    bounded_model_total(
+                        home_score + away_score, margin, 2 * possessions * shift
+                    )
+                )
+                baseline_adjustment = total - home_score - away_score
+                expected_home, expected_away = (
+                    (total + margin) / 2,
+                    (total - margin) / 2,
+                )
+
+            # Blend the margin only: the total keeps the joint fit's scoring
+            # level and calibration, the points-only rating moves the split.
+            srs_home_margin = None
+            if self.config.srs_blend_weight:
+                if self.srs_rating is None:
+                    raise ValueError("srs_blend_weight requires a fitted SRS")
+                srs_home_margin = float(
+                    self.srs_rating[home]
+                    - self.srs_rating[away]
+                    + (0.0 if bool(game.neutral_site) else self.srs_hfa_points)
+                )
+                home_score = max(float(expected_home), 0.0)
+                away_score = max(float(expected_away), 0.0)
+                total = home_score + away_score
+                weight = self.config.srs_blend_weight
+                margin = (1.0 - weight) * (
+                    home_score - away_score
+                ) + weight * srs_home_margin
+                expected_home, expected_away = (
+                    (total + margin) / 2,
+                    (total - margin) / 2,
+                )
+
+            score_design = np.zeros((2, 2 * n_teams + 1))
+            score_design[0, home] = self.base_possessions
+            score_design[0, n_teams + away] = -self.base_possessions
+            score_design[1, away] = self.base_possessions
+            score_design[1, n_teams + home] = -self.base_possessions
+            if not bool(game.neutral_site):
+                score_design[:, -1] = [
+                    0.5 * self.base_possessions,
+                    -0.5 * self.base_possessions,
+                ]
+            score_covariance = self.score_residual_covariance + (
+                score_design @ self.parameter_covariance @ score_design.T
+            )
+            score_covariance *= self.config.score_covariance_scale**2
+            margin_sd, total_sd, correlation = margin_total_distribution(
+                score_covariance
+            )
+            margin_sd *= self.config.margin_sd_scale
+            projections.append(
+                GameProjection(
+                    season=int(game.season),
+                    week=int(game.week),
+                    as_of=self.as_of,
+                    model_version=self.model_version,
+                    game_id=int(game.game_id),
+                    home_team_id=int(game.home_team_id),
+                    home_team=game.home_team,
+                    away_team_id=int(game.away_team_id),
+                    away_team=game.away_team,
+                    neutral_site=bool(game.neutral_site),
+                    home_field_points=(
+                        0.0 if bool(game.neutral_site) else self.home_field_points
+                    ),
+                    # The linear strength model is unconstrained, but football
+                    # scores are not. Extreme mismatches can otherwise produce
+                    # a negative mean for the underdog and abort the forecast.
+                    expected_home_points=max(float(expected_home), 0.0),
+                    expected_away_points=max(float(expected_away), 0.0),
+                    margin_sd=margin_sd,
+                    total_sd=total_sd,
+                    margin_total_correlation=correlation,
+                    degrees_of_freedom=self.config.student_t_degrees_of_freedom,
+                    expected_game_possessions=float(possessions),
+                    srs_home_margin=srs_home_margin,
+                    scoring_baseline_adjustment=baseline_adjustment,
+                    total_calibration_adjustment=(
+                        max(float(expected_home), 0.0)
+                        + max(float(expected_away), 0.0)
+                        - uncalibrated_total
+                        - baseline_adjustment
+                    ),
+                )
+            )
+        return projections
+
+
+def fit_joint_scoring(
+    games: pd.DataFrame,
+    forecast_week: int,
+    as_of: datetime,
+    config: JointScoringConfig = DEFAULT_CONFIG,
+    strength_prior_means: dict[int, tuple[float, float]] | None = None,
+    priors: JointScoringPriors | None = None,
+) -> JointScoringFit:
+    """Fit ratings using only games strictly before the requested model week.
+
+    strength_prior_means optionally maps team ID to offense and defense PPP
+    prior means. Missing FBS teams default to zero, while missing FCS teams use
+    the existing classification fallback learned from the initial fit.
+    Full priors additionally preserve team uncertainty and preseason pace.
+    """
+    if priors is not None:
+        if strength_prior_means is not None:
+            raise ValueError("provide full priors or strength_prior_means, not both")
+        strength_prior_means = priors.strength_means
+    if as_of.tzinfo is None or as_of.utcoffset() is None:
+        raise ValueError("as_of must be timezone-aware")
+    if (
+        priors is not None
+        and priors.score_noise_as_of is not None
+        and priors.score_noise_as_of >= as_of
+    ):
+        raise ValueError("score noise prior must precede the forecast cutoff")
+    scored = games[games["model_week"] < forecast_week]
+    if "completed" in scored:
+        scored = scored[scored["completed"].fillna(False).astype(bool)]
+    # joint_scoring_v13: the points-only rating needs only a final score, so
+    # it keeps the games whose play-by-play features are missing (mostly FCS
+    # versus FCS: 22 to 126 a season since 2022, over 600 in 2019 and 2021),
+    # in the weekly fit and in the carried chain. Holdout 2023 through 2025
+    # margin MAE -0.056 on Division I (t -4.8), -0.122 on FCS versus FCS,
+    # FBS versus FBS unchanged, negative in every season.
+    scored = scored.dropna(subset=["home_points", "away_points"])
+    training = scored.dropna(
+        subset=[
+            "game_possessions",
+            "home_epa_per_possession",
+            "away_epa_per_possession",
+        ]
+    ).copy()
+    if training.empty:
+        raise ValueError("at least one prior model week is required")
+    if "start_date" in scored:
+        latest_training_start = pd.to_datetime(scored["start_date"], utc=True).max()
+        if latest_training_start.to_pydatetime() >= as_of:
+            raise ValueError("training games must start before as_of")
+    catalog = _team_catalog(games)
+    team_index = {
+        int(team_id): index for index, team_id in enumerate(catalog["team_id"])
+    }
+    n_teams = len(catalog)
+    n_games = len(training)
+    pools = catalog["pool"].astype("category") if config.pool_prior_sd_ppp else None
+    pool_of = (
+        np.zeros(n_teams, dtype=int)
+        if pools is None
+        else pools.cat.codes.to_numpy().astype(int)
+    )
+    n_pools = 0 if pools is None else len(pools.cat.categories)
+    n_strength = 2 * n_teams + 2 * n_pools
+    classifications = catalog["classification"].fillna("").str.lower()
+    fbs_mask = classifications.eq("fbs").to_numpy()
+    fcs_mask = classifications.eq("fcs").to_numpy()
+    design = np.zeros((2 * n_games, n_strength + 1))
+    points_per_possession = np.empty(2 * n_games)
+    epa_per_possession = np.empty(2 * n_games)
+    latest_week = int(training["model_week"].max())
+    recency = np.empty(2 * n_games)
+
+    for game_number, game in enumerate(training.itertuples()):
+        home = team_index[int(game.home_team_id)]
+        away = team_index[int(game.away_team_id)]
+        home_row = 2 * game_number
+        away_row = home_row + 1
+        design[home_row, home] = 1.0
+        design[home_row, n_teams + away] = -1.0
+        design[away_row, away] = 1.0
+        design[away_row, n_teams + home] = -1.0
+        if n_pools:
+            design[home_row, 2 * n_teams + pool_of[home]] = 1.0
+            design[home_row, 2 * n_teams + n_pools + pool_of[away]] = -1.0
+            design[away_row, 2 * n_teams + pool_of[away]] = 1.0
+            design[away_row, 2 * n_teams + n_pools + pool_of[home]] = -1.0
+        if not bool(game.neutral_site):
+            design[home_row, -1] = 0.5
+            design[away_row, -1] = -0.5
+        points_per_possession[[home_row, away_row]] = [
+            game.home_points / game.game_possessions,
+            game.away_points / game.game_possessions,
+        ]
+        epa_per_possession[[home_row, away_row]] = [
+            game.home_epa_per_possession,
+            game.away_epa_per_possession,
+        ]
+        weight = 0.5 ** (
+            (latest_week - game.model_week) / config.rating_half_life_weeks
+        )
+        recency[[home_row, away_row]] = weight
+
+    base_ppp = float(np.average(points_per_possession, weights=recency))
+    centered_points = points_per_possession - base_ppp
+    centered_epa: np.ndarray = epa_per_possession - np.average(
+        epa_per_possession, weights=recency
+    )
+    epa_variance = np.average(np.square(centered_epa), weights=recency)
+    epa_scale = float(
+        np.clip(
+            np.average(centered_epa * centered_points, weights=recency)
+            / max(epa_variance, 1e-9),
+            0.1,
+            2.0,
+        )
+    )
+    process_points = epa_scale * centered_epa
+    target = 0.5 * (centered_points + process_points)
+    base_possessions = (
+        priors.base_possessions
+        if priors is not None
+        else float(np.average(training["game_possessions"]))
+    )
+    prior_mean = np.zeros(n_strength + 1)
+    teams_with_priors: np.ndarray = np.zeros(n_teams, dtype=bool)
+    if strength_prior_means:
+        for team_id, (offense_prior, defense_prior) in strength_prior_means.items():
+            index = team_index.get(team_id)
+            if index is not None:
+                prior_mean[index] = offense_prior
+                prior_mean[n_teams + index] = defense_prior
+                teams_with_priors[index] = True
+    prior_mean[-1] = HFA_PRIOR_POINTS / base_possessions
+    prior_sd = np.full(n_strength + 1, config.strength_prior_sd_ppp)
+    prior_sd[2 * n_teams : n_strength] = config.pool_prior_sd_ppp or 1.0
+    if priors is not None:
+        for team_id, (offense_sd, defense_sd) in priors.strength_sds.items():
+            index = team_index.get(team_id)
+            if index is not None:
+                prior_sd[index] = offense_sd
+                prior_sd[n_teams + index] = defense_sd
+    prior_sd[-1] = HFA_PRIOR_SD_POINTS / base_possessions
+    prior_precision = _strength_prior_precision(
+        prior_sd, n_teams, config.strength_prior_correlation
+    )
+    parameters, covariance = _solve_ridge(
+        design, target, recency, prior_mean, prior_sd, prior_precision
+    )
+    missing_fcs_indices = (
+        np.flatnonzero(fcs_mask & ~teams_with_priors)
+        if fbs_mask.any()
+        else np.array([], dtype=int)
+    )
+    if missing_fcs_indices.size:
+        offense_pool, defense_pool = _pool_offsets(
+            parameters, n_teams, fbs_mask, fcs_mask
+        )
+        prior_mean[missing_fcs_indices] = offense_pool
+        prior_mean[n_teams + missing_fcs_indices] = defense_pool
+    paired_residuals = np.column_stack(
+        [centered_points - design @ parameters, process_points - design @ parameters]
+    )
+    process_covariance = _regularized_covariance(
+        paired_residuals,
+        floor=0.01,
+        shrinkage=config.covariance_shrinkage,
+    )
+    inverse_process_covariance = np.linalg.inv(process_covariance)
+    ones = np.ones(2)
+    information = float(ones @ inverse_process_covariance @ ones)
+    target = (
+        np.column_stack([centered_points, process_points])
+        @ inverse_process_covariance
+        @ ones
+        / information
+    )
+    parameters, covariance = _solve_ridge(
+        design, target, recency * information, prior_mean, prior_sd, prior_precision
+    )
+    # The FCS pool is linked to FBS only through crossover games, and the
+    # per-team prior is far too tight for the pool to travel from the initial
+    # fit's level to the level those games identify. Re-anchoring the pool
+    # prior at the fitted pool level and refitting converges on the crossover
+    # evidence in a handful of solves.
+    for _ in range(MAX_POOL_ITERATIONS if missing_fcs_indices.size else 0):
+        offense_pool, defense_pool = _pool_offsets(
+            parameters, n_teams, fbs_mask, fcs_mask
+        )
+        shift = max(
+            abs(offense_pool - prior_mean[missing_fcs_indices[0]]),
+            abs(defense_pool - prior_mean[n_teams + missing_fcs_indices[0]]),
+        )
+        prior_mean[missing_fcs_indices] = offense_pool
+        prior_mean[n_teams + missing_fcs_indices] = defense_pool
+        if shift < POOL_TOLERANCE_PPP:
+            break
+        parameters, covariance = _solve_ridge(
+            design, target, recency * information, prior_mean, prior_sd, prior_precision
+        )
+
+    fold = np.zeros((2 * n_teams + 1, n_strength + 1))
+    fold[np.arange(2 * n_teams), np.arange(2 * n_teams)] = 1.0
+    if n_pools:
+        fold[np.arange(n_teams), 2 * n_teams + pool_of] = 1.0
+        fold[n_teams + np.arange(n_teams), 2 * n_teams + n_pools + pool_of] = 1.0
+    fold[-1, -1] = 1.0
+    parameters = fold @ parameters
+    covariance = fold @ covariance @ fold.T
+    offense = parameters[:n_teams]
+    defense = parameters[n_teams : 2 * n_teams]
+    center_mask = fbs_mask if fbs_mask.any() else np.ones(n_teams, dtype=bool)
+    offense_mean = float(offense[center_mask].mean())
+    defense_mean = float(defense[center_mask].mean())
+    offense = offense - offense_mean
+    defense = defense - defense_mean
+    base_ppp += offense_mean - defense_mean
+    center_weights = np.zeros(n_teams)
+    center_weights[center_mask] = 1.0 / center_mask.sum()
+    centering = np.eye(n_teams) - np.tile(center_weights, (n_teams, 1))
+    covariance_transform = np.zeros_like(covariance)
+    covariance_transform[:n_teams, :n_teams] = centering
+    covariance_transform[n_teams : 2 * n_teams, n_teams : 2 * n_teams] = centering
+    covariance_transform[-1, -1] = 1.0
+    covariance = covariance_transform @ covariance @ covariance_transform.T
+
+    pace_design = np.zeros((n_games, n_teams))
+    pace_target = training["game_possessions"].to_numpy(float)
+    for row, game in enumerate(training.itertuples()):
+        pace_design[row, team_index[int(game.home_team_id)]] = 0.5
+        pace_design[row, team_index[int(game.away_team_id)]] = 0.5
+    pace_prior = np.zeros(n_teams)
+    if priors is not None:
+        for team_id, expected_possessions in priors.expected_possessions.items():
+            index = team_index.get(team_id)
+            if index is not None:
+                pace_prior[index] = 2 * (expected_possessions - base_possessions)
+    pace, _ = _solve_ridge(
+        pace_design,
+        pace_target - base_possessions,
+        recency[::2],
+        pace_prior,
+        np.full(n_teams, config.pace_prior_sd),
+    )
+    if priors is None:
+        base_possessions += float(pace.mean())
+        pace -= pace.mean()
+
+    home_index = training["home_team_id"].map(team_index).to_numpy(int)
+    away_index = training["away_team_id"].map(team_index).to_numpy(int)
+    expected_possessions = base_possessions + 0.5 * (
+        pace[home_index] + pace[away_index]
+    )
+    home_field = (~training["neutral_site"].astype(bool)).to_numpy(float)
+    hfa_points = base_possessions * parameters[-1]
+    predicted_home = (
+        base_ppp * expected_possessions
+        + expected_possessions * (offense[home_index] - defense[away_index])
+        + 0.5 * hfa_points * home_field
+    )
+    predicted_away = (
+        base_ppp * expected_possessions
+        + expected_possessions * (offense[away_index] - defense[home_index])
+        - 0.5 * hfa_points * home_field
+    )
+    actual_home = training["home_points"].to_numpy(float)
+    actual_away = training["away_points"].to_numpy(float)
+    net = offense + defense
+    groups = pool_of if n_pools else np.where(fbs_mask, 0, np.where(fcs_mask, 1, 2))
+    pool_level = np.zeros(n_teams)
+    for group in np.unique(groups):
+        members = groups == group
+        pool_level[members] = net[members].mean()
+    crossover_gain = 0.0
+    regressor = (
+        0.5 * base_possessions * (pool_level[home_index] - pool_level[away_index])
+    )
+    if config.crossover_prior_sd and regressor.any():
+        # Points the stronger pool's side beat the rating margin by, per point
+        # of pool-level gap, shrunk toward zero by game noise over the prior.
+        game_weights = recency[::2]
+        margin_residual = (actual_home - predicted_home) - (
+            actual_away - predicted_away
+        )
+        noise = float(np.average(np.square(margin_residual), weights=game_weights))
+        crossover_gain = float(
+            np.sum(game_weights * regressor * margin_residual)
+            / (
+                np.sum(game_weights * np.square(regressor))
+                + noise / config.crossover_prior_sd**2
+            )
+        )
+        crossover_points = 0.5 * crossover_gain * regressor
+        predicted_home = predicted_home + crossover_points
+        predicted_away = predicted_away - crossover_points
+    score_residuals = np.column_stack(
+        [actual_home - predicted_home, actual_away - predicted_away]
+    )
+    if n_games < 2:
+        if priors is None or priors.score_noise_covariance is None:
+            raise ValueError(
+                "score noise requires two games or a prior-season estimate"
+            )
+        score_covariance = priors.score_noise_covariance.copy()
+    else:
+        score_covariance = _regularized_covariance(
+            score_residuals,
+            floor=4.0,
+            shrinkage=config.covariance_shrinkage,
+        )
+    srs_rating, srs_hfa_points, srs_rating_sd = None, 0.0, None
+    if config.srs_blend_weight:
+        srs_prior_points = base_possessions * (
+            prior_mean[:n_teams] + prior_mean[n_teams : 2 * n_teams]
+        )
+        srs_teams_with_priors = teams_with_priors.copy()
+        if priors is not None and priors.srs_prior_means is not None:
+            srs_prior_points = np.zeros(n_teams)
+            srs_teams_with_priors = np.zeros(n_teams, dtype=bool)
+            for team_id, rating in priors.srs_prior_means.items():
+                index = team_index.get(team_id)
+                if index is not None:
+                    srs_prior_points[index] = rating
+                    srs_teams_with_priors[index] = True
+        srs_fit = _fit_points_rating(
+            scored,
+            team_index,
+            classifications.to_numpy(),
+            0.5
+            ** (
+                (scored["model_week"].max() - scored["model_week"].to_numpy(float))
+                / config.rating_half_life_weeks
+            ),
+            srs_prior_points,
+            srs_teams_with_priors,
+            config.srs_prior_sd_points,
+        )
+        srs_rating, srs_hfa_points = srs_fit.rating, srs_fit.home_field
+        srs_rating_sd = np.sqrt(srs_fit.rating_variance(classifications.to_numpy()))
+    if priors is not None and priors.score_noise_covariance is not None:
+        if priors.score_noise_season != int(training["season"].iloc[-1]) - 1:
+            raise ValueError("score noise prior must come from the previous season")
+        # Preserve a full season of noise evidence across the preseason/weekly
+        # boundary. Current in-sample residuals alone are unstable on small slates.
+        score_covariance = (
+            priors.score_noise_games * priors.score_noise_covariance
+            + n_games * score_covariance
+        ) / (priors.score_noise_games + n_games)
+    return JointScoringFit(
+        season=int(training["season"].iloc[-1]),
+        week=forecast_week,
+        as_of=as_of,
+        teams=catalog,
+        offense_ppp=offense,
+        defense_ppp=defense,
+        pace=pace,
+        base_ppp=base_ppp,
+        base_possessions=base_possessions,
+        hfa_ppp=float(parameters[-1]),
+        crossover_gain=crossover_gain,
+        pool_level=pool_level,
+        parameter_covariance=covariance,
+        score_residual_covariance=score_covariance,
+        config=config,
+        training_games=n_games,
+        preseason_base_ppp=priors.base_ppp if priors is not None else None,
+        srs_rating=srs_rating,
+        srs_hfa_points=srs_hfa_points,
+        srs_rating_sd=srs_rating_sd,
+    )
