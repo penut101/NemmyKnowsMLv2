@@ -1,0 +1,229 @@
+"""One production week: engine fit on games before the week, QB and rest
+layers for the slate, market blend, ratings and projections out."""
+
+from datetime import UTC, datetime
+
+import pandas as pd
+
+from backend.config import HISTORY_START_SEASON
+from backend.etl import store
+from backend.features import qb as qb_features
+from backend.features.drives import kickoff_utc
+from backend.model import qb_adjustment as qb_layer
+from backend.model.joint_scoring import (
+    DEFAULT_CONFIG,
+    JointScoringConfig,
+    JointScoringFit,
+    fit_joint_scoring,
+)
+from backend.model.outputs import GameProjection, TeamRating
+from backend.model.preseason import (
+    WIN_TOTAL_BLEND,
+    build_preseason_prior,
+    load_qb_references,
+)
+from backend.model.projections import (
+    LayerConfig,
+    align_ratings_to_forecast,
+    assemble_projections,
+)
+from backend.model.totals import DEFAULT_TOTALS_CONFIG, TotalsConfig
+
+
+def recency_by_game(
+    games: pd.DataFrame, forecast_week: int, config: JointScoringConfig
+) -> dict[str, float]:
+    training = games[games["model_week"] < forecast_week]
+    if training.empty:
+        return {}
+    latest = int(training["model_week"].max())
+    return {
+        str(row.game_id): 0.5
+        ** ((latest - row.model_week) / config.rating_half_life_weeks)
+        for row in training.itertuples()
+    }
+
+
+def forecast_qb_context(
+    season,
+    week,
+    qb_games,
+    depth_charts,
+    config,
+    layer_config,
+    as_of=None,
+    injuries=None,
+):
+    """Shared cutoff QB values, identities and reliability weights."""
+    game_index = store.game_index(list(range(HISTORY_START_SEASON, season + 1)))
+    eligible = game_index[
+        (game_index["season"] < season)
+        | (game_index["season"].eq(season) & (game_index["model_week"] < week))
+    ]
+    as_of = as_of or datetime.now(UTC)
+    eligible = eligible[pd.to_datetime(eligible["start_date"], utc=True).lt(as_of)]
+    qb_history = qb_games[qb_games["game_id"].isin(set(eligible["game_id"]))]
+    history = qb_layer.strength_history(
+        qb_history, eligible, layer_config.qb_span_dropbacks
+    )
+    context = qb_layer.context_before_week(
+        history,
+        season,
+        week,
+        config.rating_half_life_weeks,
+        load_qb_references(season, as_of),
+        WIN_TOTAL_BLEND,
+    )
+    expected = qb_features.expected_starters(
+        qb_history,
+        eligible,
+        depth_charts,
+        season,
+        week,
+        as_of=as_of,
+        injuries=injuries,
+    )
+
+    unavailable = qb_features.ruled_out(injuries, season, week, as_of)
+    basis = qb_features.identification_basis(depth_charts)
+    weights = {
+        team: layer_config.qb_weight(
+            basis, context.confirmed_absence(team, passer, unavailable)
+        )
+        for team, passer in expected.items()
+    }
+    return context, expected, weights
+
+
+def compute_qb_adjustments(
+    season: int,
+    week: int,
+    slate: pd.DataFrame,
+    qb_games: pd.DataFrame,
+    depth_charts: pd.DataFrame,
+    config: JointScoringConfig,
+    layer_config: LayerConfig,
+    as_of: datetime | None = None,
+    injuries: pd.DataFrame | None = None,
+) -> dict[str, tuple[float, float]]:
+    """game_id -> (home_adj, away_adj) for the expected starters.
+
+    QB values use career history across seasons (game_index); baselines use
+    the recent QB workload, falling back to the previous season in preseason."""
+    context, expected, weights = forecast_qb_context(
+        season, week, qb_games, depth_charts, config, layer_config, as_of, injuries
+    )
+    adjustments: dict[str, tuple[float, float]] = {}
+    for game in slate.itertuples():
+        sides = []
+        for team in (str(game.home_team), str(game.away_team)):
+            passer = expected.get(team)
+            if passer is None:
+                sides.append(0.0)
+                continue
+            weight = weights[team]
+            sides.append(context.adjustment(team, passer, weight))
+        adjustments[str(game.game_id)] = (sides[0], sides[1])
+    return adjustments
+
+
+def load_depth_charts(season: int) -> pd.DataFrame:
+    try:
+        return store.read_raw("depth_charts", f"{season}.parquet")
+    except FileNotFoundError:
+        return pd.DataFrame(columns=["season", "week", "position", "team", "gsis_id"])
+
+
+def load_injuries(season: int, week=None, as_of=None) -> pd.DataFrame:
+    try:
+        weekly = store.read_raw("injuries", f"{season}.parquet")
+    except FileNotFoundError:
+        weekly = pd.DataFrame(columns=["season", "week", "gsis_id", "report_status"])
+    if week is None or as_of is None:
+        return weekly
+    from backend.availability import current_reports, merge_reports
+
+    current, _ = current_reports(
+        season, week, as_of, load_depth_charts(season), store.current_teams()
+    )
+    return merge_reports(weekly, current)
+
+
+def week_slate(season: int, week: int) -> pd.DataFrame:
+    schedules = store.read_raw("schedules.parquet")
+    slate = schedules[
+        schedules["season"].eq(season) & schedules["week"].eq(week)
+    ].copy()
+    slate["neutral_site"] = slate["location"].eq("Neutral")
+    slate["start_date"] = kickoff_utc(slate)
+    return slate
+
+
+def market_home_spreads(slate: pd.DataFrame) -> dict[str, float]:
+    """game_id -> sportsbook home line from the nflverse schedule."""
+    return {
+        str(row.game_id): -float(row.spread_line)
+        for row in slate.itertuples()
+        if pd.notna(getattr(row, "spread_line", None))
+    }
+
+
+def market_totals(slate: pd.DataFrame) -> dict[str, float]:
+    """game_id -> sportsbook total from the nflverse schedule."""
+    return {
+        str(row.game_id): float(row.total_line)
+        for row in slate.itertuples()
+        if pd.notna(getattr(row, "total_line", None))
+    }
+
+
+def fit_and_project(
+    season: int,
+    week: int,
+    as_of: datetime | None = None,
+    config: JointScoringConfig = DEFAULT_CONFIG,
+    layer_config: LayerConfig = LayerConfig(),
+    totals_config: TotalsConfig = DEFAULT_TOTALS_CONFIG,
+) -> tuple[JointScoringFit, list[TeamRating], list[GameProjection]]:
+    as_of = as_of or datetime.now(UTC)
+    games = store.season_games(season)
+    slate = week_slate(season, week)
+    prior = build_preseason_prior(season, as_of=as_of, engine_config=config)
+    fit = fit_joint_scoring(
+        games,
+        week,
+        as_of,
+        config,
+        strength_prior=prior.week1_fit(),
+        totals_config=totals_config,
+    )
+    team_names = store.team_names()
+    qb_games = store.qb_games(list(range(HISTORY_START_SEASON, season + 1)))
+    qb_adjustments = compute_qb_adjustments(
+        season,
+        week,
+        slate,
+        qb_games,
+        load_depth_charts(season),
+        config,
+        layer_config,
+        as_of=as_of,
+        injuries=load_injuries(season, week, as_of),
+    )
+    projections = assemble_projections(
+        fit,
+        slate,
+        as_of,
+        team_names,
+        qb_adjustments,
+        market_home_spreads(slate),
+        layer_config,
+        market_totals(slate),
+    )
+    # The fit keeps the market-free ratings; the published ones reproduce
+    # the published lines.
+    return (
+        fit,
+        align_ratings_to_forecast(fit.ratings(team_names), projections),
+        projections,
+    )

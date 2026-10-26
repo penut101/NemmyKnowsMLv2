@@ -1,0 +1,583 @@
+"""Pregame serving and evaluation publication. Writes use per-key DELETE + append
+(whole-table
+DELETE + append for the full backtest refresh) so RLS, policies, and indexes
+survive; to_sql(if_exists="replace") would drop them. Every statement is
+schema-qualified so a lost search_path can never redirect a write. Timestamps
+become tz-aware datetimes and every NaN becomes None: Postgres double
+precision would accept a literal NaN, but PostgREST cannot serialize it to
+JSON, so NULL is the only safe missing value."""
+
+import pandas as pd
+from sqlalchemy import MetaData, Table, text
+from sqlalchemy.dialects.postgresql import insert
+
+from backend.contracts import (
+    BACKTEST_COLUMNS,
+    GAME_PROJECTIONS_COLUMNS,
+    MARKET_COMPARISONS_COLUMNS,
+    MARKET_SNAPSHOTS_COLUMNS,
+    SCHEMA,
+    SEASON_WIN_TOTALS_COLUMNS,
+    TABLES,
+    TEAM_RATINGS_COLUMNS,
+    TEAM_UNIT_RATINGS_COLUMNS,
+    TEAMS_COLUMNS,
+)
+from backend.contracts import (
+    prepare_rows as _prepare,
+)
+from backend.etl import store
+
+
+def _append(frame: pd.DataFrame, table: str, conn, **kwargs) -> None:
+    frame.to_sql(
+        table, con=conn, schema=SCHEMA, if_exists="append", index=False, **kwargs
+    )
+
+
+def _upsert(frame: pd.DataFrame, table: str, conn) -> None:
+    if frame.empty:
+        return
+    target = Table(table, MetaData(), schema=SCHEMA, autoload_with=conn)
+    statement = insert(target).values(frame.to_dict("records"))
+    newer = (
+        target.c.source_fetched_at <= statement.excluded.source_fetched_at
+        if table == "game_results"
+        else None
+    )
+    conn.execute(
+        statement.on_conflict_do_update(
+            index_elements=["game_id"],
+            set_={c: statement.excluded[c] for c in frame.columns if c != "game_id"},
+            where=newer,
+        )
+    )
+
+
+def build_teams_frame() -> pd.DataFrame:
+    raw = store.current_teams()
+    return pd.DataFrame(
+        {
+            "team_abbr": raw["team_abbr"],
+            "team": raw["team_name"],
+            "color": raw["team_color"],
+            "alternate_color": raw["team_color2"],
+            "logo_light": raw["team_logo_espn"],
+            "logo_dark": raw["team_logo_espn"],
+        }
+    )
+
+
+def publish_week(
+    engine,
+    season: int,
+    week: int,
+    ratings: pd.DataFrame | None,
+    unit_ratings: pd.DataFrame | None,
+    projections: pd.DataFrame,
+    market_comparisons: pd.DataFrame | None,
+    backtest: pd.DataFrame | None,
+    market_snapshot: pd.DataFrame | None = None,
+    season_win_totals: pd.DataFrame | None = None,
+    recommendations: pd.DataFrame | None = None,
+    archive_bundle: dict | None = None,
+) -> dict[str, int]:
+    """One transaction; read-back counts returned for the caller to print.
+    ratings=None leaves teams and team ratings untouched, and
+    unit_ratings=None (the projections-only refresh) leaves unit ratings
+    untouched. market_snapshot appends to the archive keyed by
+    (game_id, fetched_at), so a re-run of the same snapshot is idempotent
+    and earlier snapshots are never touched."""
+    if ratings is not None:
+        teams = build_teams_frame()
+        metadata = store.current_teams().set_index("team_abbr")
+        ratings = ratings.copy()
+        ratings["conference"] = ratings["team_abbr"].map(metadata["team_conf"])
+        ratings["division"] = ratings["team_abbr"].map(metadata["team_division"])
+
+    week_key = {"s": season, "w": week}
+    counts: dict[str, int] = {}
+    if season_win_totals is not None:
+        if (
+            len(season_win_totals) != 32
+            or season_win_totals["team_abbr"].duplicated().any()
+            or not season_win_totals["season"].eq(season).all()
+        ):
+            raise ValueError(
+                "Season win totals must contain all 32 teams for this season"
+            )
+    with engine.begin() as conn:
+        conn.execute(text("SELECT pg_advisory_xact_lock(20261002, 3)"))
+        # The database archives revisions and rejects late/stale replacements.
+        # Upsert keeps one public row per game even when its week changes.
+        _upsert(
+            _prepare(projections, GAME_PROJECTIONS_COLUMNS), "game_projections", conn
+        )
+        if ratings is not None:
+            from backend.model.projections import align_published_ratings
+
+            effective = pd.read_sql_query(
+                text(
+                    f"SELECT * FROM {SCHEMA}.game_projections "
+                    "WHERE season = :s AND week = :w"
+                ),
+                conn,
+                params=week_key,
+            )
+            ratings = align_published_ratings(ratings, effective)
+
+        if season_win_totals is not None:
+            conn.execute(
+                text(f"DELETE FROM {SCHEMA}.season_win_totals WHERE season = :s"),
+                {"s": season},
+            )
+            _append(
+                _prepare(season_win_totals, SEASON_WIN_TOTALS_COLUMNS),
+                "season_win_totals",
+                conn,
+            )
+        if ratings is not None:
+            conn.execute(text(f"DELETE FROM {SCHEMA}.teams"))
+            _append(_prepare(teams, TEAMS_COLUMNS), "teams", conn)
+            conn.execute(
+                text(
+                    f"DELETE FROM {SCHEMA}.team_ratings WHERE season = :s AND week = :w"
+                ),
+                week_key,
+            )
+            _append(_prepare(ratings, TEAM_RATINGS_COLUMNS), "team_ratings", conn)
+        if unit_ratings is not None:
+            conn.execute(
+                text(
+                    f"DELETE FROM {SCHEMA}.team_unit_ratings "
+                    "WHERE season = :s AND week = :w"
+                ),
+                week_key,
+            )
+            _append(
+                _prepare(unit_ratings, TEAM_UNIT_RATINGS_COLUMNS),
+                "team_unit_ratings",
+                conn,
+            )
+        if market_comparisons is not None:
+            conn.execute(text(f"DELETE FROM {SCHEMA}.market_comparisons"))
+            _append(
+                _prepare(market_comparisons, MARKET_COMPARISONS_COLUMNS),
+                "market_comparisons",
+                conn,
+            )
+        if market_snapshot is not None and not market_snapshot.empty:
+            snapshot = _prepare(market_snapshot, MARKET_SNAPSHOTS_COLUMNS)
+            conn.execute(
+                text(
+                    f"DELETE FROM {SCHEMA}.market_snapshots "
+                    "WHERE game_id = ANY(:ids) AND fetched_at = ANY(:ts)"
+                ),
+                {
+                    "ids": snapshot["game_id"].tolist(),
+                    "ts": [
+                        t.to_pydatetime()
+                        for t in snapshot["fetched_at"].drop_duplicates()
+                    ],
+                },
+            )
+            _append(snapshot, "market_snapshots", conn)
+        if backtest is not None:
+            # DELETE rather than TRUNCATE: TRUNCATE takes an exclusive lock
+            # that stalls frontend reads for the whole insert.
+            conn.execute(text(f"DELETE FROM {SCHEMA}.backtest_predictions"))
+            _append(
+                _prepare(backtest, BACKTEST_COLUMNS),
+                "backtest_predictions",
+                conn,
+                chunksize=1000,
+            )
+        if recommendations is not None:
+            publish_recommendations(conn, recommendations)
+        if archive_bundle is not None:
+            from backend.forecast_archive import persist
+
+            persist(conn, archive_bundle)
+        for table in TABLES:
+            counts[table] = conn.execute(
+                text(f"SELECT COUNT(*) FROM {SCHEMA}.{table}")
+            ).scalar_one()
+    return counts
+
+
+def fallback_market_comparisons(projections: pd.DataFrame) -> pd.DataFrame:
+    """Reduced market_comparisons from nflverse schedule lines when no Odds
+    API snapshot exists: model vs line, no prices or links."""
+    return pd.DataFrame(
+        {
+            "game_id": projections["game_id"],
+            "start_date": projections["start_date"],
+            "home_team": projections["home_team"],
+            "away_team": projections["away_team"],
+            "model_home_spread": projections["home_spread"],
+            "model_total": projections["market_informed_total"],
+            "margin_sd": projections["margin_sd"],
+            "total_sd": projections["total_sd"],
+            "model_as_of": projections["as_of"],
+            "market_available": projections["market_home_spread"].notna(),
+            "priced_offer_available": False,
+            "executable_offer_available": False,
+            "review_status": "no_priced_offer",
+            "recommendation_status": "not_recommended",
+        }
+    )
+
+
+def build_backtest_frame(floor_season: int) -> pd.DataFrame:
+    predictions = store.read_processed("calibration", "predictions.parquet")
+    if not {"forecast_cutoff", "home_expected_qb", "away_expected_qb"}.issubset(
+        predictions.columns
+    ):
+        raise ValueError("Regenerate legacy backtests with forecast-time QB inputs")
+    predictions = predictions[predictions["season"].ge(floor_season)].copy()
+    return pd.DataFrame(
+        {
+            "game_id": predictions["game_id"],
+            "season": predictions["season"],
+            "week": predictions["week"],
+            "week_index": predictions["model_week"],
+            "season_type": predictions["season_type"],
+            "home_team": predictions["home_team"],
+            "away_team": predictions["away_team"],
+            "neutral_site": predictions["neutral_site"],
+            "home_points": predictions["home_points"].astype(int),
+            "away_points": predictions["away_points"].astype(int),
+            "closing_spread": predictions["closing_spread"],
+            "model_margin": predictions["model_margin"],
+            "pure_model_margin": predictions["pure_model_margin"],
+            "actual_margin": predictions["actual_margin"],
+        }
+    )
+
+
+def grade_season(engine, results: pd.DataFrame, season: int) -> dict:
+    with engine.begin() as conn:
+        _upsert(results, "game_results", conn)
+        return dict(
+            conn.execute(
+                text("""
+            select count(*) as completed_games,
+              count(model_margin) as frozen_forecasts,
+              count(*) filter (where model_margin is not null
+                and pure_model_margin is not null and closing_spread is not null)
+                as benchmark_games,
+              avg(model_absolute_error) filter (where model_margin is not null
+                and pure_model_margin is not null and closing_spread is not null)
+                as blended_mae,
+              avg(pure_absolute_error) filter (where model_margin is not null
+                and pure_model_margin is not null and closing_spread is not null)
+                as pure_mae,
+              avg(closing_absolute_error) filter (where model_margin is not null
+                and pure_model_margin is not null and closing_spread is not null)
+                as closing_mae
+            from nfl.live_predictions where season = :season
+        """),
+                {"season": season},
+            )
+            .mappings()
+            .one()
+        )
+
+
+def publish_awards(engine, season: int, week: int) -> dict:
+    """Publish all seven award states and their matching boards atomically."""
+    import json
+
+    import numpy as np
+    from sqlalchemy.dialects.postgresql import JSONB
+
+    from backend.awards import AWARDS, MODEL_VERSION
+    from backend.awards.pipeline import BOARD_COLUMNS, META_COLUMNS
+
+    board = store.read_processed("awards", "boards", f"{season}_{week:02d}.parquet")
+    meta = store.read_processed("awards", "meta", f"{season}_{week:02d}.parquet")
+    if len(meta) != len(AWARDS) or set(meta.award) != set(AWARDS):
+        raise ValueError("Publication requires a status for all seven awards")
+    for frame in (meta, board):
+        if not (
+            frame.season.eq(season)
+            & frame.week.eq(week)
+            & frame.model_version.eq(MODEL_VERSION)
+        ).all():
+            raise ValueError("Mixed award artifact versions or cutoffs")
+    if meta.as_of.nunique() != 1 or (
+        not board.empty and not board.as_of.eq(meta.as_of.iloc[0]).all()
+    ):
+        raise ValueError("Mixed award snapshot timestamps")
+    for row in meta.itertuples():
+        pool = board[board.award.eq(row.award)]
+        years = json.loads(row.training_seasons)
+        if any(not isinstance(year, int) or year >= season for year in years):
+            raise ValueError("Award training must exclude the forecast season")
+        if row.status in {"ready", "watchlist"} and (
+            len(pool) != row.candidate_count or pool.empty
+        ):
+            raise ValueError(f"Incomplete {row.award} candidate board")
+        if row.status not in {"ready", "watchlist"} and not pool.empty:
+            raise ValueError("Unavailable award contains predictions")
+        if row.status == "watchlist" and (
+            pool.predicted_rank.notna().any()
+            or pool.win_probability.notna().any()
+            or pool.context_source.fillna("").eq("").any()
+            or pool.context_reason.fillna("").eq("").any()
+        ):
+            raise ValueError("Watchlists require context and cannot claim forecasts")
+        if pool.candidate_id.duplicated().any():
+            raise ValueError("Duplicate award candidate")
+        if row.status == "ready" and sorted(pool.predicted_rank.tolist()) != list(
+            range(1, len(pool) + 1)
+        ):
+            raise ValueError("Award ranks must cover the complete candidate pool")
+        if pool.win_probability.notna().any():
+            report = json.loads(row.validation)
+            if (
+                not report.get("probabilities_publishable")
+                or pool.win_probability.isna().any()
+                or not np.isclose(pool.win_probability.sum(), 1)
+                or not pool.win_probability.between(0, 1).all()
+            ):
+                raise ValueError("Unvalidated or incomplete award probabilities")
+    with engine.begin() as conn:
+        for table, frame, columns, json_columns in (
+            (
+                "award_boards",
+                board,
+                BOARD_COLUMNS,
+                ["projected_stats", "season_stats", "drivers"],
+            ),
+            (
+                "award_model_meta",
+                meta,
+                META_COLUMNS,
+                ["training_seasons", "validation", "provenance"],
+            ),
+        ):
+            conn.execute(
+                text(f"DELETE FROM nfl.{table} WHERE season=:season AND week=:week"),
+                {"season": season, "week": week},
+            )
+            prepared = _prepare(frame, columns)
+            for column in json_columns:
+                prepared[column] = prepared[column].map(json.loads)
+            if not prepared.empty:
+                _append(prepared, table, conn, dtype={c: JSONB for c in json_columns})
+    return {"award_boards": len(board), "award_model_meta": len(meta)}
+
+
+def publish_position_traits(engine, season: int) -> dict:
+    """Publish the latest scored week of position traits for ``season``.
+
+    The whole season's rows are replaced in one transaction: the table holds one
+    snapshot week per season and the parquet artifact keeps the history. A
+    season with no scored week leaves the table untouched.
+    """
+    from backend.players import MODEL_VERSION
+    from backend.players.pipeline import POSITION_TRAIT_COLUMNS, latest_trait_week
+    from backend.players.ratings import SPECS
+
+    versions = {MODEL_VERSION, *(spec.model_version for spec, _ in SPECS.values())}
+
+    rows = latest_trait_week(season)
+    if rows.empty:
+        raise ValueError(
+            f"no scored position trait week for {season}; run position-traits"
+        )
+    if rows["week"].nunique() != 1 or rows["as_of"].nunique() != 1:
+        raise ValueError("Mixed position trait snapshot weeks or timestamps")
+    if not rows["model_version"].isin(versions).all():
+        raise ValueError("Position trait rows from an unknown model version")
+    if rows.duplicated(["season", "athlete_id", "trait"]).any():
+        raise ValueError("Duplicate position trait rows")
+    if not rows["trait"].eq("grade").any():
+        raise ValueError("Position trait snapshot carries no grade rows")
+    prepared = _prepare(rows, POSITION_TRAIT_COLUMNS)
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM nfl.position_traits WHERE season = :season"),
+            {"season": season},
+        )
+        _append(prepared, "position_traits", conn, chunksize=2000)
+    return {
+        "position_traits": len(prepared),
+        "week": int(rows["week"].iloc[0]),
+        "graded": int(rows["trait"].eq("grade").sum()),
+    }
+
+
+def publish_recommendations(conn, decisions):
+    """Freeze picks unless verified pregame QB inputs change; archive revisions."""
+    import json
+
+    from backend.recommendations import RECOMMENDATION_COLUMNS
+
+    if decisions.empty:
+        return
+    rows = _prepare(decisions, RECOMMENDATION_COLUMNS).to_dict("records")
+    for row in rows:
+        for key in ("source_timestamps", "data_flags", "pricing_weights"):
+            if isinstance(row[key], str):
+                row[key] = json.loads(row[key])
+            if row[key] is None:
+                row[key] = [] if key == "pricing_weights" else {}
+    # BEFORE INSERT validation runs even for an ON CONFLICT no-op. Filter
+    # frozen rows first, then repeat the same gate atomically in the upsert.
+    eligible = set(
+        conn.execute(
+            text(
+                "select proposed.game_id, proposed.market "
+                "from jsonb_populate_recordset(null::nfl.recommendations, "
+                "cast(:rows as jsonb)) proposed "
+                "left join nfl.recommendations existing using (game_id, market) "
+                "where existing.game_id is null or "
+                "(existing.outcome = 'pending' "
+                "and existing.start_date > clock_timestamp() "
+                "and proposed.decision_at > existing.decision_at "
+                "and (existing.status = 'no_play' "
+                "or nfl.can_refresh_qb_pick(existing, proposed)))"
+            ),
+            {
+                "rows": json.dumps(
+                    [{"outcome": "pending", **row} for row in rows],
+                    default=lambda value: value.isoformat(),
+                )
+            },
+        ).all()
+    )
+    rows = [row for row in rows if (row["game_id"], row["market"]) in eligible]
+    if not rows:
+        return
+    table = Table("recommendations", MetaData(), schema=SCHEMA, autoload_with=conn)
+    statement = insert(table).values(rows)
+    statement = statement.on_conflict_do_update(
+        index_elements=["game_id", "market"],
+        set_={
+            c: statement.excluded[c]
+            for c in RECOMMENDATION_COLUMNS
+            if c not in ("game_id", "market")
+        },
+        where=(
+            (table.c.status == "no_play")
+            | text("nfl.can_refresh_qb_pick(recommendations, excluded)")
+        )
+        & (table.c.outcome == "pending")
+        & (table.c.start_date > text("clock_timestamp()"))
+        & (statement.excluded.decision_at > table.c.decision_at),
+    )
+    conn.execute(statement)
+
+
+def grade_picks(engine, schedule, season):
+    """Use monotonic schedule receipts and update only pending decisions."""
+    from backend.recommendations import SETTLEMENT_COLUMNS, grade_recommendations
+
+    with engine.begin() as conn:
+        table = Table(
+            "recommendation_schedule", MetaData(), schema=SCHEMA, autoload_with=conn
+        )
+        if not schedule.empty:
+            statement = insert(table).values(
+                _prepare(schedule, list(schedule.columns)).to_dict("records")
+            )
+            conn.execute(
+                statement.on_conflict_do_update(
+                    index_elements=["game_id"],
+                    set_={
+                        c: statement.excluded[c]
+                        for c in schedule.columns
+                        if c != "game_id"
+                    },
+                    where=statement.excluded.observed_at > table.c.observed_at,
+                )
+            )
+        picks = pd.read_sql_query(
+            text(
+                "select * from nfl.recommendations where season = :season "
+                "and outcome = 'pending' for update"
+            ),
+            conn,
+            params={"season": season},
+        )
+        games = pd.read_sql_query(
+            text(
+                "select *, observed_at as source_fetched_at "
+                "from nfl.recommendation_schedule where season = :season"
+            ),
+            conn,
+            params={"season": season},
+        )
+        grades = grade_recommendations(picks, games)
+        if not grades.empty:
+            columns = [
+                c
+                for c in SETTLEMENT_COLUMNS
+                if c not in ("game_id", "market", "decision_at")
+            ]
+            conn.execute(
+                text(
+                    "update nfl.recommendations set "
+                    + ", ".join(f"{c} = :{c}" for c in columns)
+                    + " where game_id = :game_id and market = :market "
+                    "and decision_at = :decision_at and outcome = 'pending'"
+                ),
+                _prepare(grades, SETTLEMENT_COLUMNS).to_dict("records"),
+            )
+        return len(grades)
+
+
+FROZEN_FORECAST_SQL = f"""
+select r.game_id, r.season, r.week, r.season_type, r.start_date, r.neutral_site,
+  r.home_team_abbr, r.away_team_abbr, r.home_team, r.away_team,
+  r.home_points, r.away_points, r.closing_spread,
+  r.source as score_source, r.source_fetched_at,
+  p.week as forecast_week, p.as_of as forecast_as_of,
+  p.recorded_at as forecast_recorded_at, p.model_version, p.div_game,
+  p.home_qb_adjustment, p.away_qb_adjustment, p.rest_adjustment,
+  p.pure_home_margin, p.home_margin as market_informed_home_margin,
+  p.market_weight, p.market_home_spread as forecast_market_home_spread,
+  p.model_total, p.market_informed_total, p.margin_sd, p.total_sd,
+  p.distribution, p.degrees_of_freedom
+from {SCHEMA}.game_results r
+join lateral (
+  select f.* from {SCHEMA}.forecast_snapshots f
+  where f.game_id = r.game_id and f.season = r.season
+    and f.home_team_abbr = r.home_team_abbr
+    and f.away_team_abbr = r.away_team_abbr
+    and f.recorded_at < r.start_date and f.as_of < r.start_date
+    and f.recorded_at < f.start_date
+  order by f.recorded_at desc, f.snapshot_id desc limit 1
+) p on true
+where r.season = :season and r.start_date < now()
+order by r.start_date, r.game_id
+"""
+
+
+def fetch_frozen_forecasts(engine, season: int) -> pd.DataFrame:
+    """Completed games joined to their last pregame forecast snapshot. The
+    same eligibility rule as the live_predictions view, with every frozen
+    field grading needs."""
+    with engine.connect() as conn:
+        return pd.read_sql(text(FROZEN_FORECAST_SQL), conn, params={"season": season})
+
+
+def publish_performance(
+    engine, season: int, graded: pd.DataFrame, metrics: pd.DataFrame
+) -> dict:
+    """Replace the season's grading record and aggregates in one transaction."""
+    from backend.performance import GRADED_GAME_COLUMNS, PERFORMANCE_METRIC_COLUMNS
+
+    with engine.begin() as conn:
+        for table in ("graded_games", "performance_metrics"):
+            conn.execute(
+                text(f"DELETE FROM {SCHEMA}.{table} WHERE season = :season"),
+                {"season": season},
+            )
+        _append(_prepare(graded, GRADED_GAME_COLUMNS), "graded_games", conn)
+        _append(
+            _prepare(metrics, PERFORMANCE_METRIC_COLUMNS), "performance_metrics", conn
+        )
+    return {"graded_games": len(graded), "performance_metrics": len(metrics)}

@@ -1,0 +1,464 @@
+"""NFL port of momentumcfb's joint scoring engine: a closed-form conjugate
+Gaussian ridge over per-team offense/defense points-per-drive, fused with EPA
+per drive through a two-pass GLS step, with a separate pace ridge and a fitted
+home-field parameter. Refit from scratch each week on all prior games."""
+
+from dataclasses import dataclass
+from datetime import datetime
+from math import isfinite, isnan
+from typing import NamedTuple
+
+import numpy as np
+import pandas as pd
+
+from backend.model.outputs import TeamRating
+from backend.model.totals import DEFAULT_TOTALS_CONFIG, TotalsConfig, pool_environment
+
+MODEL_VERSION = "nfl_joint_scoring_v2"
+PACE_PRIOR_SD = 1.0
+HFA_PRIOR_POINTS = 2.0
+HFA_PRIOR_SD_POINTS = 1.0
+
+
+@dataclass(frozen=True, slots=True)
+class JointScoringConfig:
+    rating_half_life_weeks: float = 6.0
+    strength_prior_sd_ppd: float = 0.35
+    covariance_shrinkage: float = 0.1
+    student_t_degrees_of_freedom: float = 7.0
+    score_covariance_scale: float = 1.0
+
+    def __post_init__(self) -> None:
+        if isnan(self.rating_half_life_weeks) or self.rating_half_life_weeks <= 0:
+            raise ValueError("rating_half_life_weeks must be positive")
+        if not isfinite(self.strength_prior_sd_ppd) or self.strength_prior_sd_ppd <= 0:
+            raise ValueError("strength_prior_sd_ppd must be positive")
+        if not 0 <= self.covariance_shrinkage < 1:
+            raise ValueError("covariance_shrinkage must be in [0, 1)")
+        if (
+            not isfinite(self.student_t_degrees_of_freedom)
+            or self.student_t_degrees_of_freedom <= 2
+        ):
+            raise ValueError("student_t_degrees_of_freedom must exceed 2")
+        if (
+            not isfinite(self.score_covariance_scale)
+            or self.score_covariance_scale <= 0
+        ):
+            raise ValueError("score_covariance_scale must be positive")
+
+
+# Existing mean-model settings retained after the 2026-09-08 audit.
+# SD recalibrated on 2016-2021 with corrected features and one SD contract;
+# 2022-2025 is retrospective validation, not an untouched holdout.
+DEFAULT_CONFIG = JointScoringConfig(
+    rating_half_life_weeks=6.0,
+    strength_prior_sd_ppd=0.25,
+    covariance_shrinkage=0.1,
+    student_t_degrees_of_freedom=7.0,
+    score_covariance_scale=1.0,
+)
+
+
+def solve_ridge(
+    design: np.ndarray,
+    target: np.ndarray,
+    weights: np.ndarray,
+    prior_mean: np.ndarray,
+    prior_sd: np.ndarray,
+    prior_covariance: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    precision = (
+        np.diag(1.0 / np.square(prior_sd))
+        if prior_covariance is None
+        else np.linalg.inv(prior_covariance)
+    )
+    normal = design.T @ (weights[:, None] * design) + precision
+    rhs = design.T @ (weights * target) + precision @ prior_mean
+    covariance = np.linalg.inv(normal)
+    return covariance @ rhs, covariance
+
+
+def _regularized_covariance(
+    residuals: np.ndarray, floor: float, shrinkage: float
+) -> np.ndarray:
+    covariance = np.cov(residuals, rowvar=False, ddof=1)
+    covariance = np.atleast_2d(covariance).astype(float)
+    diagonal = np.diag(np.diag(covariance))
+    return (1 - shrinkage) * covariance + shrinkage * diagonal + np.eye(2) * floor
+
+
+def _team_catalog(games: pd.DataFrame) -> list[str]:
+    teams = sorted(
+        set(games["home_team"].astype(str)) | set(games["away_team"].astype(str))
+    )
+    if not teams:
+        raise ValueError("no teams in games")
+    return teams
+
+
+@dataclass(slots=True)
+class JointScoringFit:
+    season: int
+    week: int
+    as_of: datetime
+    teams: list[str]
+    offense_ppd: np.ndarray
+    defense_ppd: np.ndarray
+    pace: np.ndarray
+    base_ppd: float
+    base_drives: float
+    hfa_ppd: float
+    parameter_covariance: np.ndarray
+    score_residual_covariance: np.ndarray
+    config: JointScoringConfig
+    totals_base_ppd: float | None = None
+    totals_base_drives: float | None = None
+    totals_config: TotalsConfig = DEFAULT_TOTALS_CONFIG
+
+    @property
+    def team_index(self) -> dict[str, int]:
+        return {team: index for index, team in enumerate(self.teams)}
+
+    @property
+    def hfa_points(self) -> float:
+        return self.base_drives * self.hfa_ppd
+
+    def ratings(self, team_names: dict[str, str]) -> list[TeamRating]:
+        ratings = []
+        index_of = self.team_index
+        for team in self.teams:
+            index = index_of[team]
+            vector = np.zeros(len(self.parameter_covariance))
+            vector[index] = self.base_drives
+            vector[len(self.teams) + index] = self.base_drives
+            variance = float(vector @ self.parameter_covariance @ vector)
+            ratings.append(
+                TeamRating(
+                    season=self.season,
+                    week=self.week,
+                    as_of=self.as_of,
+                    model_version=MODEL_VERSION,
+                    team_abbr=team,
+                    team=team_names.get(team, team),
+                    offense_points=float(self.base_drives * self.offense_ppd[index]),
+                    defense_points=float(self.base_drives * self.defense_ppd[index]),
+                    expected_drives=float(self.base_drives + 0.5 * self.pace[index]),
+                    power_rating_sd=float(np.sqrt(max(variance, 0.0))),
+                )
+            )
+        return sorted(ratings, key=lambda rating: rating.power_rating, reverse=True)
+
+    def score_design(self, game) -> np.ndarray:
+        """Map the fitted strength parameters to this matchup's two scores."""
+        index = self.team_index
+        n_teams = len(self.teams)
+        home = index[str(game.home_team)]
+        away = index[str(game.away_team)]
+        score_design = np.zeros((2, 2 * n_teams + 1))
+        score_design[0, home] = self.base_drives
+        score_design[0, n_teams + away] = -self.base_drives
+        score_design[1, away] = self.base_drives
+        score_design[1, n_teams + home] = -self.base_drives
+        if not bool(game.neutral_site):
+            score_design[:, -1] = [0.5 * self.base_drives, -0.5 * self.base_drives]
+        return score_design
+
+    def stabilize_scores(self, game, home, away, *, minimum_total=0.0):
+        """Change only common scoring, preserving margin at the score boundary."""
+        if self.totals_base_ppd is None or self.totals_base_drives is None:
+            return home, away
+        index = self.team_index
+        pace = 0.5 * (
+            self.pace[index[str(game.home_team)]]
+            + self.pace[index[str(game.away_team)]]
+        )
+        adjustment = 2 * (
+            self.totals_base_ppd * (self.totals_base_drives + pace)
+            - self.base_ppd * (self.base_drives + pace)
+        )
+        if adjustment == 0:
+            return home, away
+        margin = home - away
+        total = max(home + away + adjustment, abs(margin), minimum_total)
+        return max(0.0, (total + margin) / 2), max(0.0, (total - margin) / 2)
+
+    def engine_projection(self, game, *, stabilize_totals=True) -> "EngineProjection":
+        """Engine-only numbers for one schedule row."""
+        index = self.team_index
+        home = index[str(game.home_team)]
+        away = index[str(game.away_team)]
+        home_field = 0.0 if bool(game.neutral_site) else self.hfa_points
+        drives = self.base_drives + 0.5 * (self.pace[home] + self.pace[away])
+        base_points = self.base_ppd * drives
+        expected_home = (
+            base_points
+            + self.base_drives * (self.offense_ppd[home] - self.defense_ppd[away])
+            + 0.5 * home_field
+        )
+        expected_away = (
+            base_points
+            + self.base_drives * (self.offense_ppd[away] - self.defense_ppd[home])
+            - 0.5 * home_field
+        )
+        if stabilize_totals:
+            expected_home, expected_away = self.stabilize_scores(
+                game, expected_home, expected_away
+            )
+        score_design = self.score_design(game)
+        score_covariance = self.score_residual_covariance + (
+            score_design @ self.parameter_covariance @ score_design.T
+        )
+        score_covariance *= self.config.score_covariance_scale**2
+        transform = np.array([[1.0, -1.0], [1.0, 1.0]])
+        margin_total = transform @ score_covariance @ transform.T
+        margin_sd = float(np.sqrt(margin_total[0, 0]))
+        total_sd = float(np.sqrt(margin_total[1, 1]))
+        correlation = float(margin_total[0, 1] / (margin_sd * total_sd))
+        return EngineProjection(
+            float(expected_home),
+            float(expected_away),
+            float(home_field),
+            margin_sd,
+            total_sd,
+            float(np.clip(correlation, -0.999, 0.999)),
+        )
+
+
+class EngineProjection(NamedTuple):
+    expected_home: float
+    expected_away: float
+    home_field: float
+    margin_sd: float
+    total_sd: float
+    correlation: float
+
+
+def fit_joint_scoring(
+    games: pd.DataFrame,
+    forecast_week: int,
+    as_of: datetime,
+    config: JointScoringConfig = DEFAULT_CONFIG,
+    strength_prior: JointScoringFit | None = None,
+    *,
+    totals_prior: JointScoringFit | None = None,
+    totals_config: TotalsConfig = DEFAULT_TOTALS_CONFIG,
+) -> JointScoringFit:
+    """Fit on prior model weeks, carrying preseason means and covariance together."""
+    if as_of.tzinfo is None or as_of.utcoffset() is None:
+        raise ValueError("as_of must be timezone-aware")
+    training = games[games["model_week"] < forecast_week].copy()
+    if training.empty:
+        raise ValueError("at least one prior model week is required")
+    if "start_date" in training:
+        latest_training_start = pd.to_datetime(training["start_date"], utc=True).max()
+        if latest_training_start.to_pydatetime() >= as_of:
+            raise ValueError("training games must start before as_of")
+    teams = _team_catalog(games)
+    team_index = {team: index for index, team in enumerate(teams)}
+    n_teams = len(teams)
+    n_games = len(training)
+    design = np.zeros((2 * n_games, 2 * n_teams + 1))
+    points_per_drive = np.empty(2 * n_games)
+    epa_per_drive = np.empty(2 * n_games)
+    latest_week = int(training["model_week"].max())
+    recency = np.empty(2 * n_games)
+
+    for game_number, game in enumerate(training.itertuples()):
+        home = team_index[str(game.home_team)]
+        away = team_index[str(game.away_team)]
+        home_row = 2 * game_number
+        away_row = home_row + 1
+        design[home_row, home] = 1.0
+        design[home_row, n_teams + away] = -1.0
+        design[away_row, away] = 1.0
+        design[away_row, n_teams + home] = -1.0
+        if not bool(game.neutral_site):
+            design[home_row, -1] = 0.5
+            design[away_row, -1] = -0.5
+        if getattr(game, "feature_version", None) != 2:
+            raise ValueError(
+                "Rebuild team features: competitive drive schema v2 required"
+            )
+        points_per_drive[[home_row, away_row]] = [
+            game.home_competitive_points / game.competitive_drives,
+            game.away_competitive_points / game.competitive_drives,
+        ]
+        epa_per_drive[[home_row, away_row]] = [
+            game.home_epa_per_drive,
+            game.away_epa_per_drive,
+        ]
+        weight = 0.5 ** (
+            (latest_week - game.model_week) / config.rating_half_life_weeks
+        )
+        recency[[home_row, away_row]] = weight
+
+    base_ppd = float(np.average(points_per_drive, weights=recency))
+    centered_points = points_per_drive - base_ppd
+    centered_epa = epa_per_drive - np.average(epa_per_drive, weights=recency)
+    epa_variance = np.average(np.square(centered_epa), weights=recency)
+    epa_scale = float(
+        np.clip(
+            np.average(centered_epa * centered_points, weights=recency)
+            / max(epa_variance, 1e-9),
+            0.1,
+            2.0,
+        )
+    )
+    process_points = epa_scale * centered_epa
+    target = 0.5 * (centered_points + process_points)
+    base_drives = float(np.average(training["game_drives"]))
+    prior_mean = np.zeros(2 * n_teams + 1)
+    prior_mean[-1] = HFA_PRIOR_POINTS / base_drives
+    prior_sd = np.full(2 * n_teams + 1, config.strength_prior_sd_ppd)
+    prior_sd[-1] = HFA_PRIOR_SD_POINTS / base_drives
+    prior_covariance = None
+    if strength_prior is not None:
+        if set(teams) != set(strength_prior.teams):
+            raise ValueError("Preseason covariance must cover the fitted team catalog")
+        order = [strength_prior.team_index[t] for t in teams]
+        positions = order + [len(teams) + i for i in order] + [2 * len(teams)]
+        factor = strength_prior.base_drives / base_drives
+        prior_covariance = (
+            strength_prior.parameter_covariance[np.ix_(positions, positions)]
+            * factor**2
+        )
+        prior_mean = (
+            np.r_[
+                strength_prior.offense_ppd[order],
+                strength_prior.defense_ppd[order],
+                strength_prior.hfa_ppd,
+            ]
+            * factor
+        )
+    parameters, covariance = solve_ridge(
+        design, target, recency, prior_mean, prior_sd, prior_covariance
+    )
+    paired_residuals = np.column_stack(
+        [centered_points - design @ parameters, process_points - design @ parameters]
+    )
+    process_covariance = _regularized_covariance(
+        paired_residuals,
+        floor=0.01,
+        shrinkage=config.covariance_shrinkage,
+    )
+    inverse_process_covariance = np.linalg.inv(process_covariance)
+    ones = np.ones(2)
+    information = float(ones @ inverse_process_covariance @ ones)
+    target = (
+        np.column_stack([centered_points, process_points])
+        @ inverse_process_covariance
+        @ ones
+        / information
+    )
+    parameters, covariance = solve_ridge(
+        design, target, recency * information, prior_mean, prior_sd, prior_covariance
+    )
+
+    offense = parameters[:n_teams]
+    defense = parameters[n_teams : 2 * n_teams]
+    offense_mean = float(offense.mean())
+    defense_mean = float(defense.mean())
+    offense = offense - offense_mean
+    defense = defense - defense_mean
+    # Competitive possessions estimate strength. Full outcomes determine the
+    # final-score environment, so extrapolating competitive scoring rates does
+    # not inflate totals when late-game scoring slows down.
+    # Pool points over possession exposure: a low-drive game's rate should not
+    # receive the same influence as a high-drive game's rate at equal recency.
+    base_ppd = (
+        float(
+            np.average(
+                training["home_points"] + training["away_points"],
+                weights=recency[::2],
+            )
+            / (2 * np.average(training["game_drives"], weights=recency[::2]))
+        )
+        + offense_mean
+        - defense_mean
+    )
+    centering = np.eye(n_teams) - np.full((n_teams, n_teams), 1.0 / n_teams)
+    covariance_transform = np.zeros_like(covariance)
+    covariance_transform[:n_teams, :n_teams] = centering
+    covariance_transform[n_teams : 2 * n_teams, n_teams : 2 * n_teams] = centering
+    covariance_transform[-1, -1] = 1.0
+    covariance = covariance_transform @ covariance @ covariance_transform.T
+
+    pace_design = np.zeros((n_games, n_teams))
+    pace_target = training["game_drives"].to_numpy(float)
+    for row, game in enumerate(training.itertuples()):
+        pace_design[row, team_index[str(game.home_team)]] = 0.5
+        pace_design[row, team_index[str(game.away_team)]] = 0.5
+    base_drives = float(np.average(pace_target))
+    pace, _ = solve_ridge(
+        pace_design,
+        pace_target - base_drives,
+        recency[::2],
+        np.zeros(n_teams),
+        np.full(n_teams, PACE_PRIOR_SD),
+    )
+    base_drives += float(pace.mean())
+    pace -= pace.mean()
+
+    home_index = training["home_team"].map(team_index).to_numpy(int)
+    away_index = training["away_team"].map(team_index).to_numpy(int)
+    expected_drives = base_drives + 0.5 * (pace[home_index] + pace[away_index])
+    home_field = (~training["neutral_site"].astype(bool)).to_numpy(float)
+    hfa_points = base_drives * parameters[-1]
+    predicted_home = (
+        base_ppd * expected_drives
+        + base_drives * (offense[home_index] - defense[away_index])
+        + 0.5 * hfa_points * home_field
+    )
+    predicted_away = (
+        base_ppd * expected_drives
+        + base_drives * (offense[away_index] - defense[home_index])
+        - 0.5 * hfa_points * home_field
+    )
+    score_residuals = np.column_stack(
+        [
+            training["home_points"].to_numpy(float) - predicted_home,
+            training["away_points"].to_numpy(float) - predicted_away,
+        ]
+    )
+    if n_games < 2:
+        if strength_prior is None:
+            raise ValueError(
+                "At least two games or preseason score covariance required"
+            )
+        score_covariance = strength_prior.score_residual_covariance.copy()
+    else:
+        score_covariance = _regularized_covariance(
+            score_residuals,
+            floor=4.0,
+            shrinkage=config.covariance_shrinkage,
+        )
+    totals_prior = totals_prior if totals_prior is not None else strength_prior
+    totals_ppd = totals_drives = None
+    if totals_prior is not None:
+        totals_ppd, totals_drives = pool_environment(
+            base_ppd,
+            base_drives,
+            totals_prior.base_ppd,
+            totals_prior.base_drives,
+            float(recency[::2].sum()),
+            forecast_week,
+            totals_config,
+        )
+    return JointScoringFit(
+        season=int(training["season"].iloc[-1]),
+        week=forecast_week,
+        as_of=as_of,
+        teams=teams,
+        offense_ppd=offense,
+        defense_ppd=defense,
+        pace=pace,
+        base_ppd=base_ppd,
+        base_drives=base_drives,
+        hfa_ppd=float(parameters[-1]),
+        parameter_covariance=covariance,
+        score_residual_covariance=score_covariance,
+        config=config,
+        totals_base_ppd=totals_ppd,
+        totals_base_drives=totals_drives,
+        totals_config=totals_config,
+    )
