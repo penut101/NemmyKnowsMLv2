@@ -1,0 +1,70 @@
+name: NFL data bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: NFL season to build
+        type: string
+        default: "2026"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nfl-data-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  forecast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: models/nfl
+    env:
+      NFL_SEASON: ${{ inputs.season }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate season
+        run: python -c "import os; s=os.environ['NFL_SEASON']; assert s.isdigit() and 2016 <= int(s) <= 2100"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pipx install poetry
+      - run: poetry sync --no-interaction
+      - uses: actions/cache@v4
+        with:
+          path: |
+            models/nfl/backend/data/processed/team_games
+            models/nfl/backend/data/processed/qb_games
+            models/nfl/backend/data/raw/depth_charts
+            models/nfl/backend/data/raw/injuries
+          key: nfl-bootstrap-${{ runner.os }}-${{ hashFiles('models/nfl/backend/features/**/*.py', 'models/nfl/backend/nflverse/data.py', 'models/nfl/poetry.lock') }}-${{ inputs.season }}-${{ github.run_id }}
+          restore-keys: |
+            nfl-bootstrap-${{ runner.os }}-${{ hashFiles('models/nfl/backend/features/**/*.py', 'models/nfl/backend/nflverse/data.py', 'models/nfl/poetry.lock') }}-${{ inputs.season }}-
+      - name: Build historical core features from nflverse
+        run: poetry run python -m backend bootstrap-history --through "$((NFL_SEASON - 1))"
+      - name: Download current-season inputs
+        run: poetry run python -m backend ingest --seasons "$NFL_SEASON"
+      - name: Build current-season features
+        run: poetry run python -m backend features --seasons "$NFL_SEASON"
+      - name: Build fixed-model pricing and retrospective artifacts
+        run: poetry run python -m backend production-artifacts
+      - name: Fit ratings and generate forecasts
+        run: poetry run python -m backend fit --season "$NFL_SEASON"
+      - name: Project season wins
+        run: poetry run python -m backend season-wins --season "$NFL_SEASON"
+      - name: Save model outputs and source receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nfl-bootstrap-${{ github.run_id }}
+          path: |
+            models/nfl/backend/data/processed/
+            models/nfl/backend/data/raw/schedules/
+            models/nfl/backend/data/raw/teams/
+          if-no-files-found: warn
+          retention-days: 7
