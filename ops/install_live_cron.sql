@@ -1,0 +1,49 @@
+-- Run after the repository_dispatch workflow is on main.
+-- The named schedule is updated in place, so rerunning creates no duplicate.
+-- Supabase schedules the dispatch and GitHub still executes the job.
+begin;
+do $$
+begin
+  if not exists (select 1 from vault.secrets where name = 'github_dispatch_pat') then
+    raise exception 'Missing github_dispatch_pat in Vault';
+  end if;
+end $$;
+
+-- Live win probability: dispatch only around unfinished games, and only when
+-- no worker is alive. The worker starts 20 minutes before a slate's first
+-- puck drop so it archives that game's closing quotes.
+-- A terminal row ('Final' or 'Off') ends a game's claim on the dispatcher, and
+-- the six-hour bound ends it for a game no worker ever reached.
+-- September through April only: every run adds a row to cron.job_run_details,
+-- and the regular season never reaches May.
+-- Minute offset 0: the CFB, NFL, and MLB dispatchers take offsets 1, 2, and 3
+-- so the four never start on the same minute of the shared database.
+select cron.schedule('nhl-live-win-probability-dispatch', '*/5 * * 9-12,1-4 *', $dispatch$
+  select net.http_post(
+    url := 'https://api.github.com/repos/renenunezg/momentumnhl/dispatches',
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer ' || (select decrypted_secret
+        from vault.decrypted_secrets where name = 'github_dispatch_pat'),
+      'Accept', 'application/vnd.github+json',
+      'User-Agent', 'supabase-pg-cron',
+      'X-GitHub-Api-Version', '2022-11-28'
+    ),
+    body := jsonb_build_object('event_type', 'nhl-live-win-probability'),
+    timeout_milliseconds := 15000
+  ) where exists (
+    select 1 from nhl.game_projections as g
+    left join nhl.live_win_probability as live using (game_id)
+    where g.start_date between now() - interval '6 hours'
+                           and now() + interval '20 minutes'
+      and coalesce(live.payload->>'abstract_state', '') not in ('Final', 'Off')
+  ) and not exists (
+    -- Fresh writes are the heartbeat. Queue a handoff before the bounded
+    -- worker expires, or a recovery when publication stops.
+    select 1 from nhl.live_win_probability
+    where updated_at > now() - interval '4 minutes'
+      and payload->>'abstract_state' not in ('Final', 'Off')
+      and coalesce((payload->>'worker_expires_at')::timestamptz,
+                   'infinity'::timestamptz) > now() + interval '10 minutes'
+  );
+$dispatch$);
+commit;

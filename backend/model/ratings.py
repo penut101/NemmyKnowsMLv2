@@ -1,0 +1,118 @@
+"""The sheet's Expected Goals and Model Outputs blocks: expected goals for and
+against per game at each venue, strengths as ratios to the league average at
+that venue, and the overall rating."""
+
+from datetime import date
+
+import pandas as pd
+
+from backend.config import MODEL_VERSION
+from backend.features.windows import feature_rates, venue_windows
+from backend.model.goal_map import predict_per60
+
+
+class InsufficientHistory(ValueError):
+    """No team has the minimum pregame history needed for a forecast."""
+
+
+LEAGUE_KEYS = ("home_xgf", "home_xga", "away_xgf", "away_xga")
+
+
+def season_of(day: date) -> int:
+    """Start year of the season a date belongs to; the league year turns
+    over in September."""
+    return day.year if day.month >= 9 else day.year - 1
+
+
+def _expected_goals(rates: pd.DataFrame, goal_map: dict) -> pd.DataFrame:
+    """Per (team, venue): xgf = EV + PP + other goals for per game, xga = EV +
+    PK + other goals against per game, each situation's per-60 scaled by its
+    TOI share. The sheet's EV and PP tables already contained the mixed
+    strengths MoneyPuck keeps in "other"."""
+    rates = rates.copy()
+    share = rates["toi_per_game"] / 3600
+    rates["gf_pg"] = predict_per60(rates, "for", goal_map) * share
+    rates["ga_pg"] = predict_per60(rates, "against", goal_map) * share
+    wide = rates.pivot(
+        index=["team_abbr", "venue"],
+        columns="situation",
+        values=["gf_pg", "ga_pg", "games", "insufficient"],
+    )
+
+    def column(value, situation):
+        key = (value, situation)
+        return wide[key].astype(float).fillna(0.0) if key in wide.columns else 0.0
+
+    out = pd.DataFrame(
+        {
+            "xgf": column("gf_pg", "ev")
+            + column("gf_pg", "pp")
+            + column("gf_pg", "other"),
+            "xga": column("ga_pg", "ev")
+            + column("ga_pg", "pk")
+            + column("ga_pg", "other"),
+            "games": wide[("games", "ev")],
+            "insufficient": wide[("insufficient", "ev")].astype(bool),
+        }
+    ).reset_index()
+    return out
+
+
+def team_ratings(games: pd.DataFrame, as_of, goal_map: dict):
+    """Returns (ratings, league). ratings has one row per team; league holds
+    the venue averages the matchup formula multiplies by."""
+    as_of = pd.Timestamp(as_of).date()
+    # A 25-game venue window never needs more than the previous season, and
+    # limiting the pool keeps relocated or renamed franchises out of the table.
+    recent = games[games["season"] >= season_of(as_of) - 1]
+    return ratings_from_windows(venue_windows(recent, as_of), as_of, goal_map)
+
+
+def ratings_from_windows(windows: pd.DataFrame, as_of, goal_map: dict):
+    """Recompute a forecast from the compact, archived pregame input window."""
+    as_of = pd.Timestamp(as_of).date()
+    if windows.empty:
+        raise InsufficientHistory(f"No history before {as_of}")
+    rates = feature_rates(windows)
+    venues = _expected_goals(rates, goal_map)
+    table = venues.pivot(
+        index="team_abbr",
+        columns="venue",
+        values=["xgf", "xga", "games", "insufficient"],
+    )
+    # A team that has played at only one venue has no rating yet, like a team
+    # that has not played: its games go unforecast until it has both windows.
+    table = table.dropna(subset=[("games", "home"), ("games", "away")])
+    ratings = pd.DataFrame(
+        {
+            "team_abbr": table.index,
+            "home_xgf": table[("xgf", "home")].to_numpy(),
+            "home_xga": table[("xga", "home")].to_numpy(),
+            "away_xgf": table[("xgf", "away")].to_numpy(),
+            "away_xga": table[("xga", "away")].to_numpy(),
+            "window_games_home": table[("games", "home")].to_numpy(),
+            "window_games_away": table[("games", "away")].to_numpy(),
+        }
+    )
+    ratings["insufficient_window"] = (
+        table[("insufficient", "home")].astype(bool).to_numpy()
+        | table[("insufficient", "away")].astype(bool).to_numpy()
+    )
+    for column in ("home_xgf", "home_xga", "away_xgf", "away_xga"):
+        ratings[column] = ratings[column].astype(float)
+    ratings["window_games_home"] = ratings["window_games_home"].astype(int)
+    ratings["window_games_away"] = ratings["window_games_away"].astype(int)
+    usable = ratings[~ratings["insufficient_window"]]
+    if usable.empty:
+        raise InsufficientHistory(f"No team has a sufficient window as of {as_of}")
+    league = {key: float(usable[key].mean()) for key in LEAGUE_KEYS}
+    ratings["home_attack"] = ratings["home_xgf"] / league["home_xgf"]
+    ratings["home_defense"] = ratings["home_xga"] / league["home_xga"]
+    ratings["away_attack"] = ratings["away_xgf"] / league["away_xgf"]
+    ratings["away_defense"] = ratings["away_xga"] / league["away_xga"]
+    ratings["rating"] = (ratings["home_attack"] + ratings["away_attack"]) - (
+        ratings["home_defense"] + ratings["away_defense"]
+    )
+    ratings["as_of"] = as_of
+    ratings["model_version"] = MODEL_VERSION
+    return ratings.sort_values("rating", ascending=False).reset_index(drop=True), league
