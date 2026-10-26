@@ -46,8 +46,23 @@ function anonAuth(sport: string) {
   } as const;
 }
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+export const databaseConfigured = Boolean(
+  process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+);
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://unconfigured.invalid";
+const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "unconfigured";
+
+// Keep all pages browsable before setup. Return a real error, never synthetic
+// ratings or an empty successful result, and never contact a placeholder host.
+const publicFetch: typeof fetch = (input, init) => {
+  if (!databaseConfigured) {
+    return Promise.resolve(new Response(JSON.stringify({
+      code: "DATABASE_NOT_CONFIGURED",
+      message: "Sports data is unavailable until Supabase is configured.",
+    }), { status: 503, headers: { "Content-Type": "application/json" } }));
+  }
+  return fetch(input, init);
+};
 
 // One client per sport schema: the schema is fixed at construction, so each
 // sport section imports its own pinned client and table names are checked
@@ -55,6 +70,7 @@ const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 export const supabase = createClient<Database, "mlb">(url, anonKey, {
   db: { schema: "mlb" },
   auth: anonAuth("mlb"),
+  global: { fetch: publicFetch },
 });
 
 // Query URLs include every filter, so cached pages never share different
@@ -71,7 +87,7 @@ function cachedPublicFetch(sport: string): typeof fetch {
       typeof window === "undefined" &&
       method === "GET" &&
       String(input).startsWith(`${url}/rest/v1/`);
-    return fetch(
+    return publicFetch(
       input,
       restRead
         ? { ...init, next: { revalidate: CACHE_SECONDS, tags: restCacheTags(sport, new URL(String(input))) } }

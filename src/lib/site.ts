@@ -1,13 +1,11 @@
-export const SITE_URL = "https://www.renenunez.dev";
-export const SITE_NAME = "René Núñez";
+export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+export const SITE_NAME = "NemmyKnowsMLv2";
 export const SITE_DESCRIPTION =
   "Player grades, team ratings, and statistical analysis across MLB, college football, the NFL, and the NHL. Explore player talent and matchups for sports, fantasy, and DFS research.";
-export const CONTACT_EMAIL = "renenunezgalaviz@gmail.com";
-export const TWITTER_HANDLE = "@nunezanalytics";
+export const CONTACT_EMAIL = process.env.NEXT_PUBLIC_CONTACT_EMAIL || "";
+export const TWITTER_HANDLE = process.env.NEXT_PUBLIC_TWITTER_HANDLE || undefined;
 export const SOCIAL_LINKS = [
-  { label: "GitHub", value: "github.com/renenunezg", href: "https://github.com/renenunezg" },
-  { label: "LinkedIn", value: "linkedin.com/in/renenunezg", href: "https://linkedin.com/in/renenunezg" },
-  { label: "Twitter", value: TWITTER_HANDLE, href: "https://twitter.com/nunezanalytics" },
+  { label: "GitHub", value: "github.com/penut101/NemmyKnowsMLv2", href: "https://github.com/penut101/NemmyKnowsMLv2" },
 ] as const;
 
 export const SPORT_HOME = {

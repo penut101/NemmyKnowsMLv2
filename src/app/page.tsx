@@ -443,10 +443,9 @@ export default function Home() {
               description: SITE_DESCRIPTION,
             },
             {
-              "@type": "Person",
+              "@type": "Organization",
               name: SITE_NAME,
               url: SITE_URL,
-              jobTitle: "Data & AI Engineer",
               sameAs: SOCIAL_LINKS.map((link) => link.href),
             },
           ],
@@ -457,10 +456,10 @@ export default function Home() {
         <PageHeader className="lg:col-span-2">
           <div>
             <PageTitle>
-              Ren&eacute; N&uacute;&ntilde;ez
+              {SITE_NAME}
             </PageTitle>
             <PageDescription>
-              Data &amp; AI Engineer. I build player ratings, team ratings, and sports forecasts.
+              Player ratings, team ratings, and sports forecasts across MLB, college football, the NFL, and the NHL.
             </PageDescription>
             <ContactLine className="mt-heading text-xs text-muted-foreground" />
           </div>

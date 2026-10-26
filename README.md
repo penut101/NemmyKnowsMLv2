@@ -1,108 +1,47 @@
-# momentumweb
+# NemmyKnowsMLv2
 
-The website behind [renenunez.dev](https://renenunez.dev): one frontend for a set of probabilistic sports forecasting models.
-MLB run-distribution forecasts are published daily and graded live, college football and NFL publish weekly power ratings and spread projections, the NHL model prices every slate against the league's partner sportsbooks, and every model is benchmarked against the market in public.
+Private, source-based fork of René Núñez's Momentum website and MLB, NFL, CFB, and NHL models, maintained by Aiden Nemeroff (`penut101`). Imported with the owner's permission. The original UI, routes, methodology, articles, assets, model implementations, tests, SQL, and workflow definitions are included.
 
-The models themselves live in separate repositories and write their outputs to Postgres.
-This repository renders those tables.
-The MLB live-score route also writes official final scores and provisional evaluation counts; the MLB model owns nightly reconciliation.
+## Start the website
 
-## Stack
+Use Node.js 22 or newer:
 
-- Next.js 16 (App Router, React Server Components), React 19, TypeScript
-- Tailwind CSS v4 with a small set of shadcn primitives on Base UI
-- Supabase Postgres, one schema per sport, with authenticated cache invalidation and timed live-score polling
-- Recharts for the performance charts
-- Deployed on Vercel
-
-## Architecture
-
-Supabase is the only interface between this site and the model repositories.
-Each sport owns a Postgres schema (`mlb`, `cfb`, `nfl`, `nhl`), and each has a pinned client in `src/lib/supabase.ts` so a query cannot cross sports by accident.
-The site never imports model code and never calls a model repo; a schema change on the model side is an API change here, and `src/lib/database.types.ts` surfaces it at compile time.
-
-```
-model repos  ──write──▶  Supabase (mlb / cfb / nfl / nhl schemas)  ──read──▶  this site
-```
-
-Route tree:
-
-| Route | What it renders |
-| --- | --- |
-| `/` | Home hub with a live headline per sport and the latest posts |
-| `/mlb/games` | Today's slate with picks, Kelly stakes, and live scores (rendered per request) |
-| `/mlb/history` | Season-long pick history from the unified v1+v2 view |
-| `/mlb/performance` | Accuracy, calibration, betting KPIs, and posterior diagnostics |
-| `/cfb/ratings`, `/nfl/ratings` | Power ratings by tier, conference or division, and unit |
-| `/cfb/schedule`, `/nfl/schedule` | Weekly projections priced against the market |
-| `/cfb/history`, `/nfl/history` | Graded games, live season first, frozen backtest behind it |
-| `/cfb/performance`, `/nfl/performance` | Model vs closing line, by season and by segment |
-| `/nhl/games` | Today's NHL slate with fair and partner-book prices, picks, and live scores (rendered per request) |
-| `/nhl/ratings`, `/nhl/schedule` | Venue-split expected goals and strengths; the next seven days of projections |
-| `/nhl/history`, `/nhl/performance` | Frozen NHL picks graded at the recorded price; win-probability calibration on the live season and the backtest |
-| `/*/methodology` | How each model works |
-| `/blog`, `/about` | Writing and contact |
-
-One API route supports the MLB games page.
-`GET /mlb/api/live-scores` is a CDN-cached proxy to the MLB Stats API so many browsers polling the page cost at most two upstream requests a minute per region.
-It is also the live-grading trigger: after responding, it grades any game the schedule shows as Final, writing the score back and refreshing the day's evaluation windows.
-Which game gets graded is decided server-side from the MLB feed, never from the request, so the site exposes no write endpoint; the CDN window bounds grading to one pass per window, and the nightly Python batch remains the source of truth.
-
-Things that are load-bearing and easy to break:
-
-- `src/app/mlb/games/page.tsx` is `force-dynamic`.
-The pick shown for a started game must be the frozen pick that gets graded, so it cannot be served from a cached render.
-- `SUPABASE_SERVICE_ROLE_KEY` is read only inside `src/app/mlb/api/live-scores/route.ts`, for the grading step.
-Everything else uses the anon key.
-- Failed reads must render an unavailable state, distinct from unpublished decisions or a genuine empty result.
-Healthy independent sections remain visible.
-
-## Running locally
-
-```bash
-npm install
-cp .env.example .env.local   # fill in the Supabase values
+```sh
+npm ci
 npm run dev
 ```
 
-| Variable | Used by |
+Open http://localhost:3000. Without Supabase credentials the UI remains browsable and shows unavailable-data states. No fabricated ratings or predictions are supplied.
+
+Copy `.env.example` to `.env.local` and fill in your own Supabase URL and anon key to read sports data. Use `NEXT_PUBLIC_SITE_URL` for your deployed origin. The service-role key is optional for local read-only browsing; it enables the existing server-side MLB live grading route. Never put it in a `NEXT_PUBLIC_` variable.
+
+## Repository layout
+
+| Location | Source |
 | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | all Supabase clients |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | read-only clients (server and browser) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Optional local live grading, server-side only; leave unset for read-only development |
-| `REVALIDATE_SECRET` | Authenticates `/api/revalidate`; matches the Supabase Vault secret named `site_revalidate_secret` |
+| `src/`, `public/`, `sql/`, `contracts/` | `renenunezg/momentumweb` |
+| `models/mlb/` | `renenunezg/mlbmodel` |
+| `models/nfl/` | `renenunezg/momentumnfl` |
+| `models/cfb/` | `renenunezg/momentumcfb` |
+| `models/nhl/` | `renenunezg/momentumnhl` |
 
-Checks:
+The website is the repository root. Model folders are independent Python projects: run each from its own directory and virtual environment. They retain their original package/module names and model policies.
 
-```bash
+See [SETUP.md](SETUP.md) for database, model, and deployment setup, [UPSTREAM.md](UPSTREAM.md) for provenance, and [UPSTREAM_WEB_README.md](UPSTREAM_WEB_README.md) for the original frontend architecture. Each model retains its own README.
+
+## Verification
+
+```sh
 npm run lint
 npx tsc --noEmit
 npm test
+npm run build
 ```
 
-Tests cover the pure logic that has to agree with the Python backend: pick grading, per-game accuracy, Kelly-weighted ROI, drawdown, and the odds conversions.
-There are no markup tests on purpose.
+Root GitHub Actions run frontend checks and adapted upstream model CI suites against disposable databases. Model production workflow originals remain under each model's `.github/workflows` for reference; GitHub does not execute nested workflows. They need deployment-specific adaptation before scheduling.
 
-## Regenerating database types
+## What source control does not contain
 
-When a model repo changes a table, regenerate the types and let the compiler find the call sites:
+The repositories exclude the live Supabase rows, private API keys, most raw/processed provider data, and MLB posterior NetCDF files. The NHL static fitted parameters tracked upstream are included. To reproduce live outputs, provision schemas and regenerate excluded artifacts or obtain them from the original owner. The source alone is not a backup of the live service.
 
-```bash
-npx supabase gen types typescript --project-id <project-ref> --schema mlb,cfb,nfl,nhl > src/lib/database.types.ts
-```
-
-Public football reads and cached pages expire after one hour and refresh on authenticated database callbacks.
-Live-score and live-probability routes use short CDN windows.
-The site uses no Supabase Realtime subscriptions.
-
-The shared cache callback is owned here in `sql/001_site_revalidate.sql`.
-Install it before restoring sport schemas, with pg_net and Vault available and `site_revalidate_secret` provisioned separately.
-Each sport owns its table trigger attachments.
-MLB live evaluation requires the model repository's `live_evaluation_reconciliation.sql` migration and is explicitly provisional until nightly reconciliation.
-The migration prevents stale concurrent live writes from replacing newer or canonical results.
-
-`database.types.ts` is generated without hand edits; the explicit-schema `Tables<Schema, Name>` helper lives separately in `database-schema.ts`.
-
-The versioned acceptance payloads in `contracts/v1/` are copied unchanged into the corresponding model repository tests.
-Their producer and consumer tests must both pass when a database contract changes.
-`sql/tests/revalidation.sql` verifies the shared callback in disposable PostgreSQL without sending network requests.
+The existing `penut101/NemmyKnowsML` repository is the predecessor and is not renamed or overwritten. This is a separate v2 repository built from the five requested sources.

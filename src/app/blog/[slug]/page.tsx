@@ -36,7 +36,7 @@ export async function generateMetadata({
       siteName: SITE_NAME,
       locale: "en_US",
       publishedTime: post.date,
-      authors: [SITE_URL],
+      authors: ["https://www.renenunez.dev"],
     },
   };
 }
@@ -65,12 +65,15 @@ export default async function BlogPostPage({
           headline: post.title,
           description: post.summary,
           datePublished: post.date,
-          author: { "@type": "Person", name: SITE_NAME, url: SITE_URL },
+          author: { "@type": "Person", name: "René Núñez", url: "https://www.renenunez.dev" },
           mainEntityOfPage: `${SITE_URL}/blog/${post.slug}`,
         }}
       />
       <article>
         <p className="font-mono text-xs text-muted-foreground">{post.date}</p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          By <a href="https://www.renenunez.dev" className="underline underline-offset-4">René Núñez</a>. Preserved from the original Momentum site with permission.
+        </p>
         <PageTitle className="mt-heading">
           {post.title}
         </PageTitle>

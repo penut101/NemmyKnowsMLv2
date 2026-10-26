@@ -4,6 +4,7 @@ BEGIN;
 CREATE SCHEMA vault;
 CREATE TABLE vault.decrypted_secrets(name text, decrypted_secret text);
 INSERT INTO vault.decrypted_secrets VALUES ('site_revalidate_secret', 'acceptance-only');
+INSERT INTO vault.decrypted_secrets VALUES ('site_revalidate_url', 'https://example.test/api/revalidate');
 CREATE SCHEMA net;
 CREATE TABLE net.requests(url text, headers jsonb, body jsonb, timeout_milliseconds integer);
 CREATE FUNCTION net.http_post(url text, headers jsonb, body jsonb, timeout_milliseconds integer)
@@ -23,7 +24,7 @@ BEGIN
   EXECUTE format('INSERT INTO %I.forecasts VALUES (1), (2)', sport);
  END LOOP;
  IF (SELECT count(*) FROM net.requests) <> 4 OR EXISTS (
-   SELECT 1 FROM net.requests WHERE url <> 'https://www.renenunez.dev/api/revalidate'
+   SELECT 1 FROM net.requests WHERE url <> 'https://example.test/api/revalidate'
      OR headers->>'x-revalidate-secret' <> 'acceptance-only'
      OR body->>'table' <> 'forecasts'
      OR body->>'schema' NOT IN ('mlb', 'cfb', 'nfl', 'nhl')
@@ -32,6 +33,13 @@ BEGIN
  IF EXISTS (SELECT 1 FROM pg_proc p, LATERAL aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
     WHERE p.oid = 'public.site_revalidate()'::regprocedure AND a.grantee = 0 AND a.privilege_type = 'EXECUTE') THEN
    RAISE EXCEPTION 'Revalidation function is publicly executable';
+ END IF;
+END $$;
+DELETE FROM vault.decrypted_secrets WHERE name = 'site_revalidate_url';
+INSERT INTO mlb.forecasts VALUES (3);
+DO $$ BEGIN
+ IF (SELECT count(*) FROM net.requests) <> 4 THEN
+   RAISE EXCEPTION 'Unconfigured callback must not send requests';
  END IF;
 END $$;
 ROLLBACK;

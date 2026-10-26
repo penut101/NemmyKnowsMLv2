@@ -54,3 +54,10 @@ docs/
 .playwright-cli/
 output/
 supabase/.temp/
+
+# Isolated model environments and local verification output
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+.local/

@@ -1,6 +1,6 @@
 import { renderShareCard, SHARE_CARD_CONTENT_TYPE, SHARE_CARD_SIZE } from "@/components/share-card";
 
-export const alt = "MLB player analysis | René Núñez";
+export const alt = "MLB player analysis | NemmyKnowsMLv2";
 export const size = SHARE_CARD_SIZE;
 export const contentType = SHARE_CARD_CONTENT_TYPE;
 

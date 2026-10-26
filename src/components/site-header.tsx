@@ -22,7 +22,7 @@ export function SiteHeader() {
     <header className="site-masthead relative z-10">
       <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-col gap-3 px-page-gutter pt-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6 sm:py-4">
         <div className="flex shrink-0 items-center justify-between gap-5">
-          <Link href="/" aria-label="Momentum home" className="rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4">
+          <Link href="/" aria-label="NemmyKnowsML home" className="rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4">
             <MomentumWordmark />
           </Link>
           <div className="sm:hidden"><ThemeToggle /></div>

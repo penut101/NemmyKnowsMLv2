@@ -5,10 +5,10 @@ export function ContactLine({ className }: { className?: string }) {
     <p className={className}>
       Get in touch with feedback, ideas, or anything else:{" "}
       <a
-        href={`mailto:${CONTACT_EMAIL}`}
+        href={CONTACT_EMAIL ? `mailto:${CONTACT_EMAIL}` : "https://github.com/penut101"}
         className="text-foreground hover:underline underline-offset-4"
       >
-        {CONTACT_EMAIL}
+        {CONTACT_EMAIL || "penut101 on GitHub"}
       </a>
     </p>
   );

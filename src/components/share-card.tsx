@@ -84,7 +84,7 @@ export async function renderShareCard({ eyebrow, title, subtitle, chips }: Share
               </div>
             ))}
           </div>
-          <div style={{ fontSize: 24, color: "#d4b66a", letterSpacing: 2 }}>renenunez.dev</div>
+          <div style={{ fontSize: 24, color: "#d4b66a", letterSpacing: 2 }}>NemmyKnowsMLv2</div>
         </div>
       </div>
     ),

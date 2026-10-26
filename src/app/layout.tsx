@@ -37,8 +37,8 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "René Núñez | Sports Analytics, Player Grades & Team Ratings",
-    template: "%s | René Núñez",
+    default: `${SITE_NAME} | Sports Analytics, Player Grades & Team Ratings`,
+    template: `%s | ${SITE_NAME}`,
   },
   description: SITE_DESCRIPTION,
   icons: {
@@ -93,16 +93,21 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
+          {(!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) && (
+            <div role="status" className="border-b border-border bg-muted px-4 py-2 text-center text-sm text-muted-foreground">
+              Sports data is currently unavailable. Ratings and forecasts will appear when the data connection is ready.
+            </div>
+          )}
           <div className="flex min-w-0 flex-1 flex-col">{children}</div>
           <SiteAnalytics />
           <SpeedInsights />
         </ThemeProvider>
-        {process.env.VERCEL_ENV === "production" && (
+        {process.env.VERCEL_ENV === "production" && process.env.NEXT_PUBLIC_CLOUDFLARE_ANALYTICS_TOKEN && (
           <Script
             id="cloudflare-web-analytics"
             type="module"
             src="https://static.cloudflareinsights.com/beacon.min.js"
-            data-cf-beacon='{"token":"dba42dc69c18403399e0de43de4bd52e"}'
+            data-cf-beacon={JSON.stringify({ token: process.env.NEXT_PUBLIC_CLOUDFLARE_ANALYTICS_TOKEN })}
             strategy="afterInteractive"
           />
         )}
