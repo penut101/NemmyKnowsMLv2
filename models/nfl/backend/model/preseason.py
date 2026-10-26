@@ -1,0 +1,292 @@
+"""Week-1 preseason prior: mean reversion of last season's final ratings
+blended with a rating implied by the Vegas season win-total market. The win
+total prices offseason change (QB moves, coaching, roster) that reversion
+cannot see."""
+
+import json
+from dataclasses import dataclass
+from datetime import UTC, datetime
+
+import numpy as np
+import pandas as pd
+
+from backend.config import HISTORY_START_SEASON, STATIC_DIR
+from backend.etl import store
+from backend.model.joint_scoring import (
+    DEFAULT_CONFIG,
+    JointScoringConfig,
+    JointScoringFit,
+    fit_joint_scoring,
+)
+from backend.model.outputs import TeamRating
+
+MODEL_VERSION = "nfl_preseason_v3"
+
+# Selected by the calibrate walk-forward on weeks 1-4 of dev seasons.
+CARRYOVER = 0.50
+WIN_TOTAL_BLEND = 0.50  # weight q on the win-total implied rating
+ENVIRONMENT_CARRYOVER = 0.40
+PACE_CARRYOVER = 0.35
+BASE_OFFSEASON_SD = 4.5
+WIN_TOTAL_MISSING_SD = 3.0
+FALLBACK_POINTS_PER_WIN = 2.7
+# Two full seasons of team-level (win total, rating) pairs before the fitted
+# slope replaces the fallback.
+MIN_SLOPE_SAMPLES = 64
+# The map from win totals to points is not an engine-selection question. The
+# production engine's short memory and tight ridge shrink final ratings, which
+# roughly halves the slope the blend weight was selected with.
+SLOPE_REFERENCE_CONFIG = JointScoringConfig(
+    rating_half_life_weeks=float("inf"),
+    strength_prior_sd_ppd=0.35,
+)
+ENVIRONMENT_CLIP_POINTS = 8.0
+
+
+@dataclass(frozen=True, slots=True)
+class PreseasonConfig:
+    carryover: float = CARRYOVER
+    win_total_blend: float = WIN_TOTAL_BLEND
+    environment_carryover: float = ENVIRONMENT_CARRYOVER
+    pace_carryover: float = PACE_CARRYOVER
+    base_offseason_sd: float = BASE_OFFSEASON_SD
+
+
+def load_win_totals(season: int, as_of: datetime | None = None) -> pd.Series:
+    if as_of is not None:
+        sources = json.loads((STATIC_DIR / "win_total_sources.json").read_text())
+        date = pd.to_datetime(sources.get(str(season), {}).get("date"), utc=True)
+        if pd.notna(date) and date >= as_of:
+            return pd.Series(dtype=float)
+    totals = pd.read_csv(STATIC_DIR / "win_totals.csv")
+    totals = totals[totals["season"].eq(season)]
+    return totals.set_index("team_abbr")["win_total"]
+
+
+def load_qb_references(season: int, as_of: datetime | None = None) -> dict[str, str]:
+    """Fixed lineup associated with the preseason market input, never QB overrides.
+
+    Missing references or totals leave the empirical QB baseline unchanged.
+    Historical weekly references are lineup proxies, not timestamped prices.
+    """
+    path = STATIC_DIR / "preseason_qbs.csv"
+    if not path.exists():
+        return {}
+    references = pd.read_csv(path)
+    references = references[references["season"].eq(season)]
+    if as_of is not None:
+        stamps = pd.to_datetime(references["source_as_of"], utc=True)
+        references = references[stamps.isna() | stamps.le(as_of)]
+    if references["team_abbr"].duplicated().any():
+        raise ValueError(f"Duplicate preseason QB references for {season}")
+    if references[["team_abbr", "gsis_id"]].isna().any().any():
+        raise ValueError(f"Incomplete preseason QB references for {season}")
+    available = load_win_totals(season, as_of).dropna().index
+    return (
+        references[references["team_abbr"].isin(available)]
+        .set_index("team_abbr")["gsis_id"]
+        .to_dict()
+    )
+
+
+def points_per_win(
+    previous_seasons: list[int],
+    engine_config: JointScoringConfig = SLOPE_REFERENCE_CONFIG,
+    games_by_season: dict[int, pd.DataFrame] | None = None,
+) -> float:
+    """OLS slope of centered win totals onto same-season final power ratings,
+    fit on history. Falls back to a fixed constant when degenerate."""
+    xs, ys = [], []
+    for season in previous_seasons:
+        try:
+            totals = load_win_totals(season)
+            games = (
+                store.season_games(season)
+                if games_by_season is None
+                else games_by_season[season]
+            )
+        except (FileNotFoundError, KeyError):
+            continue
+        if totals.empty or games.empty:
+            continue
+        final_week = int(games["model_week"].max()) + 1
+        fit = fit_joint_scoring(
+            games,
+            final_week,
+            datetime.now(UTC),
+            engine_config,
+        )
+        power = {
+            team: float(
+                fit.base_drives
+                * (
+                    fit.offense_ppd[fit.team_index[team]]
+                    + fit.defense_ppd[fit.team_index[team]]
+                )
+            )
+            for team in fit.teams
+        }
+        centered = totals - totals.mean()
+        for team, total in centered.items():
+            if team in power:
+                xs.append(float(total))
+                ys.append(power[team])
+    if len(xs) < MIN_SLOPE_SAMPLES:
+        return FALLBACK_POINTS_PER_WIN
+    xs_array = np.asarray(xs)
+    ys_array = np.asarray(ys)
+    denominator = float(np.sum(np.square(xs_array)))
+    if denominator <= 0:
+        return FALLBACK_POINTS_PER_WIN
+    return float(np.sum(xs_array * ys_array) / denominator)
+
+
+@dataclass(slots=True)
+class PreseasonPrior:
+    season: int
+    as_of: datetime
+    previous_fit: JointScoringFit
+    ratings_frame: pd.DataFrame  # team_abbr, power, environment, pace, sd, missing
+    slope: float
+
+    def week1_fit(self) -> JointScoringFit:
+        """A synthetic engine fit for week-1 projections: preseason strengths
+        with last season's base rates, HFA, and score covariance; parameter
+        covariance is diagonal from the preseason power sd so projection
+        margin_sd inherits offseason uncertainty."""
+        base = self.previous_fit.base_drives
+        teams = list(self.ratings_frame["team_abbr"])
+        n_teams = len(teams)
+        offense = np.empty(n_teams)
+        defense = np.empty(n_teams)
+        pace = np.empty(n_teams)
+        variance = np.zeros(2 * n_teams + 1)
+        for position, row in enumerate(self.ratings_frame.itertuples()):
+            offense[position] = (
+                0.5 * (row.power_rating + row.scoring_environment) / base
+            )
+            defense[position] = (
+                0.5 * (row.power_rating - row.scoring_environment) / base
+            )
+            pace[position] = row.expected_drives - base
+            half_variance = 0.5 * (row.power_rating_sd**2) / base**2
+            variance[position] = half_variance
+            variance[n_teams + position] = half_variance
+        variance[-1] = float(self.previous_fit.parameter_covariance[-1, -1])
+        return JointScoringFit(
+            season=self.season,
+            week=1,
+            as_of=self.as_of,
+            teams=teams,
+            offense_ppd=offense,
+            defense_ppd=defense,
+            pace=pace,
+            base_ppd=self.previous_fit.base_ppd,
+            totals_config=self.previous_fit.totals_config,
+            base_drives=base,
+            hfa_ppd=self.previous_fit.hfa_ppd,
+            parameter_covariance=np.diag(variance),
+            score_residual_covariance=self.previous_fit.score_residual_covariance,
+            config=self.previous_fit.config,
+        )
+
+    def ratings(self, team_names: dict[str, str]) -> list[TeamRating]:
+        ratings = []
+        for row in self.ratings_frame.itertuples():
+            offense_points = 0.5 * (row.power_rating + row.scoring_environment)
+            defense_points = 0.5 * (row.power_rating - row.scoring_environment)
+            ratings.append(
+                TeamRating(
+                    season=self.season,
+                    week=1,
+                    as_of=self.as_of,
+                    model_version=MODEL_VERSION,
+                    team_abbr=row.team_abbr,
+                    team=team_names.get(row.team_abbr, row.team_abbr),
+                    offense_points=float(offense_points),
+                    defense_points=float(defense_points),
+                    expected_drives=float(row.expected_drives),
+                    power_rating_sd=float(row.power_rating_sd),
+                )
+            )
+        return sorted(ratings, key=lambda rating: rating.power_rating, reverse=True)
+
+
+def build_preseason_prior(
+    season: int,
+    as_of: datetime | None = None,
+    config: PreseasonConfig = PreseasonConfig(),
+    engine_config: JointScoringConfig = DEFAULT_CONFIG,
+    previous_fit: JointScoringFit | None = None,
+    slope: float | None = None,
+) -> PreseasonPrior:
+    """previous_fit and slope may be supplied by callers that already have
+    them (the calibration loop) to avoid refitting."""
+    as_of = as_of or datetime.now(UTC)
+    if previous_fit is None:
+        previous_games = store.season_games(season - 1)
+        final_week = int(previous_games["model_week"].max()) + 1
+        previous_fit = fit_joint_scoring(
+            previous_games, final_week, as_of, engine_config
+        )
+    index = previous_fit.team_index
+    base = previous_fit.base_drives
+
+    try:
+        win_totals = load_win_totals(season, as_of)
+    except (FileNotFoundError, KeyError):
+        win_totals = pd.Series(dtype=float)
+    win_total_missing = win_totals.empty
+    if slope is None:
+        slope = points_per_win(list(range(HISTORY_START_SEASON, season)))
+
+    rows = []
+    centered_totals = (
+        win_totals - win_totals.mean() if not win_total_missing else win_totals
+    )
+    for team in previous_fit.teams:
+        team_idx = index[team]
+        previous_power = float(
+            base
+            * (previous_fit.offense_ppd[team_idx] + previous_fit.defense_ppd[team_idx])
+        )
+        previous_environment = float(
+            base
+            * (previous_fit.offense_ppd[team_idx] - previous_fit.defense_ppd[team_idx])
+        )
+        reverted = config.carryover * previous_power
+        if win_total_missing or team not in centered_totals:
+            power = reverted
+            missing = 1
+            sd = float(np.sqrt(config.base_offseason_sd**2 + WIN_TOTAL_MISSING_SD**2))
+        else:
+            implied = slope * float(centered_totals[team])
+            power = (
+                1 - config.win_total_blend
+            ) * reverted + config.win_total_blend * implied
+            missing = 0
+            sd = config.base_offseason_sd
+        rows.append(
+            {
+                "team_abbr": team,
+                "power_rating": power,
+                "scoring_environment": np.clip(
+                    config.environment_carryover * previous_environment,
+                    -ENVIRONMENT_CLIP_POINTS,
+                    ENVIRONMENT_CLIP_POINTS,
+                ),
+                "expected_drives": base
+                + config.pace_carryover * float(previous_fit.pace[team_idx]),
+                "power_rating_sd": sd,
+                "missing_input_count": missing,
+            }
+        )
+    frame = pd.DataFrame(rows)
+    frame["power_rating"] -= frame["power_rating"].mean()
+    return PreseasonPrior(
+        season=season,
+        as_of=as_of,
+        previous_fit=previous_fit,
+        ratings_frame=frame,
+        slope=slope,
+    )

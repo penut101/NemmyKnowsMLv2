@@ -1,0 +1,1289 @@
+"""momentumnfl command line. Heavy imports stay inside each subcommand so
+startup is instant and a broken optional dependency only breaks its own
+command. Commands collect problems and exit 1 at the end rather than
+aborting on the first."""
+
+import argparse
+
+from backend.config import HISTORY_START_SEASON, SEASONS
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(prog="backend")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    ingest_parser = subparsers.add_parser("ingest", help="pull raw nflverse data")
+    ingest_parser.add_argument("--seasons", nargs="+", type=int, default=SEASONS)
+    subparsers.add_parser(
+        "production-artifacts", help="build fixed-model pricing and backtest artifacts"
+    )
+
+    history_parser = subparsers.add_parser(
+        "bootstrap-history", help="build missing cached historical core features"
+    )
+    history_parser.add_argument("--through", type=int, required=True)
+
+    refresh_inputs_parser = subparsers.add_parser(
+        "refresh-inputs", help="pull schedules, teams, and current depth charts"
+    )
+    refresh_inputs_parser.add_argument("--season", type=int, required=True)
+
+    features_parser = subparsers.add_parser(
+        "features", help="build team_games and qb_games parquet"
+    )
+    features_parser.add_argument("--seasons", nargs="+", type=int, default=SEASONS)
+    features_parser.add_argument("--incremental", action="store_true")
+    features_parser.add_argument("--lookback-weeks", type=int, default=2)
+
+    fit_parser = subparsers.add_parser(
+        "fit", help="fit in-season ratings and project a week"
+    )
+    fit_parser.add_argument("--season", type=int)
+    fit_parser.add_argument("--week", type=int)
+    fit_parser.add_argument("--projections-only", action="store_true")
+
+    replay_parser = subparsers.add_parser(
+        "replay-forecast",
+        help="reproduce a frozen forecast offline from archived inputs",
+    )
+    replay_parser.add_argument("archive", type=str)
+    download_parser = subparsers.add_parser(
+        "download-forecast",
+        help="export an archived DB input bundle for offline replay",
+    )
+    download_parser.add_argument("run_id")
+    download_parser.add_argument("destination")
+    prospective_parser = subparsers.add_parser(
+        "validate-prospective", help="read-only live forecast error and calibration"
+    )
+    prospective_parser.add_argument("--season", type=int, required=True)
+
+    preseason_parser = subparsers.add_parser(
+        "preseason", help="build the week-1 prior, ratings, and projections"
+    )
+    preseason_parser.add_argument("--season", type=int, required=True)
+
+    season_wins_parser = subparsers.add_parser(
+        "season-wins", help="project full regular-season wins"
+    )
+    season_wins_parser.add_argument("--season", type=int, required=True)
+    awards_ingest = subparsers.add_parser(
+        "awards-ingest", help="cache public awards inputs"
+    )
+    awards_ingest.add_argument("--seasons", nargs="+", type=int, required=True)
+    awards_ingest.add_argument("--refresh", action="store_true")
+    for name in ("awards", "validate-awards", "publish-awards"):
+        award_parser = subparsers.add_parser(
+            name, help="independent AP award forecasts"
+        )
+        award_parser.add_argument("--season", type=int, required=True)
+        award_parser.add_argument(
+            "--week",
+            type=int,
+            required=name != "awards",
+            default=-1,
+            help="Regular-season week; awards defaults to the latest started week",
+        )
+        if name == "awards":
+            award_parser.add_argument("--as-of")
+    for name in ("validate-model", "validate-season-wins"):
+        validation = subparsers.add_parser(name, help="read-only chronological replay")
+        validation.add_argument(
+            "--seasons", nargs="+", type=int, default=list(range(2016, 2026))
+        )
+        validation.add_argument(
+            "--rebuild",
+            action="store_true",
+            help="rebuild features in memory from cached raw PBP",
+        )
+        validation.add_argument("--details", action="store_true")
+        if name == "validate-season-wins":
+            validation.add_argument("--weeks", nargs="+", type=int, default=[1, 9])
+            validation.add_argument("--simulations", type=int, default=10_000)
+
+    calibrate = subparsers.add_parser(
+        "calibrate", help="walk-forward hyperparameter search"
+    )
+    calibrate.add_argument("--read-only", action="store_true")
+    calibrate.add_argument("--rebuild", action="store_true")
+    calibrate.add_argument("--uncertainty-only", action="store_true")
+    validate_qb_parser = subparsers.add_parser(
+        "validate-qb",
+        help="compare QB layers on frozen engine forecasts without writes",
+    )
+    validate_qb_parser.add_argument("--context", action="store_true")
+    validate_qb_parser.add_argument("--memory", action="store_true")
+    qbs_parser = subparsers.add_parser(
+        "qbs", help="inspect quarterback strengths and starter/backup swap adjustments"
+    )
+    qbs_parser.add_argument("--season", type=int)
+    qbs_parser.add_argument("--week", type=int)
+    qbs_parser.add_argument("--team", required=True)
+    qbs_parser.add_argument("--context", action="store_true")
+
+    odds_parser = subparsers.add_parser(
+        "odds", help="snapshot Odds API offers for a week"
+    )
+    odds_parser.add_argument("--season", type=int)
+    odds_parser.add_argument("--week", type=int)
+
+    upcoming_parser = subparsers.add_parser(
+        "upcoming", help="succeed when an unplayed game is inside a time window"
+    )
+    upcoming_parser.add_argument("--season", type=int, required=True)
+    upcoming_parser.add_argument("--hours", type=float, default=30.0)
+
+    publish_parser = subparsers.add_parser(
+        "publish", help="publish a week to the nfl schema"
+    )
+    publish_parser.add_argument("--season", type=int)
+    publish_parser.add_argument("--week", type=int)
+    publish_parser.add_argument("--skip-backtest", action="store_true")
+    publish_parser.add_argument("--projections-only", action="store_true")
+
+    traits_fit = subparsers.add_parser(
+        "position-traits-fit",
+        help="set the position grade weights on development seasons and judge once",
+    )
+    traits_fit.add_argument("--dev-seasons", nargs="+", type=int, required=True)
+    traits_fit.add_argument("--validate", type=int, required=True)
+    traits_fit.add_argument("--rebuild", action="store_true")
+    traits_parser = subparsers.add_parser(
+        "position-traits",
+        help="score weekly position traits and grades with the frozen grade model",
+    )
+    traits_parser.add_argument("--seasons", nargs="+", type=int, required=True)
+    sources_parser = subparsers.add_parser(
+        "player-sources",
+        help="store the charting feeds the player ratings read (FTN, PFR, Next Gen)",
+    )
+    sources_parser.add_argument("--seasons", nargs="+", type=int, required=True)
+    publish_traits = subparsers.add_parser(
+        "publish-position-traits", help="publish the latest position trait week"
+    )
+    publish_traits.add_argument("--season", type=int, required=True)
+
+    grade_parser = subparsers.add_parser(
+        "grade", help="grade archived pregame forecasts against completed results"
+    )
+    grade_parser.add_argument("--season", type=int, required=True)
+
+    live_parser = subparsers.add_parser(
+        "live-win-probability",
+        help="score in-progress games from the scoreboard; read only by default",
+    )
+    live_parser.add_argument("--watch", action="store_true")
+    live_parser.add_argument("--interval", type=int, default=60)
+    live_parser.add_argument(
+        "--duration", type=int, help="stop a watch worker after this many seconds"
+    )
+    live_parser.add_argument("--publish", action="store_true")
+
+    subparsers.add_parser(
+        "ingame-backtest",
+        help="backtest the in-game win probability model on cached data",
+    )
+
+    args = parser.parse_args()
+    COMMANDS[args.command](args)
+
+
+def run_ingest(args) -> None:
+    from backend.etl import ingest
+
+    problems: list[str] = []
+    seasons = sorted(args.seasons)
+    ingest.ingest_shared(seasons)
+    print(f"ingested shared (schedules, teams, ngs) for {seasons[0]}-{seasons[-1]}")
+    for season in seasons:
+        problems.extend(ingest.ingest_season(season))
+        print(f"ingested {season}")
+    _exit_on_problems(problems)
+
+
+def _exit_on_problems(problems: list[str]) -> None:
+    for problem in problems:
+        print(f"PROBLEM: {problem}")
+    if problems:
+        raise SystemExit(1)
+
+
+def run_bootstrap_history(args) -> None:
+    from backend.pipeline import bootstrap_history
+
+    bootstrap_history(args.through)
+
+
+def run_refresh_inputs(args) -> None:
+    from backend.etl.ingest import ingest_projection_inputs
+
+    _exit_on_problems(ingest_projection_inputs(args.season))
+    print(f"refreshed {args.season} schedules, teams, and depth charts")
+
+
+def resolve_week(args) -> tuple[int, int]:
+    """(season, week) from flags, or the week of the next unplayed kickoff.
+    Ordering by kickoff rather than week number keeps a postponed game from
+    dragging the slate back to a week that has otherwise been played."""
+    if args.season is not None and args.week is not None:
+        return args.season, args.week
+    from backend.etl import store
+    from backend.features.drives import kickoff_utc
+
+    schedules = store.read_raw("schedules.parquet")
+    unplayed = schedules[schedules["home_score"].isna()]
+    if args.season is not None:
+        unplayed = unplayed[unplayed["season"].eq(args.season)]
+    if unplayed.empty:
+        raise SystemExit("PROBLEM: no unplayed games to infer a week from")
+    first = unplayed.loc[kickoff_utc(unplayed).idxmin()]
+    season = args.season if args.season is not None else int(first["season"])
+    week = args.week if args.week is not None else int(first["week"])
+    return season, week
+
+
+def _write_week(frame, directory: str, season: int, week: int) -> None:
+    import os
+
+    from backend.etl import store
+    from backend.forecast_archive import REPLAY_CUTOFF
+
+    if directory == "projections" and not os.getenv(REPLAY_CUTOFF):
+        from backend.source_inputs import attach_sources
+
+        frame = attach_sources(frame)
+    store.write_processed(frame, directory, f"{season}_{week:02d}.parquet")
+
+
+def run_fit(args) -> None:
+    from backend.source_inputs import capture_static_inputs
+
+    capture_static_inputs()
+    import pandas as pd
+
+    from backend.etl import store
+    from backend.model.fit_week import fit_and_project, recency_by_game
+    from backend.model.unit_ratings import fit_unit_ratings
+
+    args.season, args.week = resolve_week(args)
+    from backend.forecast_archive import finish, prepare
+
+    prepare(args)
+    # Before any current-season game has been played there is nothing to fit;
+    # the preseason prior is the correct producer for that window, so the
+    # weekly cron stays valid across the season boundary.
+    if str(args.season) not in store.processed_names("team_games"):
+        print(f"fit: no played {args.season} games yet, running preseason")
+        run_preseason(args)
+        return
+
+    fit, ratings, projections = fit_and_project(
+        args.season, args.week, as_of=args.forecast_cutoff
+    )
+    projections_df = pd.DataFrame(
+        [projection.to_record() for projection in projections]
+    )
+    _write_week(projections_df, "projections", args.season, args.week)
+    finish(args, projections_df)
+    # Published ratings follow the published lines, so a reprojection
+    # rewrites them too.
+    ratings_df = pd.DataFrame([rating.to_record() for rating in ratings])
+    _write_week(ratings_df, "ratings", args.season, args.week)
+    if args.projections_only:
+        print(
+            f"projected {args.season} week {args.week}: "
+            f"{len(projections_df)} games from the cached weekly state"
+        )
+        return
+
+    games = store.season_games(args.season)
+    unit_games = store.read_processed("unit_games", f"{args.season}.parquet")
+    units = fit_unit_ratings(
+        unit_games,
+        games,
+        args.week,
+        fit.as_of,
+        recency_by_game(games, args.week, fit.config),
+    )
+    units_df = pd.DataFrame(units.to_records(store.team_names()))
+    _write_week(units_df, "unit_ratings", args.season, args.week)
+    print(
+        f"fit {args.season} week {args.week}: {len(ratings_df)} ratings, "
+        f"{len(projections_df)} projections, {len(units_df)} unit ratings, "
+        f"hfa {fit.hfa_points:.2f} pts, base drives {fit.base_drives:.1f}"
+    )
+    print(ratings_df.head(5)[["team_abbr", "power_rating"]].to_string(index=False))
+
+
+def run_preseason(args) -> None:
+    from backend.source_inputs import capture_static_inputs
+
+    capture_static_inputs()
+    import pandas as pd
+
+    from backend.etl import store
+    from backend.forecast_archive import finish, prepare
+    from backend.model.fit_week import (
+        compute_qb_adjustments,
+        load_depth_charts,
+        load_injuries,
+        market_home_spreads,
+        market_totals,
+        week_slate,
+    )
+    from backend.model.preseason import MODEL_VERSION, build_preseason_prior
+    from backend.model.projections import (
+        QB_LAYER_VERSION,
+        LayerConfig,
+        align_ratings_to_forecast,
+        assemble_projections,
+    )
+    from backend.model.totals import TOTALS_LAYER_VERSION
+
+    prepare(args)
+    prior = build_preseason_prior(args.season, as_of=args.forecast_cutoff)
+    team_names = store.team_names()
+    ratings = prior.ratings(team_names)
+
+    def write_ratings(published) -> pd.DataFrame:
+        frame = pd.DataFrame([rating.to_record() for rating in published])
+        frame["model_version"] = MODEL_VERSION
+        frame["missing_input_count"] = frame["team_abbr"].map(
+            prior.ratings_frame.set_index("team_abbr")["missing_input_count"]
+        )
+        _write_week(frame, "ratings", args.season, 1)
+        return frame
+
+    slate = week_slate(args.season, 1)
+    if slate.empty:
+        write_ratings(ratings)
+        print(f"preseason {args.season}: no week-1 schedule yet; ratings only")
+        return
+    week1_fit = prior.week1_fit()
+    qb_games = store.qb_games(list(range(HISTORY_START_SEASON, args.season)))
+    qb_adjustments = compute_qb_adjustments(
+        args.season,
+        1,
+        slate,
+        qb_games,
+        load_depth_charts(args.season),
+        week1_fit.config,
+        LayerConfig(),
+        as_of=prior.as_of,
+        injuries=load_injuries(args.season, 1, prior.as_of),
+    )
+    projections = assemble_projections(
+        week1_fit,
+        slate,
+        prior.as_of,
+        team_names,
+        qb_adjustments,
+        market_home_spreads(slate),
+        market_totals=market_totals(slate),
+    )
+    # Published ratings reproduce the published week-1 lines.
+    ratings_df = write_ratings(align_ratings_to_forecast(ratings, projections))
+    projections_df = pd.DataFrame(
+        [projection.to_record() for projection in projections]
+    )
+    projections_df["model_version"] = (
+        f"{MODEL_VERSION}_{QB_LAYER_VERSION}_{TOTALS_LAYER_VERSION}"
+    )
+    _write_week(projections_df, "projections", args.season, 1)
+    finish(args, projections_df)
+    print(
+        f"preseason {args.season}: {len(ratings_df)} ratings, "
+        f"{len(projections_df)} week-1 projections, "
+        f"points/win slope {prior.slope:.2f}"
+    )
+    print(ratings_df.head(5)[["team_abbr", "power_rating"]].to_string(index=False))
+
+
+def run_season_wins(args) -> None:
+    from backend.etl import store
+    from backend.model.season_wins import build_season_forecast
+
+    totals, games = build_season_forecast(args.season)
+    store.write_processed(totals, "season_win_totals", f"{args.season}.parquet")
+    store.write_processed(games, "season_win_games", f"{args.season}.parquet")
+    print(
+        f"season wins {args.season}: {len(totals)} teams, {len(games)} remaining games"
+    )
+    print(
+        totals[
+            [
+                "team_abbr",
+                "projected_wins",
+                "wins_p10",
+                "wins_p90",
+                "sportsbook_win_total",
+            ]
+        ].to_string(index=False)
+    )
+
+
+def run_upcoming(args) -> None:
+    from backend.etl import store
+    from backend.pipeline import upcoming_games
+
+    schedules = store.read_raw("schedules.parquet")
+    games = upcoming_games(schedules, args.season, args.hours)
+    if games.empty:
+        print(f"no {args.season} kickoff in the next {args.hours:g} hours")
+        raise SystemExit(3)
+    first = games.iloc[0]
+    print(
+        f"{len(games)} upcoming game(s); first is {first.game_id} "
+        f"at {first.start_date.isoformat()}"
+    )
+
+
+def run_calibrate(args) -> None:
+    from backend.model.calibration import (
+        EVAL_SEASONS,
+        WalkForwardData,
+        run_calibration,
+        run_uncertainty_calibration,
+    )
+
+    data = WalkForwardData(EVAL_SEASONS, rebuild=args.rebuild)
+    calibrate = (
+        run_uncertainty_calibration if args.uncertainty_only else run_calibration
+    )
+    summary = calibrate(data=data, write_artifacts=not args.read_only)
+    print("\n=== selected configuration ===")
+    print(summary["engine_config"])
+    print(summary["layer_config"])
+    print(summary["preseason_config"])
+    print(f"use_prior_means: {summary['use_prior_means']}")
+    print(f"dev margin log loss: {summary['dev_margin_log_loss']:.4f}")
+    print(f"holdout margin log loss: {summary['holdout_margin_log_loss']:.4f}")
+    print(f"holdout coverage: {summary['holdout_coverage']}")
+    print(f"totals configuration: {summary['totals_config']}")
+    print(f"dev engine totals (before QB/market): {summary['dev_engine_totals']}")
+    print(
+        "retrospective engine totals (before QB/market): "
+        f"{summary['holdout_engine_totals']}"
+    )
+    print(f"dev calibrated model totals: {summary['dev_model_totals']}")
+    print(f"retrospective calibrated model totals: {summary['holdout_model_totals']}")
+    print(
+        f"key-number log loss: {summary['holdout_discrete_nll']:.4f}; "
+        f"smooth discrete: {summary['holdout_smooth_discrete_nll']:.4f}"
+    )
+    print("\n=== honesty report (dev) ===")
+    print(summary["dev_honesty"].to_string())
+    print("\n=== honesty report (retrospective validation) ===")
+    print(summary["holdout_honesty"].to_string())
+
+
+def run_validate_qb(args) -> None:
+    from dataclasses import replace
+
+    from backend.etl import store
+    from backend.model.calibration import (
+        apply_layers,
+        margin_log_loss,
+        rescore_qb_layer,
+        select_qb_weights,
+    )
+    from backend.model.projections import (
+        DEFAULT_MARKET_WEIGHT,
+        QB_BASIS_DATED,
+        LayerConfig,
+    )
+
+    frozen = store.read_processed("calibration", "predictions.parquet")
+    if getattr(args, "memory", False):
+        from backend.model.calibration import select_qb_memory
+
+        print(f"Development memory selection: {select_qb_memory(frozen)}")
+    rescored = rescore_qb_layer(frozen)
+    selected, report = select_qb_weights(rescored)
+    selected = replace(selected, market_weight=DEFAULT_MARKET_WEIGHT)
+    print(f"Development-selected QB weights: {selected}")
+    for key, value in report.items():
+        print(f"  {key}: {value}")
+    print("Pregame expected-QB reconstruction; engine/artifacts unchanged.")
+    print("Historical market QB references include weekly lineup proxies.")
+    span = int(LayerConfig().qb_span_dropbacks)
+    for label, frame in (
+        ("frozen", frozen),
+        ("production defaults", apply_layers(rescored, LayerConfig())),
+        ("candidate", apply_layers(rescored, selected)),
+    ):
+        for split, mask in (
+            ("development", frame["season"].between(2016, 2021)),
+            ("holdout", frame["season"].between(2022, 2025)),
+        ):
+            subset = frame[mask]
+            actual = subset["actual_margin"]
+            pure_mae = (actual - subset["pure_model_margin"]).abs().mean()
+            blended_mae = (actual - subset["model_margin"]).abs().mean()
+            market_mae = (actual - subset["market_margin"]).abs().mean()
+            print(
+                f"{label} {split}: {len(subset)} games, pure MAE {pure_mae:.4f}, "
+                f"blended MAE {blended_mae:.4f}, closing MAE {market_mae:.4f}, "
+                f"blended NLL {margin_log_loss(subset, 1.0, 7.0):.5f}"
+            )
+            cohorts = {
+                "confirmed absences": subset[
+                    subset[f"qb_absence_adj_{span}"].ne(0)
+                    | subset[f"qb_absence_sum_{span}"].ne(0)
+                ],
+                "dated charts": subset[subset["qb_input_basis"].eq(QB_BASIS_DATED)],
+            }
+            for name, cohort in cohorts.items():
+                if cohort.empty:
+                    continue
+                errors = cohort.pure_model_margin - cohort.actual_margin
+                closing = cohort.market_margin - cohort.actual_margin
+                print(
+                    f"  {name}: {len(cohort)} games, "
+                    f"pure MAE {errors.abs().mean():.4f}, "
+                    f"closing MAE {closing.abs().mean():.4f}, "
+                    f"signed bias {errors.mean():.4f}"
+                )
+    if getattr(args, "context", False):
+        from backend.model.calibration import evaluate_qb_context
+
+        print("Context gate (development-selected, no artifact writes):")
+        for key, value in evaluate_qb_context(frozen).items():
+            print(f"  {key}: {value:.6f}")
+
+
+def run_qbs(args) -> None:
+    import pandas as pd
+
+    from backend.etl import store
+    from backend.features import qb as qb_features
+    from backend.features.qb import expected_starters
+    from backend.model.fit_week import load_depth_charts, load_injuries
+    from backend.model.joint_scoring import DEFAULT_CONFIG
+    from backend.model.preseason import WIN_TOTAL_BLEND, load_qb_references
+    from backend.model.projections import LayerConfig
+    from backend.model.qb_adjustment import context_before_week, strength_history
+
+    season, week = resolve_week(args)
+    team = args.team.upper()
+    index = store.game_index(list(range(HISTORY_START_SEASON, season + 1)))
+    games = store.qb_games(list(range(HISTORY_START_SEASON, season + 1)))
+    layer = LayerConfig()
+    eligible_ids = index.loc[
+        (index["season"] < season)
+        | (index["season"].eq(season) & (index["model_week"] < week)),
+        "game_id",
+    ]
+    prior_games = games[games["game_id"].isin(eligible_ids)]
+    dropbacks = prior_games.groupby("passer_player_id")["dropbacks"].sum()
+    context = context_before_week(
+        strength_history(games, index, layer.qb_span_dropbacks),
+        season,
+        week,
+        DEFAULT_CONFIG.rating_half_life_weeks,
+        load_qb_references(season),
+        WIN_TOTAL_BLEND,
+    )
+    depth = load_depth_charts(season)
+    if "pos_abb" not in depth or team not in depth["team"].values:
+        raise SystemExit("Current snapshot depth charts are required for this team")
+    roster = depth[depth["team"].eq(team) & depth["pos_abb"].eq("QB")]
+    roster = roster[roster["dt"].eq(roster["dt"].max())].sort_values("pos_rank")
+    as_of = pd.Timestamp.now(tz="UTC")
+    starter = expected_starters(
+        games,
+        index,
+        depth,
+        season,
+        week,
+        as_of=as_of,
+        injuries=load_injuries(season, week, as_of),
+    ).get(team)
+    weight = layer.qb_weight(qb_features.identification_basis(depth), False)
+    rows = []
+    for row in roster.itertuples():
+        if pd.isna(row.gsis_id):
+            continue
+        adjustment = context.adjustment(team, row.gsis_id, weight)
+        rows.append(
+            {
+                "quarterback": row.player_name,
+                "gsis_id": row.gsis_id,
+                "starter": row.gsis_id == starter,
+                "recorded_dropbacks": int(dropbacks.get(row.gsis_id, 0)),
+                "effective_dropbacks": context.effective_dropbacks.get(
+                    row.gsis_id, 0.0
+                ),
+                "estimate_basis": (
+                    "observed EPA" if row.gsis_id in dropbacks else "replacement prior"
+                ),
+                "strength": context.strengths.get(row.gsis_id, 0.0),
+                "team_baseline": context.baselines.get(team),
+                "adjustment": adjustment,
+                "change_from_starter": adjustment
+                - context.adjustment(team, starter, weight),
+            }
+        )
+    print(f"{team}, {season} week {week}; depth chart {roster['dt'].max()}")
+    print(f"Recorded history begins in {HISTORY_START_SEASON}.")
+    print(
+        "Strength/baseline: raw points above replacement; "
+        f"adjustment = {weight:g} * (strength - baseline) on this chart basis; "
+        "a confirmed absence under an undated chart uses the absence weight."
+    )
+    print(pd.DataFrame(rows).round(3).to_string(index=False))
+    if getattr(args, "context", False):
+        from backend.features.qb_context import load_context_games
+        from backend.model.qb_context import fit_context
+
+        fitted = fit_context(load_context_games(season), season, week)
+        comparisons = []
+        for row in roster.itertuples():
+            if pd.isna(row.gsis_id):
+                continue
+            contrast = {row.gsis_id: 1.0}
+            if starter is not None:
+                contrast[starter] = contrast.get(starter, 0.0) - 1.0
+            comparisons.append(
+                {
+                    "quarterback": row.player_name,
+                    "context_vs_average": fitted.strengths.get(row.gsis_id, 0.0),
+                    "supporting_cast": fitted.supporting_cast.get(row.gsis_id),
+                    "opponents": fitted.opponents.get(row.gsis_id),
+                    "hit_sack_pct": 100
+                    * fitted.hit_sack_rates.get(row.gsis_id, float("nan")),
+                    "swap_vs_starter": sum(
+                        w * fitted.strengths.get(q, 0.0) for q, w in contrast.items()
+                    ),
+                    "swap_model_sd": fitted.contrast_sd([contrast])[0],
+                }
+            )
+        print("Context diagnostics only; not used in published spreads.")
+        print("Positive context means a helpful environment; hits/sacks are a proxy.")
+        print("Model SD is parameter uncertainty, not a game prediction interval.")
+        print(pd.DataFrame(comparisons).round(3).to_string(index=False))
+
+
+def run_odds(args) -> None:
+    import os
+    from datetime import timedelta
+
+    import pandas as pd
+
+    from backend.etl import store
+    from backend.features.drives import kickoff_utc
+    from backend.model.artifacts import load_pricing
+    from backend.odds.client import OddsAPIClient
+    from backend.odds.markets import (
+        compare_priced_offers,
+        consensus_lines,
+        flatten_offers,
+    )
+
+    season, week = resolve_week(args)
+    projections = store.read_processed("projections", f"{season}_{week:02d}.parquet")
+    schedules = store.read_raw("schedules.parquet")
+    slate = schedules[
+        schedules["season"].eq(season) & schedules["week"].eq(week)
+    ].copy()
+    slate["start_date"] = kickoff_utc(slate)
+    # Odds API events carry full team names; map abbrs for matching.
+    names = store.team_names()
+    match_frame = pd.DataFrame(
+        {
+            "game_id": slate["game_id"],
+            "start_date": slate["start_date"],
+            "home_team": slate["home_team"].map(names),
+            "away_team": slate["away_team"].map(names),
+        }
+    )
+    distribution = load_pricing()
+    # Fallback switch: ODDS_SOURCE=espn when The Odds API quota is exhausted.
+    source = os.getenv("ODDS_SOURCE", "odds_api")
+    if source == "espn":
+        from backend.odds.espn import EspnOddsClient
+
+        client = EspnOddsClient()
+    elif source == "odds_api":
+        client = OddsAPIClient()
+    else:
+        raise ValueError(f"ODDS_SOURCE must be 'odds_api' or 'espn', got {source!r}")
+    window_from = pd.to_datetime(slate["start_date"]).min().to_pydatetime()
+    window_to = pd.to_datetime(slate["start_date"]).max().to_pydatetime() + timedelta(
+        hours=6
+    )
+    snapshot = client.get_nfl_odds(window_from, window_to)
+    offers = flatten_offers(
+        snapshot.events,
+        match_frame,
+        snapshot.fetched_at,
+        bool(snapshot.configured_bookmakers),
+    )
+    _write_week(offers, "market_offers", season, week)
+    _write_week(consensus_lines(offers, projections), "market_snapshots", season, week)
+    comparisons = compare_priced_offers(projections, offers, distribution)
+    _write_week(comparisons, "market_comparisons", season, week)
+    print(
+        f"odds {season} week {week}: {len(offers)} offers, "
+        f"{len(comparisons)} comparisons, "
+        f"requests remaining {snapshot.requests_remaining}"
+    )
+
+
+def run_grade(args) -> None:
+    from datetime import UTC, datetime
+
+    from backend import db
+    from backend.etl import store
+    from backend.grading import recommendation_schedule, result_frame
+    from backend.publish import grade_season
+    from backend.source_inputs import receipt_for
+
+    receipt = receipt_for(store.RAW_DIR / "schedules.parquet")
+    fetched_at = (
+        datetime.fromisoformat(receipt["observed_at"])
+        if receipt
+        else datetime.fromtimestamp(
+            (store.RAW_DIR / "schedules.parquet").stat().st_mtime, UTC
+        )
+    )
+    results = result_frame(
+        store.read_raw("schedules.parquet"),
+        args.season,
+        store.team_names(),
+        fetched_at,
+    )
+    print(grade_season(db.engine, results, args.season))
+    from backend.performance import (
+        build_graded_games,
+        closing_totals,
+        compute_performance_metrics,
+    )
+    from backend.publish import fetch_frozen_forecasts, grade_picks, publish_performance
+
+    schedules = store.read_raw("schedules.parquet")
+    graded = build_graded_games(
+        fetch_frozen_forecasts(db.engine, args.season),
+        closing_totals(schedules, args.season),
+    )
+    metrics = compute_performance_metrics(graded)
+    print(publish_performance(db.engine, args.season, graded, metrics))
+
+    schedule = recommendation_schedule(
+        schedules, args.season, store.team_names(), fetched_at
+    )
+    print({"recommendations_graded": grade_picks(db.engine, schedule, args.season)})
+
+
+def run_position_traits(args) -> None:
+    if args.command == "position-traits-fit":
+        from backend.awards import ingest
+        from backend.players.backtest import (
+            ensure_play_seasons,
+            run_backtest,
+            write_backtest,
+        )
+
+        seasons = list(range(HISTORY_START_SEASON, args.validate + 1))
+        ensure_play_seasons(seasons)
+        ingest.ingest(seasons)
+        result = run_backtest(args.dev_seasons, args.validate, rebuild=args.rebuild)
+        path = write_backtest(result, max(args.dev_seasons))
+        print(f"position grade model written to {path}")
+        from backend.players.ratings import fit_ratings
+        from backend.players.sources import ingest_player_sources
+
+        ingest_player_sources(seasons, refresh_latest=False)
+        for position, model in fit_ratings(args.dev_seasons, args.validate).items():
+            print(f"{position} rating model written to {model}")
+    elif args.command == "player-sources":
+        from backend.players.sources import ingest_player_sources
+
+        ingest_player_sources(args.seasons)
+    elif args.command == "publish-position-traits":
+        from backend.db import engine
+        from backend.publish import publish_position_traits
+
+        print(publish_position_traits(engine, args.season))
+    else:
+        from datetime import UTC, datetime
+
+        from backend.players.pipeline import run_position_traits as score_season
+
+        for season in args.seasons:
+            scored = score_season(season, datetime.now(UTC))
+            print(f"position traits {season}: {len(scored)} rows written")
+
+
+def run_publish(args) -> None:
+    from backend import db, publish
+    from backend.config import BACKTEST_PUBLISH_FLOOR
+    from backend.etl import store
+
+    season, week = resolve_week(args)
+    stem = f"{season}_{week:02d}.parquet"
+
+    def read_optional(directory: str):
+        try:
+            return store.read_processed(directory, stem)
+        except FileNotFoundError:
+            return None
+
+    projections = store.read_processed("projections", stem)
+    market = read_optional("market_comparisons")
+    if market is None:
+        market = publish.fallback_market_comparisons(projections)
+        print("no odds snapshot; publishing nflverse-line market comparisons")
+    snapshot = read_optional("market_snapshots")
+
+    # Ratings follow the published lines, so a projections-only refresh
+    # republishes them; unit ratings and the backtest do not change.
+    ratings = store.read_processed("ratings", stem)
+    if args.projections_only:
+        unit_ratings = backtest = None
+    else:
+        unit_ratings = read_optional("unit_ratings")
+        backtest = (
+            None
+            if args.skip_backtest
+            else publish.build_backtest_frame(BACKTEST_PUBLISH_FLOOR)
+        )
+    import pandas as pd
+
+    from backend.forecast_archive import publication_bundle
+    from backend.model.artifacts import load_pricing
+    from backend.recommendations import build_recommendations
+
+    offers = read_optional("market_offers")
+    decisions = build_recommendations(
+        projections, offers if offers is not None else pd.DataFrame(), load_pricing()
+    )
+    counts = publish.publish_week(
+        db.engine,
+        season,
+        week,
+        recommendations=decisions,
+        archive_bundle=publication_bundle(season, week, projections),
+        ratings=ratings,
+        unit_ratings=unit_ratings,
+        projections=projections,
+        market_comparisons=market,
+        backtest=backtest,
+        market_snapshot=snapshot,
+        season_win_totals=store.read_processed(
+            "season_win_totals", f"{season}.parquet"
+        ),
+    )
+    for table, count in counts.items():
+        print(f"{table}: {count} rows")
+
+
+def run_features(args) -> None:
+    from backend.etl import store
+    from backend.features.drives import build_team_games
+    from backend.features.qb import build_qb_games
+    from backend.features.scoring import build_model_games
+    from backend.features.units import build_unit_games
+    from backend.pipeline import incremental_game_ids, write_incremental_features
+
+    problems: list[str] = []
+    schedules = store.read_raw("schedules.parquet")
+    try:
+        ngs_passing = store.read_raw("ngs_passing.parquet")
+    except FileNotFoundError:
+        ngs_passing = None
+    for season in sorted(args.seasons):
+        try:
+            try:
+                pbp = store.read_raw("pbp", f"{season}.parquet")
+            except FileNotFoundError:
+                print(f"features {season}: no pbp yet, skipping")
+                continue
+            season_schedules = schedules[schedules["season"].eq(season)]
+            if season_schedules.empty:
+                problems.append(f"{season}: no schedule data")
+                continue
+            selected_schedules = season_schedules
+            if args.incremental:
+                existing_ids = []
+                for directory in ("team_games", "qb_games", "unit_games"):
+                    if directory != "unit_games" and not store.core_features_current(
+                        directory, season
+                    ):
+                        existing_ids.append(set())
+                        continue
+                    try:
+                        existing = store.read_processed(
+                            directory,
+                            f"{season}.parquet",
+                            columns=["game_id"],
+                        )
+                        existing_ids.append(set(existing["game_id"].astype(str)))
+                    except FileNotFoundError:
+                        existing_ids.append(set())
+                game_ids = incremental_game_ids(
+                    season_schedules, existing_ids, args.lookback_weeks
+                )
+                if not game_ids:
+                    print(f"features {season}: no completed games to update")
+                    continue
+                pbp = pbp[pbp["game_id"].astype(str).isin(game_ids)]
+                selected_schedules = season_schedules[
+                    season_schedules["game_id"].astype(str).isin(game_ids)
+                ]
+
+            team_games = build_team_games(pbp, selected_schedules)
+            model_games = build_model_games(team_games, season_schedules)
+            qb_games = build_qb_games(pbp)
+            try:
+                pfr_pass = store.read_raw("pfr_pass", f"{season}.parquet")
+            except FileNotFoundError:
+                pfr_pass = None
+            if pfr_pass is not None and args.incremental:
+                pfr_pass = pfr_pass[pfr_pass["game_id"].astype(str).isin(game_ids)]
+            unit_games = build_unit_games(pbp, pfr_pass, ngs_passing)
+
+            if args.incremental:
+                write_incremental_features(
+                    model_games, "team_games", season, ["start_date", "game_id"]
+                )
+                write_incremental_features(
+                    qb_games,
+                    "qb_games",
+                    season,
+                    ["game_id", "team", "passer_player_id"],
+                )
+                write_incremental_features(
+                    unit_games, "unit_games", season, ["game_id", "team"]
+                )
+                print(
+                    f"features {season}: rebuilt {len(model_games)} games "
+                    f"across {len(set(selected_schedules['week']))} week(s)"
+                )
+            else:
+                store.write_processed(model_games, "team_games", f"{season}.parquet")
+                store.write_processed(qb_games, "qb_games", f"{season}.parquet")
+                store.write_processed(unit_games, "unit_games", f"{season}.parquet")
+                print(f"features {season}: {len(model_games)} games")
+        except Exception as error:  # noqa: BLE001 - report and continue
+            problems.append(f"{season}: {error}")
+    _exit_on_problems(problems)
+
+
+def run_validation(args) -> None:
+    import json
+
+    from backend.model.calibration import (
+        WalkForwardData,
+        apply_layers,
+        coverage_report,
+        generate_walk_forward,
+        honesty_report,
+        margin_log_loss,
+    )
+    from backend.model.joint_scoring import DEFAULT_CONFIG
+    from backend.model.projections import LayerConfig
+    from backend.model.validation import validate_season_wins
+
+    seasons = tuple(sorted(set(args.seasons)))
+    data = WalkForwardData(seasons, rebuild=args.rebuild)
+    if args.command == "validate-season-wins":
+        report, audit = validate_season_wins(
+            data, seasons, tuple(sorted(set(args.weeks))), args.simulations
+        )
+        print(report.to_string(index=False))
+        print(
+            "Assumptions: final schedule reconstruction; results available after "
+            "24h; dated QB snapshots or prior-week chart proxies; current QB "
+            "fixed; future ties omitted. Undated sportsbook totals are "
+            "comparison-only. Dated totals used in priors make that comparison "
+            "market-dependent. Previously inspected seasons are retrospective."
+        )
+        if args.details:
+            print(audit.to_csv(index=False))
+    else:
+        from backend.config import DEVELOPMENT_SEASONS
+
+        predictions = apply_layers(
+            generate_walk_forward(DEFAULT_CONFIG, seasons, data=data), LayerConfig()
+        )
+        print(honesty_report(predictions).to_string())
+        for label, mask in (
+            ("development", predictions.season.isin(DEVELOPMENT_SEASONS)),
+            ("retrospective_validation", ~predictions.season.isin(DEVELOPMENT_SEASONS)),
+        ):
+            part = predictions[mask]
+            if part.empty:
+                continue
+            metrics = {
+                "split": label,
+                "games": len(part),
+                "margin_nll": margin_log_loss(part, 1, 7),
+                **coverage_report(part, 1, 7),
+            }
+            for name, column in (
+                ("engine", "engine_margin"),
+                ("pure", "pure_model_margin"),
+                ("blend", "model_margin"),
+                ("closing", "market_margin"),
+            ):
+                metrics[f"{name}_mae"] = float(
+                    (part.actual_margin - part[column]).abs().mean()
+                )
+            print(json.dumps(metrics))
+        print(
+            "Closing-line conditional benchmark, not an early-week market "
+            "replay. QB inputs use dated or prior-week proxies. Historical "
+            "preseason sportsbook inputs are market-dependent."
+        )
+        if args.details:
+            print(predictions.to_csv(index=False))
+
+
+def run_awards(args) -> None:
+    from backend.awards import AWARDS, ingest, pipeline
+
+    if args.command == "awards-ingest":
+        ingest.ingest(args.seasons, args.refresh)
+    elif args.command == "validate-awards":
+        import json
+
+        from backend.awards.model import calibration_report
+
+        _, evaluations = pipeline.history_for(args.season, args.week, list(AWARDS))
+        for award, history in evaluations.items():
+            print(award, json.dumps(calibration_report(history)))
+            if not history.empty:
+                print(history.to_csv(index=False))
+    elif args.command == "publish-awards":
+        from backend.db import engine
+        from backend.publish import publish_awards
+
+        print(publish_awards(engine, args.season, args.week))
+    else:
+        board, meta, _ = pipeline.build(args.season, args.week, args.as_of)
+        print(meta[["award", "status", "candidate_count"]].to_string(index=False))
+        if not board.empty:
+            print(
+                board[board.predicted_rank.le(3)][
+                    ["award", "candidate_name", "predicted_rank", "probability_status"]
+                ].to_string(index=False)
+            )
+
+
+def run_production_artifacts(args) -> None:
+    import json
+
+    from backend.model.artifacts import ensure
+
+    print(json.dumps(ensure(), indent=2))
+
+
+def run_replay_forecast(args) -> None:
+    import json
+    from pathlib import Path
+
+    from backend.forecast_archive import replay
+
+    print(json.dumps(replay(Path(args.archive)), indent=2))
+
+
+def run_validate_prospective(args) -> None:
+    import json
+
+    from backend.prospective import report
+
+    print(json.dumps(report(args.season), indent=2))
+
+
+def run_download_forecast(args) -> None:
+    from backend.forecast_archive import download
+
+    print(download(args.run_id, args.destination))
+
+
+def run_ingame_backtest(args) -> None:
+    import numpy as np
+    import pandas as pd
+
+    from backend.config import DEVELOPMENT_SEASONS, HOLDOUT_SEASONS
+    from backend.etl import store
+    from backend.features.ingame import PBP_COLUMNS, build_game_states
+    from backend.model import ingame_backtest, ingame_nflfastr
+
+    anchors = store.read_processed("calibration", "predictions.parquet")
+    states = pd.concat(
+        [
+            build_game_states(
+                store.read_raw("pbp", f"{season}.parquet", columns=PBP_COLUMNS)
+            )
+            for season in (*DEVELOPMENT_SEASONS, *HOLDOUT_SEASONS)
+        ],
+        ignore_index=True,
+    )
+    model = ingame_nflfastr.load_model()
+
+    def holdout_for(margin_column: str) -> pd.DataFrame:
+        frame = ingame_backtest.build_inputs(states, anchors, margin_column)
+        return frame[frame["season"].isin(HOLDOUT_SEASONS)].reset_index(drop=True)
+
+    inputs = ingame_backtest.build_inputs(states, anchors)
+    holdout = holdout_for("model_margin")
+    closing = holdout_for("market_margin")
+
+    # The port must reproduce nflverse's own numbers when given its spread.
+    ported = ingame_nflfastr.win_probability(closing, model)
+    stored = closing["nflverse_vegas_home_wp"].to_numpy(float)
+    overtime = closing["is_overtime"].to_numpy(bool)
+    match = np.abs(ported - stored) < 0.005
+    print(
+        f"port matches nflverse within 0.005 on {match[~overtime].mean():.4f} of "
+        f"regulation states and {match[overtime].mean():.4f} of overtime states"
+    )
+    if match[~overtime].mean() < 0.99:
+        raise ValueError("The nflfastR port does not reproduce nflverse")
+
+    reference = ingame_nflfastr.win_probability(holdout, model)
+    candidates = {
+        "blended_margin": reference,
+        "pure_margin": ingame_nflfastr.win_probability(
+            holdout_for("pure_model_margin"), model
+        ),
+        "closing_line": ported,
+        "score_clock_possession_feed": ingame_nflfastr.win_probability(
+            ingame_backtest.without_situation(holdout), model
+        ),
+        "nflverse_stored_vegas_wp": stored,
+        "nflverse_stored_wp": holdout["nflverse_home_wp"].to_numpy(float),
+    }
+    comparisons = []
+    for label, probability in candidates.items():
+        for scope, rows in (
+            ("all", np.ones(len(holdout), bool)),
+            ("overtime", overtime),
+        ):
+            comparisons.append(
+                ingame_backtest.comparison_row(
+                    label, holdout[rows], probability[rows], reference[rows]
+                )
+                | {"scope": scope}
+            )
+    summary = pd.concat(
+        [
+            ingame_backtest.evaluate(
+                inputs, ingame_nflfastr.win_probability(inputs, model)
+            ),
+            pd.DataFrame(comparisons),
+        ],
+        ignore_index=True,
+    ).assign(model_version=ingame_nflfastr.MODEL_VERSION)
+    store.write_processed(summary, "ingame", "backtest_summary.parquet")
+
+    calibration = summary[summary["summary_type"].eq("calibration")]
+    print(
+        calibration[
+            [
+                "partition",
+                "scope",
+                "group_value",
+                "n_states",
+                "n_games",
+                "mean_predicted",
+                "empirical_rate",
+                "gap",
+                "tolerance",
+                "calibrated",
+                "brier",
+                "log_loss",
+            ]
+        ].to_string(index=False, float_format="%.4f")
+    )
+    print(
+        summary[summary["summary_type"].eq("comparison")][
+            [
+                "scope",
+                "group_value",
+                "n_states",
+                "n_games",
+                "log_loss",
+                "brier",
+                "log_loss_delta",
+                "log_loss_delta_low",
+                "log_loss_delta_high",
+            ]
+        ].to_string(index=False, float_format="%.5f")
+    )
+    print(
+        "The nflfastR model is used as published and its training seasons may "
+        "overlap the development range, so only the holdout is informative. "
+        "The anchor blend uses the closing line, so the pure-margin row bounds "
+        "what a forecast published without one would score. Deltas are "
+        "against the blended margin with 95% intervals from resampling games."
+    )
+
+
+def run_live_win_probability(args) -> None:
+    import logging
+    import sys
+    from datetime import UTC, datetime, timedelta
+
+    from backend import live_feed, live_publish
+    from backend.db import writes_allowed
+    from backend.model.ingame_nflfastr import load_model
+
+    if args.interval < 30:
+        raise SystemExit("--interval must be at least 30 seconds")
+    if args.duration is not None and (args.duration <= 0 or not args.watch):
+        raise SystemExit("--duration requires --watch and a positive number of seconds")
+    if args.publish and not writes_allowed():
+        raise SystemExit("publication requires MOMENTUMNFL_DB_WRITES=1")
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
+    publisher = live_publish.LivePublisher(
+        load_model(),
+        load_games=live_publish.load_games,
+        load_saved=live_publish.load_saved,
+        fetch_states=live_feed.fetch_states,
+        write=live_publish.write_snapshots if args.publish else None,
+        expires_at=(
+            datetime.now(UTC) + timedelta(seconds=args.duration)
+            if args.duration
+            else None
+        ),
+    )
+    live_publish.run(
+        publisher, watch=args.watch, interval=args.interval, duration=args.duration
+    )
+
+
+COMMANDS = {
+    "live-win-probability": run_live_win_probability,
+    "ingame-backtest": run_ingame_backtest,
+    "replay-forecast": run_replay_forecast,
+    "validate-prospective": run_validate_prospective,
+    "download-forecast": run_download_forecast,
+    "production-artifacts": run_production_artifacts,
+    "awards-ingest": run_awards,
+    "awards": run_awards,
+    "validate-awards": run_awards,
+    "publish-awards": run_awards,
+    "ingest": run_ingest,
+    "bootstrap-history": run_bootstrap_history,
+    "refresh-inputs": run_refresh_inputs,
+    "features": run_features,
+    "fit": run_fit,
+    "preseason": run_preseason,
+    "calibrate": run_calibrate,
+    "season-wins": run_season_wins,
+    "validate-model": run_validation,
+    "validate-season-wins": run_validation,
+    "validate-qb": run_validate_qb,
+    "qbs": run_qbs,
+    "odds": run_odds,
+    "upcoming": run_upcoming,
+    "publish": run_publish,
+    "position-traits-fit": run_position_traits,
+    "position-traits": run_position_traits,
+    "player-sources": run_position_traits,
+    "publish-position-traits": run_position_traits,
+    "grade": run_grade,
+}

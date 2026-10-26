@@ -1,0 +1,56 @@
+name: awards
+on:
+  # Manual retry; scheduled awards run inside the Tuesday weekly workflow.
+  workflow_dispatch:
+    inputs:
+      season:
+        description: NFL season
+        required: true
+        type: number
+      week:
+        description: Regular-season week (-1 auto-detects, 0 before kickoff)
+        default: -1
+        required: false
+        type: number
+      publish:
+        description: Publish after the awards SQL migration has been applied
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nfl-production
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pipx install poetry
+      - run: poetry sync --no-interaction
+      - name: Resolve season
+        id: context
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+        run: |
+          poetry run python - <<'PYCODE'
+          import os
+          from datetime import datetime, UTC
+          now = datetime.now(UTC)
+          season = int(os.environ['INPUT_SEASON']) if os.environ.get('INPUT_SEASON') else now.year - (now.month <= 2)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'season={season}\n')
+          PYCODE
+      - uses: ./.github/actions/awards
+        with:
+          season: ${{ steps.context.outputs.season }}
+          week: ${{ inputs.week }}
+          publish: ${{ inputs.publish }}
+          database-url: ${{ secrets.DATABASE_URL }}
