@@ -27,4 +27,4 @@ begin
 end
 $function$
 ;
-REVOKE ALL ON FUNCTION public.site_revalidate() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.site_revalidate() FROM PUBLIC, anon, authenticated;
