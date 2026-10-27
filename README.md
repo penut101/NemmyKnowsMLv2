@@ -1,5 +1,7 @@
 # NemmyKnowsMLv2
 
+The independent [NBA research pipeline](models/nba/README.md) includes public-data ingestion, point-in-time features, rotation validation and walk-forward evaluation. Its strict V1 validation is in progress; historical market timestamps remain a coverage blocker. See its README for reproduction commands and limitations.
+
 ## Start the website
 
 Use Node.js 22 or newer:

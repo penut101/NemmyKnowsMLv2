@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: nba
+      POSTGRES_USER: nba
+      POSTGRES_PASSWORD: ${NBA_DB_PASSWORD:?Set NBA_DB_PASSWORD}
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - nba_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nba -d nba"]
+      interval: 5s
+      retries: 10
+volumes:
+  nba_pgdata:
