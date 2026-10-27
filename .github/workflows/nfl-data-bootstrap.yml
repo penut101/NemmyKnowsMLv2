@@ -64,7 +64,7 @@ jobs:
           name: nfl-bootstrap-${{ github.run_id }}
           path: |
             models/nfl/backend/data/processed/
-            models/nfl/backend/data/raw/schedules/
-            models/nfl/backend/data/raw/teams/
+            models/nfl/backend/data/raw/schedules.parquet
+            models/nfl/backend/data/raw/teams.parquet
           if-no-files-found: warn
           retention-days: 7
