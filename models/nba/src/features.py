@@ -35,7 +35,8 @@ def build_rotations():
                 player_rows=[];lineup_rows=[]
                 for i,s in enumerate(stints):
                     lineup_rows.append(dict(id=f'{gid}:{i}',game_id=gid,team_id=None,player_id=None,captured_at=None,
-                        as_of_date=g['completed_at'],payload=dict(**s,validated=True,completed_at=g['completed_at'])))
+                        as_of_date=g['payload'].get('statistics_available_at'),payload=dict(**s,validated=True,
+                            completed_at=g['payload'].get('statistics_available_at'))))
                     for side,tid in [('home_players',g['home_team_id']),('away_players',g['away_team_id'])]:
                         for p in s[side]:
                             player_rows.append(dict(id=f'{gid}:{i}:{p}',game_id=gid,team_id=tid,player_id=str(p),captured_at=None,
@@ -176,6 +177,8 @@ def build_features():
     for g in games:
         with e.connect() as conn:
             g['payload']=conn.execute(select(game_table.c.payload).where(game_table.c.game_id==g['game_id'])).scalar_one()
+        # Retrospective corrections cannot become eligible before their latest known edit.
+        g['completed_at']=g['payload'].get('statistics_available_at')
         gid=g['game_id'];home=g['home_team_id'];away=g['away_team_id'];cutoff=g['start_time']
         # Only completed earlier games are eligible even for simultaneous games.
         prior_ready=[p for p in prior if strictly_before(p['completed_at'],cutoff)]
@@ -287,6 +290,9 @@ def build_features():
                 persisted_months.add(month)
         result.append(row)
         # Update history only after emitting all target-game features.
+        if g['completed_at'] is None:
+            g.pop('payload',None)
+            continue
         _,fullstats,_=period_state(g['payload']['events'],home,away,max_period=4)
         possession=np.mean([fullstats[t]['poss'] for t in (home,away)])
         regulation=[event for event in g['payload']['events'] if event['period']<=4][-1]

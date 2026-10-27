@@ -32,15 +32,20 @@ def consensus(rows,cutoff):
         if key not in latest or (timestamp(r['available_at']),priorities.get(r.get('quote_stage'),2))>(timestamp(latest[key]['available_at']),priorities.get(latest[key].get('quote_stage'),2)):
             latest[key]=r
     selected=list(latest.values())
-    spread=[r['line'] for r in selected if r['market']=='spread' and r['side']=='home']
-    total=[r['line'] for r in selected if r['market']=='total']
+    spread=[r['line'] for r in selected if r['market']=='spread' and r['side']=='home' and r.get('line') is not None]
+    total=[r['line'] for r in selected if r['market']=='total' and r.get('line') is not None]
     probs=[]
-    opening_spreads=[r['line'] for r in eligible if r.get('is_opening') and r['market']=='spread' and r['side']=='home']
-    opening_totals=[r['line'] for r in eligible if r.get('is_opening') and r['market']=='total' and r['side']=='over']
+    openings={}
+    for r in eligible:
+        key=(r['sportsbook'],r['market'],r['side'])
+        if r.get('is_opening') and r.get('line') is not None and (key not in openings or timestamp(r['available_at'])<timestamp(openings[key]['available_at'])):
+            openings[key]=r
+    opening_spreads=[r['line'] for r in openings.values() if r['market']=='spread' and r['side']=='home']
+    opening_totals=[r['line'] for r in openings.values() if r['market']=='total' and r['side']=='over']
     books=sorted({r['sportsbook'] for r in selected})
     for b in books:
         pair={r['side']:r for r in selected if r['sportsbook']==b and r['market']=='moneyline'}
-        if set(pair)=={'home','away'} and timestamp(pair['home']['available_at'])==timestamp(pair['away']['available_at']):
+        if set(pair)=={'home','away'} and all(r.get('price') is not None for r in pair.values()) and timestamp(pair['home']['available_at'])==timestamp(pair['away']['available_at']):
             probs.append(devig(pair['home']['price'],pair['away']['price'])['home'])
     return {'market_spread':statistics.median(spread) if spread else None,
             'market_total':statistics.median(total) if total else None,

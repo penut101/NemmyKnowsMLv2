@@ -23,7 +23,7 @@ class NBA:
     def __init__(self, client=None):
         self.client = client or Client()
 
-    def archive(self, season, kind, conn):
+    def archive(self, season, kind, conn, columns=None):
         repo, rev = PINS['nba_data']
         url = f'https://raw.githubusercontent.com/{repo}/{rev}/datasets/{kind}_{season}.tar.xz'
         try:
@@ -36,7 +36,7 @@ class NBA:
             if len(members) != 1:
                 raise ValueError('Unexpected archive members')
             # Read a stream, never extract untrusted paths onto disk.
-            return pd.read_csv(archive.extractfile(members[0]), low_memory=False)
+            return pd.read_csv(archive.extractfile(members[0]), low_memory=False, usecols=columns)
 
     def stats(self, endpoint, game_id, conn, **params):
         if endpoint not in NBA_STATS:
@@ -112,8 +112,17 @@ def normalize_game(frame, cdn, season):
     return dict(game_id=gid,season=season,start_time=timestamps.min().isoformat(),completed_at=timestamps.max().isoformat(),
         home_team_id=identities[4],away_team_id=identities[5],status='final',
         payload=dict(events=events,home_score=home,away_score=away,source='pinned_nba_archive',
+                     statistics_available_at=statistics_available_at(cdn),
                      **halftime_provenance(cdn),
                      historical_semantics='retrospective event reconstruction; not an as-received live archive'))
+
+def statistics_available_at(cdn):
+    actual=pd.to_datetime(cdn.timeActual,utc=True,errors='coerce')
+    edited=pd.to_datetime(cdn.edited,utc=True,errors='coerce')
+    if actual.isna().any() or edited.isna().any():
+        return None
+    return max(actual.max(),edited.max()).isoformat()
+
 
 def halftime_provenance(cdn):
     h1=cdn[cdn.period.le(2)].copy()
@@ -136,7 +145,7 @@ def audit_halftime():
         games=[dict(r) for r in c.execute(select(*[col for col in table.c if col.name!='payload'])).mappings()]
     for season in sorted({g['season'] for g in games}):
         with e.begin() as c:
-            cdn=nba.archive(season,'cdnnba',c)
+            cdn=nba.archive(season,'cdnnba',c,columns=['gameId','period','actionType','subType','timeActual','edited'])
         grouped={str(int(k)).zfill(10):v for k,v in cdn.groupby('gameId')}
         eligible=0;count=0
         with e.begin() as c:
@@ -144,11 +153,14 @@ def audit_halftime():
                 if g['season']!=season:
                     continue
                 audit=halftime_provenance(grouped[g['game_id']])
+                audit['statistics_available_at']=statistics_available_at(grouped[g['game_id']])
                 g['payload']=c.execute(select(table.c.payload).where(table.c.game_id==g['game_id'])).scalar_one()
                 g['payload'].update(audit);db.put(c,'games',g)
                 g.pop('payload')
                 count+=1;eligible+=int(audit['halftime_eligible'])
         summary[season]={'games':count,'strict_halftime_eligible':eligible,'excluded_late_or_missing_edits':count-eligible}
+        print(json.dumps({'event':'timestamp_audit','season':season,**summary[season]}),flush=True)
+        del cdn,grouped
     (DATA/'reports').mkdir(exist_ok=True)
     (DATA/'reports/halftime_audit.json').write_text(json.dumps(summary,indent=2))
     return summary

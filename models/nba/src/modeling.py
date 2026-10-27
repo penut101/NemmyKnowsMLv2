@@ -24,7 +24,7 @@ def metrics(actual,predicted,probability,win):
     p=np.clip(probability,1e-6,1-1e-6)
     buckets=[]
     for lo in np.arange(0,1,.1):
-        mask=(p>=lo)&(p<lo+.1000001)
+        mask=(p>=lo)&(p<lo+.1)
         if mask.any():
             buckets.append({'lower':round(float(lo),1),'n':int(mask.sum()),'mean_probability':float(p[mask].mean()),'win_rate':float(np.asarray(win)[mask].mean())})
     return {'mae':float(mean_absolute_error(actual,predicted)), 'rmse':math.sqrt(mean_squared_error(actual,predicted)),
@@ -144,6 +144,21 @@ def evaluate():
                   'dataset_sha256':hashlib.sha256((DATA/'derived/dataset.json').read_bytes()).hexdigest(),
                   'purpose':'Last-holdout reproduction; load only locally trusted joblib files.'}
         (artifacts/'pregame.manifest.json').write_text(json.dumps(manifest,indent=2))
+    chosen_half=selection['halftime']['selected']
+    train=(seasons<last)&ready
+    if train.sum()>=30 and chosen_half in hgroups and chosen_half!='H2':
+        columns=[c for c in hgroups[chosen_half] if not c.startswith('market_')]
+        margin_fit=regressor().fit(half.loc[train,columns],y.loc[train,'h2_margin'])
+        scale=max(float(np.std(y.loc[train,'h2_margin']-margin_fit.predict(half.loc[train,columns]),ddof=1)),1)
+        bundle={'columns':columns,'group':chosen_half,'training_max_season':int(seasons[train].max()),
+                'margin':margin_fit,'total':regressor().fit(half.loc[train,columns],y.loc[train,'h2_total']),
+                'residual_scale':scale,'probability_status':'uncalibrated Normal approximation'}
+        path=artifacts/'halftime.joblib';joblib.dump(bundle,path)
+        manifest={'group':chosen_half,'features':columns,'training_seasons':sorted(map(int,set(seasons[train]))),
+                  'holdout_season':int(last),'strict_training_rows':int(train.sum()),
+                  'artifact_sha256':hashlib.sha256(path.read_bytes()).hexdigest(),
+                  'dataset_sha256':hashlib.sha256((DATA/'derived/dataset.json').read_bytes()).hexdigest()}
+        (artifacts/'halftime.manifest.json').write_text(json.dumps(manifest,indent=2))
     report={'coverage':{'games':len(rows),'seasons':sorted(map(int,set(seasons))),'timestamped_market_rows':int(market_ok.sum()),
                        'strict_halftime_rows':sum(r.get('halftime_eligible',False) for r in rows)},
         'results':results,'selection':selection,'limitations':['Historical NBA events are reconstructed, not original live receipts.',

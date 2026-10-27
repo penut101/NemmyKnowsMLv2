@@ -93,7 +93,7 @@ def validate_minutes(stints, official, tolerance=60):
     return True
 
 def rapm(observations, cutoff, alpha=2000):
-    eligible=[s for s in observations if strictly_before(s['completed_at'],cutoff) and s.get('validated')]
+    eligible=[s for s in observations if s.get('completed_at') and strictly_before(s['completed_at'],cutoff) and s.get('validated')]
     ids=sorted({p for s in eligible for p in s['home_players']+s['away_players']})
     if not ids:
         return {}
