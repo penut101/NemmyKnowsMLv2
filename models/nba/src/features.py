@@ -198,7 +198,7 @@ def build_features():
             if completed['game_id'] not in elo_applied:
                 ht,at=completed['home_team_id'],completed['away_team_id']
                 probability=1/(1+10**((elo[at]-elo[ht]-65)/400))
-                delta=20*(int(completed['payload']['home_score']>completed['payload']['away_score'])-probability)
+                delta=20*(completed['payload']['winner']-probability)
                 elo[ht]+=delta;elo[at]-=delta;elo_applied.add(completed['game_id'])
         month=pd.Timestamp(cutoff).strftime('%Y-%m-01T00:00:00+00:00')
         if pd.Timestamp(month)>=pd.Timestamp(cutoff):
@@ -311,7 +311,8 @@ def build_features():
         _,fullstats,_=period_state(g['payload']['events'],home,away,max_period=4)
         possession=np.mean([fullstats[t]['poss'] for t in (home,away)])
         regulation=[event for event in g['payload']['events'] if event['period']<=4][-1]
-        record=dict(g,possessions=float(possession),payload={'home_score':regulation['home_score'],'away_score':regulation['away_score']});prior.append(record)
+        record=dict(g,possessions=float(possession),payload={'home_score':regulation['home_score'],'away_score':regulation['away_score'],
+                    'winner':outcome['winner']});prior.append(record)
         for t,op,is_home in [(home,away,True),(away,home,False)]:
             score=regulation['home_score' if is_home else 'away_score'];against=regulation['away_score' if is_home else 'home_score']
             state=dict(fullstats[t],completed_at=g['completed_at'],start_time=cutoff,season=g['season'],home=is_home,

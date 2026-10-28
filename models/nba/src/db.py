@@ -64,7 +64,9 @@ def rows(conn, name):
 def game_index(conn, scores=False):
     """Stream bulky event payloads and retain only fields needed for crosswalks."""
     result=[]
-    for r in conn.execute(select(tables['games'])).mappings():
+    table=tables['games']
+    query=select(table) if scores else select(*[c for c in table.c if c.name!='payload'])
+    for r in conn.execute(query).mappings():
         item={k:v for k,v in r.items() if k!='payload'}
         if scores:
             item['payload']={k:r['payload'][k] for k in ('home_score','away_score')}

@@ -27,14 +27,32 @@ def eligible_snapshots(rows, cutoff):
                 selected[key]=r
     return list(selected.values())
 
+def header_bounds(words):
+    labels=['GameDate','GameTime','Matchup','Team','PlayerName','CurrentStatus','Reason']
+    lines={}
+    for word in words:
+        lines.setdefault(round(word['top'],1),[]).append(word)
+    for line in lines.values():
+        line=sorted(line,key=lambda w:w['x0'])
+        if ''.join(w['text'] for w in line).replace(' ','')!=''.join(labels):
+            continue
+        bounds=[];cursor=0
+        for label in labels:
+            bounds.append(line[cursor]['x0']-2)
+            value=''
+            while value!=label and cursor<len(line):
+                value+=line[cursor]['text'].replace(' ','');cursor+=1
+            if value!=label:
+                raise ValueError('Unrecognized official PDF header')
+        return bounds
+    raise ValueError('Unrecognized official PDF column layout')
+
+
 def parse_pdf(path):
     from bisect import bisect_right
     frames=[]
     with pdfplumber.open(path) as pdf:
-        first=pdf.pages[0].find_tables({'vertical_strategy':'text','horizontal_strategy':'text'})
-        if not first or len(first[0].rows[0].cells)!=7:
-            raise ValueError('Unrecognized official PDF column layout')
-        bounds=[cell[0] for cell in first[0].rows[0].cells]
+        bounds=header_bounds(pdf.pages[0].extract_words())
         for page in pdf.pages:
             lines=[]
             for word in sorted(page.extract_words(),key=lambda w:(round(w['top'],1),w['x0'])):
@@ -44,7 +62,7 @@ def parse_pdf(path):
             records=[]
             for _,words in lines:
                 text=' '.join(w['text'] for w in words)
-                if 'Injury Report:' in text or re.search(r'Page\s*\d',text) or 'GameDate' in text or 'CurrentStatus' in text:
+                if 'Injury Report:' in text or re.search(r'Page\s*\d',text) or 'GameDate' in text.replace(' ','') or 'CurrentStatus' in text.replace(' ',''):
                     continue
                 cells=[[] for _ in range(7)]
                 for word in words:
@@ -102,7 +120,7 @@ def ingest_report(timestamp):
                 continue
             row=dict(game_id=possible[0]['game_id'],player_id=ids[0],team_id=tids[0],player_name=name,
                      status=normalize_status(r['Current Status']),reason=r['Reason'],report_time=report_time,source=url,
-                     raw_payload_hash=receipt['payload_hash'],parser_version=2)
-            db.derived(conn,'injury_snapshots',f"v2:{receipt['payload_hash']}:{row['game_id']}:{ids[0]}",row,game_id=row['game_id'],
+                     raw_payload_hash=receipt['payload_hash'],parser_version=3)
+            db.derived(conn,'injury_snapshots',f"v3:{receipt['payload_hash']}:{row['game_id']}:{ids[0]}",row,game_id=row['game_id'],
                        player_id=ids[0],team_id=tids[0],captured_at=receipt['requested_at'],as_of_date=report_time)
         return {'parsed':len(records),'unresolved':unresolved}
