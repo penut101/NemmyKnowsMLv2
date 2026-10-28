@@ -1,6 +1,6 @@
 # NBA research pipeline
 
-Independent Python package for pregame and halftime NBA forecasting. It does not change the existing website or other sports. V1 validation is in progress; timestamped historical markets remain a data blocker. Do not use the preliminary outputs as validated betting recommendations.
+Independent Python package for pregame and halftime NBA forecasting. It does not change the existing website or other sports. The [validation report](VALIDATION_REPORT.md) records the executed 3,813-game rebuild and holdout results. V1 remains blocked on timestamped historical markets; the research results do not establish a betting edge.
 
 ## Fresh setup
 
@@ -46,7 +46,7 @@ The rating and feature CLI aliases currently rebuild the shared causal dataset. 
 - `features.py`: chronological Elo, adjusted team strength, prior-only player ratings and pregame/halftime datasets.
 - `modeling.py`: season walk-forward P0–P4/H0–H6 comparisons and earlier-fold model selection. The last season never selects the winning feature group.
 
-Local ignored outputs live under `data/`: `raw/` observations, `nba.sqlite`, `derived/dataset.json`, `reports/evaluation.json`, `reports/predictions.parquet`, coverage reports, and `artifacts/pregame.joblib` with a feature/training-season/hash manifest. The saved model reproduces the last holdout and is not refit on it. Only load trusted locally generated joblib artifacts. No raw third-party dataset is committed.
+Local ignored outputs live under `data/`: `raw/` observations, `nba.sqlite`, `derived/dataset.json`, `reports/evaluation.json`, `reports/predictions.parquet`, and coverage reports. `artifacts/` contains `pregame.joblib`, `pregame_prior.joblib` (the P1 prior needed by halftime/market models), and `halftime.joblib`, with manifests. A market artifact is generated only with sufficient eligible quotes. Saved models reproduce the last holdout and are not refit on it. Only load trusted locally generated joblib artifacts. No raw third-party dataset is committed; aggregate validation evidence is tracked under `validation/`.
 
 ## Integrity and coverage limitations
 

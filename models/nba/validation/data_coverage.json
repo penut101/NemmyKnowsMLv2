@@ -1,0 +1,37 @@
+{
+  "catalog_rows": {
+    "teams": 30,
+    "players": 1729,
+    "games": 3813,
+    "source_game_mappings": 7193,
+    "raw_nba_payloads": 12,
+    "raw_injury_reports": 15,
+    "raw_market_payloads": 2,
+    "player_game_stats": 80393,
+    "team_game_stats": 7626,
+    "rotation_stints": 785950,
+    "lineup_stints": 78595,
+    "injury_snapshots": 813,
+    "lineup_snapshots": 61890,
+    "market_snapshots": 13524,
+    "projected_minutes": 223253,
+    "pregame_availability": 7626,
+    "pregame_features": 3813,
+    "pregame_predictions": 11948,
+    "halftime_features": 3813,
+    "halftime_predictions": 756,
+    "quality_issues": 2611,
+    "player_ratings": 17540,
+    "team_ratings": 780
+  },
+  "market": {
+    "raw_hash": "4a803d41cd4597c1d898c0b131a58763dee8b64140be8f40c29b73c852e162d9",
+    "normalized_snapshots": 13524,
+    "strict_use": "Normalized but excluded from historical features: no verifiable quote timestamps; opening/closing semantics not asserted"
+  },
+  "action_adapter_validation": {
+    "normalized_quotes": 168,
+    "unmapped_preserved": 168,
+    "capture_time_preserved": true
+  }
+}

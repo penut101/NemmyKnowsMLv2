@@ -1,0 +1,10 @@
+{
+  "status": "passed",
+  "games": 3813,
+  "prediction_rows": 12704,
+  "minute_allocations": 14242,
+  "strict_halftime_games": 316,
+  "saved_model_reproduces_holdout": true,
+  "halftime_model_and_prior_reproduce_holdout": true,
+  "dataset_sha256": "ea81124f85e67b770d7617085ad29d8a1de0ea987954aa42c837106b4ba6bc3e"
+}

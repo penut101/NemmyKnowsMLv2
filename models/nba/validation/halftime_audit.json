@@ -1,0 +1,22 @@
+{
+  "2020": {
+    "games": 826,
+    "strict_halftime_eligible": 87,
+    "excluded_late_or_missing_edits": 739
+  },
+  "2021": {
+    "games": 969,
+    "strict_halftime_eligible": 103,
+    "excluded_late_or_missing_edits": 866
+  },
+  "2022": {
+    "games": 1024,
+    "strict_halftime_eligible": 83,
+    "excluded_late_or_missing_edits": 941
+  },
+  "2023": {
+    "games": 994,
+    "strict_halftime_eligible": 43,
+    "excluded_late_or_missing_edits": 951
+  }
+}

@@ -138,7 +138,7 @@ def evaluate():
         selection[task]={'selected':min(means,key=means.get) if means else baseline,'selection_fold_limit':int(last)-1,'earlier_fold_mae':means}
     # Export a reproducible last-holdout model, never refit on the evaluation season.
     artifacts=DATA/'artifacts';artifacts.mkdir(exist_ok=True)
-    for filename in ('pregame.joblib','pregame.manifest.json','halftime.joblib','halftime.manifest.json','market.joblib','market.manifest.json'):
+    for filename in ('pregame.joblib','pregame.manifest.json','pregame_prior.joblib','pregame_prior.manifest.json','halftime.joblib','halftime.manifest.json','market.joblib','market.manifest.json'):
         (artifacts/filename).unlink(missing_ok=True)
     chosen=selection['pregame']['selected']
     if chosen in groups:
@@ -153,6 +153,17 @@ def evaluate():
                   'dataset_sha256':hashlib.sha256((DATA/'derived/dataset.json').read_bytes()).hexdigest(),
                   'purpose':'Last-holdout reproduction; load only locally trusted joblib files.'}
         (artifacts/'pregame.manifest.json').write_text(json.dumps(manifest,indent=2))
+    # H1 and P4 use P1 priors even when P0 wins standalone margin selection.
+    columns=groups['P1'];train=seasons<last
+    prior_bundle={'columns':columns,'group':'P1','training_max_season':int(seasons[train].max()),
+        'margin':regressor().fit(pre.loc[train,columns],y.loc[train,'final_margin']),
+        'total':regressor().fit(pre.loc[train,columns],y.loc[train,'final_total']),
+        'win':classifier().fit(pre.loc[train,columns],y.loc[train,'winner'])}
+    prior_path=artifacts/'pregame_prior.joblib';joblib.dump(prior_bundle,prior_path)
+    (artifacts/'pregame_prior.manifest.json').write_text(json.dumps({'group':'P1','features':columns,
+        'training_max_season':prior_bundle['training_max_season'],'holdout_season':int(last),
+        'artifact_sha256':hashlib.sha256(prior_path.read_bytes()).hexdigest(),
+        'dataset_sha256':hashlib.sha256((DATA/'derived/dataset.json').read_bytes()).hexdigest()},indent=2))
     market_train=(seasons<last)&np.isfinite(oof).all(axis=1)&market_ok
     if market_train.sum()>=30:
         bundle={'columns':list(joined.columns),'group':'P4','training_max_season':int(seasons[market_train].max()),

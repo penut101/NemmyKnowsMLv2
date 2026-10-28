@@ -6,6 +6,7 @@ from collections import defaultdict
 import joblib
 import numpy as np
 import pandas as pd
+from scipy.special import ndtr
 from . import db
 from .config import DATA
 from .pit import strictly_before
@@ -50,8 +51,27 @@ def validate_outputs():
     np.testing.assert_allclose(bundle['margin'].predict(frame[bundle['columns']]),expected.margin,atol=1e-8)
     np.testing.assert_allclose(bundle['total'].predict(frame[bundle['columns']]),expected.total,atol=1e-8)
     np.testing.assert_allclose(bundle['win'].predict_proba(frame[bundle['columns']])[:,1],expected.probability,atol=1e-8)
+    half_verified=False
+    if (DATA/'artifacts/halftime.joblib').exists():
+        half_bundle=joblib.load(DATA/'artifacts/halftime.joblib')
+        prior=joblib.load(DATA/'artifacts/pregame_prior.joblib')
+        priors=pd.DataFrame({'prior_margin':prior['margin'].predict(frame[prior['columns']]),
+                            'prior_total':prior['total'].predict(frame[prior['columns']]),
+                            'prior_probability':prior['win'].predict_proba(frame[prior['columns']])[:,1]},
+                           index=[r['game_id'] for r in holdout])
+        half_rows=predictions[(predictions.task=='halftime')&(predictions.group==half_bundle['group'])&
+                             (predictions.season==manifest['holdout_season'])].set_index('game_id')
+        half_frame=pd.DataFrame([{**by_id[gid]['halftime'],**priors.loc[gid].to_dict(),
+            **{k:v for k,v in by_id[gid]['market'].items() if k.startswith('market_')}} for gid in half_rows.index],dtype=float)
+        x=half_frame[half_bundle['columns']]
+        margin=half_bundle['margin'].predict(x)
+        np.testing.assert_allclose(margin,half_rows.margin,atol=1e-8)
+        np.testing.assert_allclose(half_bundle['total'].predict(x),half_rows.total,atol=1e-8)
+        np.testing.assert_allclose(ndtr((half_frame.h1_margin+margin)/half_bundle['residual_scale']),half_rows.probability,atol=1e-8)
+        half_verified=True
     report={'status':'passed','games':len(rows),'prediction_rows':len(predictions),'minute_allocations':len(totals),
             'strict_halftime_games':sum(r['halftime_eligible'] for r in rows),
-            'saved_model_reproduces_holdout':True,'dataset_sha256':manifest['dataset_sha256']}
+            'saved_model_reproduces_holdout':True,'halftime_model_and_prior_reproduce_holdout':half_verified,
+            'dataset_sha256':manifest['dataset_sha256']}
     (DATA/'reports/output_validation.json').write_text(json.dumps(report,indent=2))
     return report

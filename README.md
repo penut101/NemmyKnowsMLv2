@@ -1,6 +1,6 @@
 # NemmyKnowsMLv2
 
-The independent [NBA research pipeline](models/nba/README.md) includes public-data ingestion, point-in-time features, rotation validation and walk-forward evaluation. Its strict V1 validation is in progress; historical market timestamps remain a coverage blocker. See its README for reproduction commands and limitations.
+The independent [NBA research pipeline](models/nba/README.md) includes public-data ingestion, point-in-time features, rotation validation and walk-forward evaluation. The [validation report](models/nba/VALIDATION_REPORT.md) covers 3,813 games and verified model outputs. V1 remains blocked on historical market timestamps. See the NBA README for reproduction commands and limitations.
 
 ## Start the website
 

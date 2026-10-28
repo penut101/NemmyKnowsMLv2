@@ -1,0 +1,71 @@
+{
+  "2021": {
+    "issue": "Hub exposes no links in requested season; trying dated PDFs before observed game times"
+  },
+  "2022": {
+    "issue": "Hub exposes no links in requested season; trying dated PDFs before observed game times"
+  },
+  "2023": {
+    "issue": "Hub exposes no links in requested season; trying dated PDFs before observed game times"
+  },
+  "2021-10-19T17:00:00-04:00": {
+    "parsed": 59,
+    "unresolved": 23
+  },
+  "2021-10-20T17:00:00-04:00": {
+    "parsed": 66,
+    "unresolved": 19
+  },
+  "2021-10-21T17:00:00-04:00": {
+    "parsed": 69,
+    "unresolved": 17
+  },
+  "2021-10-22T17:00:00-04:00": {
+    "parsed": 76,
+    "unresolved": 18
+  },
+  "2021-10-23T17:00:00-04:00": {
+    "parsed": 63,
+    "unresolved": 17
+  },
+  "2022-10-18T17:00:00-04:00": {
+    "parsed": 59,
+    "unresolved": 8
+  },
+  "2022-10-19T17:00:00-04:00": {
+    "parsed": 60,
+    "unresolved": 2
+  },
+  "2022-10-20T17:00:00-04:00": {
+    "parsed": 56,
+    "unresolved": 18
+  },
+  "2022-10-21T17:00:00-04:00": {
+    "parsed": 74,
+    "unresolved": 33
+  },
+  "2022-10-22T17:00:00-04:00": {
+    "parsed": 61,
+    "unresolved": 17
+  },
+  "2023-10-24T17:00:00-04:00": {
+    "parsed": 59,
+    "unresolved": 11
+  },
+  "2023-10-25T17:00:00-04:00": {
+    "parsed": 57,
+    "unresolved": 14
+  },
+  "2023-10-26T17:00:00-04:00": {
+    "parsed": 48,
+    "unresolved": 12
+  },
+  "2023-10-27T17:00:00-04:00": {
+    "parsed": 71,
+    "unresolved": 19
+  },
+  "2023-10-28T17:00:00-04:00": {
+    "parsed": 64,
+    "unresolved": 24
+  }
+}
