@@ -48,3 +48,13 @@ def test_future_season_poisoning_does_not_change_earlier_predictions(tmp_path,mo
     with engine.connect() as c:
         assert db.rows(c,'halftime_predictions')==[]
     assert not (root/'artifacts/halftime.joblib').exists()
+    for row in rows:
+        row['halftime_eligible']=True
+        row['market'].update(market_spread=-3,market_total=220,market_probability=.6,market_book_count=1)
+    (root/'derived/dataset.json').write_text(json.dumps(rows))
+    modeling.evaluate()
+    report=json.loads((root/'reports/evaluation.json').read_text())
+    assert any(r.get('group')=='H2' and 'mae' in r for r in report['results'])
+    predictions=pd.read_parquet(root/'reports/predictions.parquet')
+    assert 'P4' in predictions['group'].tolist()
+    assert (root/'artifacts/market.joblib').exists()

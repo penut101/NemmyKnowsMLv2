@@ -92,6 +92,9 @@ def evaluate():
         t=regressor().fit(joined.loc[train],y.loc[train,'final_total']).predict(joined.loc[test])
         p=classifier().fit(joined.loc[train],y.loc[train,'winner']).predict_proba(joined.loc[test])[:,1]
         results.append(dict(metrics(y.loc[test,'final_margin'],m,p,y.loc[test,'winner']),task='pregame',group='P4',season=int(season),total_mae=float(mean_absolute_error(y.loc[test,'final_total'],t))))
+        for i,margin,total,probability in zip(np.flatnonzero(test),m,t,p):
+            prediction_rows.append({'game_id':rows[i]['game_id'],'group':'P4','task':'pregame','season':int(season),
+                'margin':float(margin),'total':float(total),'probability':float(probability),'training_max_season':int(seasons[train].max())})
         results.append(dict(metrics(y.loc[test,'final_margin'],-market.loc[test,'market_spread'],market.loc[test,'market_probability'],y.loc[test,'winner']),task='market_benchmark',group='available_at_cutoff',season=int(season)))
     half=pd.concat([half,stack,market],axis=1)
     hgroups=halftime_columns(half)
@@ -99,12 +102,16 @@ def evaluate():
     ready=np.isfinite(oof).all(axis=1)&np.array([r.get('halftime_eligible',False) for r in rows])
     for season in sorted(set(seasons))[2:]:
         train=(seasons<season)&ready;test=(seasons==season)&ready
+        market_available=bool((train&market_ok).sum()>=30 and (test&market_ok).sum()>=10)
+        if market_available:
+            # Every halftime group uses the same market-covered cohort in this fold.
+            train=train&market_ok;test=test&market_ok
         if train.sum()<30 or test.sum()<10:
             results.append({'task':'halftime','group':'all','season':int(season),'status':'insufficient_strict_halftime_coverage','train_rows':int(train.sum()),'test_rows':int(test.sum())})
             continue
         for name,columns in hgroups.items():
-            usable=[c for c in columns if not c.startswith('market_')]
-            if name=='H2':
+            usable=columns if market_available else [c for c in columns if not c.startswith('market_')]
+            if name=='H2' and not market_available:
                 results.append({'task':'halftime','group':name,'season':int(season),'status':'insufficient_timestamped_market_coverage'});continue
             if name=='H5' and not half.loc[train,[c for c in usable if c.endswith('_h2_strength')]].notna().any().any():
                 results.append({'task':'halftime','group':name,'season':int(season),'status':'no_validated_personnel_coverage'});continue
@@ -116,7 +123,7 @@ def evaluate():
             probability=ndtr((half.loc[test,'h1_margin'].to_numpy()+margin)/scale)
             report=metrics(y.loc[test,'h2_margin'],margin,probability,y.loc[test,'winner'])
             report.update(task='halftime',group=name,season=int(season),total_mae=float(mean_absolute_error(y.loc[test,'h2_total'],total)),
-                total_rmse=math.sqrt(mean_squared_error(y.loc[test,'h2_total'],total)),market_prior_used=False,
+                total_rmse=math.sqrt(mean_squared_error(y.loc[test,'h2_total'],total)),market_prior_used=market_available and name not in ('H0','H1'),
                 train_seasons=sorted(map(int,set(seasons[train]))),probability_status='training-residual normal approximation; not calibrated')
             results.append(report)
             for i,m,t,p in zip(np.flatnonzero(test),margin,total,probability):
@@ -126,12 +133,12 @@ def evaluate():
     selection={}
     last=max(seasons)
     for task,baseline in [('pregame','P0'),('halftime','H0')]:
-        prior_reports=[r for r in results if r['task']==task and r['season']<last and 'mae' in r]
+        prior_reports=[r for r in results if r['task']==task and r['season']<last and 'mae' in r and r['group']!='P4']
         means={group:float(np.mean([r['mae'] for r in prior_reports if r['group']==group])) for group in sorted({r['group'] for r in prior_reports})}
         selection[task]={'selected':min(means,key=means.get) if means else baseline,'selection_fold_limit':int(last)-1,'earlier_fold_mae':means}
     # Export a reproducible last-holdout model, never refit on the evaluation season.
     artifacts=DATA/'artifacts';artifacts.mkdir(exist_ok=True)
-    for filename in ('pregame.joblib','pregame.manifest.json','halftime.joblib','halftime.manifest.json'):
+    for filename in ('pregame.joblib','pregame.manifest.json','halftime.joblib','halftime.manifest.json','market.joblib','market.manifest.json'):
         (artifacts/filename).unlink(missing_ok=True)
     chosen=selection['pregame']['selected']
     if chosen in groups:
@@ -146,10 +153,23 @@ def evaluate():
                   'dataset_sha256':hashlib.sha256((DATA/'derived/dataset.json').read_bytes()).hexdigest(),
                   'purpose':'Last-holdout reproduction; load only locally trusted joblib files.'}
         (artifacts/'pregame.manifest.json').write_text(json.dumps(manifest,indent=2))
+    market_train=(seasons<last)&np.isfinite(oof).all(axis=1)&market_ok
+    if market_train.sum()>=30:
+        bundle={'columns':list(joined.columns),'group':'P4','training_max_season':int(seasons[market_train].max()),
+                'margin':regressor().fit(joined.loc[market_train],y.loc[market_train,'final_margin']),
+                'total':regressor().fit(joined.loc[market_train],y.loc[market_train,'final_total']),
+                'win':classifier().fit(joined.loc[market_train],y.loc[market_train,'winner'])}
+        path=artifacts/'market.joblib';joblib.dump(bundle,path)
+        (artifacts/'market.manifest.json').write_text(json.dumps({'group':'P4','features':list(joined.columns),
+            'training_max_season':bundle['training_max_season'],'training_rows':int(market_train.sum()),
+            'artifact_sha256':hashlib.sha256(path.read_bytes()).hexdigest()},indent=2))
     chosen_half=selection['halftime']['selected']
     train=(seasons<last)&ready
-    if train.sum()>=30 and chosen_half in hgroups and chosen_half!='H2':
-        columns=[c for c in hgroups[chosen_half] if not c.startswith('market_')]
+    export_market=(train&market_ok).sum()>=30 and ((seasons==last)&ready&market_ok).sum()>=10
+    if export_market:
+        train=train&market_ok
+    if train.sum()>=30 and chosen_half in hgroups and (chosen_half!='H2' or export_market):
+        columns=hgroups[chosen_half] if export_market else [c for c in hgroups[chosen_half] if not c.startswith('market_')]
         margin_fit=regressor().fit(half.loc[train,columns],y.loc[train,'h2_margin'])
         scale=max(float(np.std(y.loc[train,'h2_margin']-margin_fit.predict(half.loc[train,columns]),ddof=1)),1)
         bundle={'columns':columns,'group':chosen_half,'training_max_season':int(seasons[train].max()),
