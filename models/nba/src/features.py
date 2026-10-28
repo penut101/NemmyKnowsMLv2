@@ -14,6 +14,9 @@ from .pit import strictly_before
 
 def build_rotations():
     e=db.engine();accepted=failed=0
+    with e.begin() as conn:
+        for name in ('rotation_stints','lineup_stints'):
+            conn.execute(delete(db.tables[name]))
     with e.connect() as conn:
         table=db.tables['games']
         games=[dict(r) for r in conn.execute(select(*[c for c in table.c if c.name!='payload'])).mappings()]
@@ -56,9 +59,15 @@ def build_rotations():
                         game_id=gid,team_id=b['team_id'],player_id=b['player_id'],captured_at=b['captured_at'])
                 accepted+=1
             except (RotationError,KeyError,TypeError) as exc:
+                for b in box:
+                    if b['payload'].get('minutes_validated'):
+                        payload=dict(b['payload'],regulation_minutes=None,minutes_validated=False)
+                        db.derived(conn,'player_game_stats',b['id'],payload,game_id=gid,team_id=b['team_id'],player_id=b['player_id'],captured_at=b['captured_at'])
                 db.derived(conn,'quality_issues',gid+':rotation',{'error':str(exc),'stage':'rotation'},game_id=gid)
                 failed+=1
             g.pop('payload',None)
+        if (accepted+failed)%250==0:
+            print(json.dumps({'event':'rotation_progress','validated':accepted,'quarantined':failed}),flush=True)
     return {'validated_games':accepted,'quarantined_games':failed}
 
 def period_state(events, home, away, max_period=2):
@@ -158,13 +167,16 @@ def team_strength(history,cutoff):
 
 def build_features():
     e=db.engine()
+    with e.begin() as conn:
+        for name in ('projected_minutes','pregame_availability','team_game_stats','team_ratings','player_ratings'):
+            conn.execute(delete(db.tables[name]))
     with e.connect() as conn:
         game_table=db.tables['games']
         games=[dict(r) for r in conn.execute(select(*[c for c in game_table.c if c.name!='payload']).order_by(game_table.c.start_time)).mappings()]
         boxes=db.rows(conn,'player_game_stats');rotation=db.rows(conn,'lineup_stints')
         injury=[r['payload'] for r in db.rows(conn,'injury_snapshots')]
         markets=[r['payload'] for r in db.rows(conn,'market_snapshots')]
-    prior=[];team_history=defaultdict(list);player_history=defaultdict(list);team_players=defaultdict(list);observations=[]
+    prior=[];team_history=defaultdict(list);player_history=defaultdict(list);team_players=defaultdict(list);observations=[];availability_history=[]
     bygame=defaultdict(list);boxgame=defaultdict(list)
     seen=set()
     for r in rotation:
@@ -214,7 +226,7 @@ def build_features():
             dates=sorted({p['completed_at'] for p in recent_players})[-10:]
             roster=sorted({p['player_id'] for p in recent_players if p['completed_at'] in dates})
             status={r['player_id']:r['status'] for r in eligible_snapshots(injury,cutoff) if r['game_id']==gid and r['team_id']==t}
-            empirical=status_probabilities([],cutoff)
+            empirical=status_probabilities(availability_history,cutoff)
             try:
                 minutes=project(player_history,roster,cutoff,empirical,status)
                 base=project(player_history,roster,cutoff)
@@ -251,7 +263,7 @@ def build_features():
                 half[label+'_top2_shared_minutes']=sum(s['stint_seconds']/60 for s in hs if set(map(int,ordered[:2]))<=set(s[side])) if len(ordered)>=2 else None
                 half[label+'_lineup_count']=len({tuple(s[side]) for s in hs})
                 try:
-                    h2=project(player_history,roster,cutoff,status_probabilities([],cutoff),status,h1)
+                    h2=project(player_history,roster,cutoff,status_probabilities(availability_history,cutoff),status,h1)
                     remaining[t]=h2
                     half[label+'_h2_strength']=sum(v*impacts.get(p,{}).get('net_impact',0) for p,v in h2.items())/120
                 except ValueError:
@@ -275,7 +287,8 @@ def build_features():
                 roster,top,status=roster_features[t]
                 db.derived(conn,'pregame_availability',gid+':'+t,{'statuses':status,'report_observed':bool(status),
                     'projected_starters':top,'lineup_state':'PROJECTED','unlisted_status':'UNKNOWN',
-                    'uncertain_status_probability_basis':'Beta(1,1) prior; empirical history unavailable'},game_id=gid,team_id=t,as_of_date=cutoff)
+                    'uncertain_status_probability_basis':'Categorical Beta(1,1) posterior from prior validated outcomes',
+                    'status_probabilities':status_probabilities(availability_history,cutoff)},game_id=gid,team_id=t,as_of_date=cutoff)
                 for p,m in minutes.items():
                     db.derived(conn,'projected_minutes',gid+':'+p,{'regulation_minutes':m,'basis':'prior median with bounded replacement allocation'},game_id=gid,team_id=t,player_id=p,as_of_date=cutoff)
             for t,minutes in remaining.items():
@@ -289,6 +302,8 @@ def build_features():
                     db.put(conn,'player_ratings',dict(id=month+':'+p,entity_id=p,as_of_date=month,payload=rating))
                 persisted_months.add(month)
         result.append(row)
+        if len(result)%250==0:
+            print(json.dumps({'event':'feature_progress','games':len(result),'total_games':len(games)}),flush=True)
         # Update history only after emitting all target-game features.
         if g['completed_at'] is None:
             g.pop('payload',None)
@@ -305,6 +320,11 @@ def build_features():
             with e.begin() as conn:
                 db.derived(conn,'team_game_stats',gid+':'+t,state,game_id=gid,team_id=t,as_of_date=g['completed_at'])
         observations.extend(bygame[gid])
+        if bygame[gid]:
+            played={b['player_id'] for b in boxgame[gid] if b['payload'].get('regulation_minutes',0)}
+            for report in eligible_snapshots(injury,cutoff):
+                if report['game_id']==gid:
+                    availability_history.append(dict(status=report['status'],played=report['player_id'] in played,completed_at=g['completed_at']))
         for b in boxgame[gid]:
             if b['payload'].get('regulation_minutes') is not None:
                 item=dict(player_id=b['player_id'],team_id=b['team_id'],completed_at=g['completed_at'],

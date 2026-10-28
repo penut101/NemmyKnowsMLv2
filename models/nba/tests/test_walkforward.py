@@ -41,3 +41,10 @@ def test_future_season_poisoning_does_not_change_earlier_predictions(tmp_path,mo
     after=pd.read_parquet(root/'reports/predictions.parquet')
     pd.testing.assert_frame_equal(before[before.season<2023].reset_index(drop=True),after[after.season<2023].reset_index(drop=True))
     assert (after.training_max_season<after.season).all()
+    for row in rows:
+        row['halftime_eligible']=False
+    (root/'derived/dataset.json').write_text(json.dumps(rows))
+    modeling.evaluate()
+    with engine.connect() as c:
+        assert db.rows(c,'halftime_predictions')==[]
+    assert not (root/'artifacts/halftime.joblib').exists()

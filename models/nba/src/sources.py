@@ -86,7 +86,7 @@ def normalize_game(frame, cdn, season):
         raise ValueError('Same home and away team')
     if cdn.empty:
         raise ValueError('No trustworthy game timestamp; no fabricated date')
-    timestamps=pd.to_datetime(cdn.timeActual, utc=True, errors='coerce').dropna()
+    timestamps=pd.to_datetime(cdn.timeActual, utc=True, errors='coerce',format='ISO8601').dropna()
     if timestamps.empty:
         raise ValueError('Missing event timestamps')
     events=[]
@@ -117,8 +117,8 @@ def normalize_game(frame, cdn, season):
                      historical_semantics='retrospective event reconstruction; not an as-received live archive'))
 
 def statistics_available_at(cdn):
-    actual=pd.to_datetime(cdn.timeActual,utc=True,errors='coerce')
-    edited=pd.to_datetime(cdn.edited,utc=True,errors='coerce')
+    actual=pd.to_datetime(cdn.timeActual,utc=True,errors='coerce',format='ISO8601')
+    edited=pd.to_datetime(cdn.edited,utc=True,errors='coerce',format='ISO8601')
     if actual.isna().any() or edited.isna().any():
         return None
     return max(actual.max(),edited.max()).isoformat()
@@ -129,9 +129,9 @@ def halftime_provenance(cdn):
     ends=h1[h1.period.eq(2)&h1.actionType.eq('period')&h1.subType.eq('end')]
     if ends.empty:
         return {'halftime_eligible':False,'halftime_issue':'No Q2 end timestamp'}
-    cutoff=pd.to_datetime(ends.timeActual,utc=True,errors='coerce').max()
-    actual=pd.to_datetime(h1.timeActual,utc=True,errors='coerce')
-    edited=pd.to_datetime(h1.edited,utc=True,errors='coerce')
+    cutoff=pd.to_datetime(ends.timeActual,utc=True,errors='coerce',format='ISO8601').max()
+    actual=pd.to_datetime(h1.timeActual,utc=True,errors='coerce',format='ISO8601')
+    edited=pd.to_datetime(h1.edited,utc=True,errors='coerce',format='ISO8601')
     valid=not pd.isna(cutoff) and actual.notna().all() and edited.notna().all() and bool((actual<=cutoff).all()) and bool((edited<=cutoff).all())
     return {'halftime_eligible':bool(valid),'halftime_cutoff':None if pd.isna(cutoff) else cutoff.isoformat(),
             'h1_latest_edit':None if edited.dropna().empty else edited.max().isoformat(),
@@ -155,6 +155,8 @@ def audit_halftime():
                 audit=halftime_provenance(grouped[g['game_id']])
                 audit['statistics_available_at']=statistics_available_at(grouped[g['game_id']])
                 g['payload']=c.execute(select(table.c.payload).where(table.c.game_id==g['game_id'])).scalar_one()
+                times=pd.to_datetime(grouped[g['game_id']].timeActual,utc=True,errors='coerce',format='ISO8601')
+                g['start_time']=times.min().isoformat();g['completed_at']=times.max().isoformat()
                 g['payload'].update(audit);db.put(c,'games',g)
                 g.pop('payload')
                 count+=1;eligible+=int(audit['halftime_eligible'])

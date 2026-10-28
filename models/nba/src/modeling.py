@@ -131,6 +131,8 @@ def evaluate():
         selection[task]={'selected':min(means,key=means.get) if means else baseline,'selection_fold_limit':int(last)-1,'earlier_fold_mae':means}
     # Export a reproducible last-holdout model, never refit on the evaluation season.
     artifacts=DATA/'artifacts';artifacts.mkdir(exist_ok=True)
+    for filename in ('pregame.joblib','pregame.manifest.json','halftime.joblib','halftime.manifest.json'):
+        (artifacts/filename).unlink(missing_ok=True)
     chosen=selection['pregame']['selected']
     if chosen in groups:
         columns=groups[chosen];train=seasons<last
@@ -168,6 +170,8 @@ def evaluate():
     (DATA/'reports/evaluation.json').write_text(json.dumps(report,indent=2,allow_nan=False))
     pd.DataFrame(prediction_rows).to_parquet(DATA/'reports/predictions.parquet',index=False)
     with db.engine().begin() as conn:
+        for table in ('pregame_predictions','halftime_predictions'):
+            conn.execute(db.tables[table].delete())
         for r in prediction_rows:
             db.derived(conn,r['task']+'_predictions',r['game_id']+':'+r['group'],r,game_id=r['game_id'])
     return {'coverage':report['coverage'],'selection':selection,'report':str(DATA/'reports/evaluation.json')}

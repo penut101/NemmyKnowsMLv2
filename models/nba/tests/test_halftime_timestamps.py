@@ -19,3 +19,11 @@ def test_full_game_corrections_are_unavailable_until_the_latest_edit():
     assert strictly_before(available,'2023-01-06T00:00:00Z')
     rows.loc[0,'edited']=None
     assert statistics_available_at(rows) is None
+
+
+def test_mixed_iso_precision_is_not_mistaken_for_missing_timestamps():
+    rows=pd.DataFrame([
+        dict(period=1,actionType='shot',subType='made',timeActual='2023-01-01T01:00:00.400Z',edited='2023-01-01T01:00:01Z'),
+        dict(period=2,actionType='period',subType='end',timeActual='2023-01-01T02:00:00Z',edited='2023-01-01T02:00:00Z')])
+    assert halftime_provenance(rows)['halftime_eligible']
+    assert statistics_available_at(rows)=='2023-01-01T02:00:00+00:00'

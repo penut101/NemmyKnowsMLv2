@@ -2,7 +2,7 @@
 import argparse
 import json
 import re
-from datetime import datetime
+from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 from pathlib import Path
 from alembic import command
@@ -73,10 +73,26 @@ def main():
                 try:
                     path,_=client.get(url,'official_injury_hub',True)
                     matches=sorted(set(re.findall(r'Injury-Report_(\d{4}-\d{2}-\d{2})_(\d{2}(?:_\d{2})?[AP]M)\.pdf',path.read_text(errors='replace'))))
+                    matches=[(date,hour) for date,hour in matches if f'{season}-07-01'<=date<f'{season+1}-07-01']
                     if args.limit_per_season:
                         matches=matches[:args.limit_per_season]
                     if not matches:
-                        result[season]={'issue':'No historical report URLs exposed by hub; supply --report-time'}
+                        result[season]={'issue':'Hub exposes no links in requested season; trying dated PDFs before observed game times'}
+                        with db.engine().connect() as conn:
+                            games=[g for g in db.game_index(conn) if g['season']==season]
+                        earliest={}
+                        for game in games:
+                            tip=datetime.fromisoformat(game['start_time']).astimezone(ZoneInfo('America/New_York'))
+                            date=tip.date()
+                            earliest[date]=min(tip,earliest.get(date,tip))
+                        dates=sorted(earliest)
+                        if args.limit_per_season:
+                            dates=dates[:args.limit_per_season]
+                        for date in dates:
+                            report=(earliest[date]-timedelta(hours=1)).replace(minute=0,second=0,microsecond=0)
+                            if report.hour>17:
+                                report=report.replace(hour=17)
+                            stamps.append(report.isoformat())
                     for date,hour in matches:
                         fmt='%Y-%m-%d_%I_%M%p' if '_' in hour else '%Y-%m-%d_%I%p'
                         stamps.append(datetime.strptime(date+'_'+hour,fmt).replace(tzinfo=ZoneInfo('America/New_York')).isoformat())
