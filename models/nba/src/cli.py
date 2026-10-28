@@ -25,7 +25,7 @@ def main():
         if name=='backfill-injuries':
             p.add_argument('--report-time')
     for name in ('build-rotations','build-player-ratings','build-team-ratings','build-pregame-features',
-                 'build-halftime-dataset','train-pregame','train-halftime','evaluate-all','backfill-markets','coverage','audit-halftime'):
+                 'build-halftime-dataset','train-pregame','train-halftime','evaluate-all','backfill-markets','coverage','audit-halftime','validate-outputs'):
         subs.add_parser(name)
     collect=subs.add_parser('collect-market');collect.add_argument('--source',choices=['espn','action'],required=True)
     collect.add_argument('--event');collect.add_argument('--date')
@@ -36,6 +36,9 @@ def main():
     elif args.command=='backfill-games':
         from .sources import backfill_games
         result=backfill_games(args.start_season,args.end_season,args.limit_per_season,args.official_boxes,args.refresh)
+    elif args.command=='validate-outputs':
+        from .validation import validate_outputs
+        result=validate_outputs()
     elif args.command=='audit-halftime':
         from .sources import audit_halftime
         result=audit_halftime()

@@ -29,12 +29,13 @@ python -m src.cli backfill-markets
 python -m src.cli build-rotations
 python -m src.cli build-pregame-features
 python -m src.cli evaluate-all
+python -m src.cli validate-outputs
 python -m src.cli coverage
 ```
 
 The season is its starting year: `2023` means 2023–24. Use `--limit-per-season 120` for an initial smoke cohort. Game backfill resumes existing IDs; `--refresh` explicitly rebuilds canonical games. Injury hubs may serve current reports even at historical URLs. The backfill filters links by requested season and falls back to dated PDFs before observed game times. An explicit report can be ingested using `backfill-injuries --report-time 2023-10-24T17:00:00-04:00`. The PDF header, not this requested filename, supplies the report's actual publication time.
 
-The rating and feature CLI aliases currently rebuild the shared causal dataset. The train/evaluate aliases run the complete walk-forward evaluation. Run database writers serially. Rebuilding derived rotations/features is safe; raw and snapshot observations are append-only. Changing raw parsing requires a versioned snapshot identity.
+The rating and feature CLI aliases currently rebuild the shared causal dataset. The train/evaluate aliases run the complete walk-forward evaluation. `validate-outputs` checks actual saved predictions, cutoff ordering, minute conservation, artifact hashes and reproduction of the holdout predictions from the serialized model. Run database writers serially. Rebuilding derived rotations/features is safe; raw and snapshot observations are append-only. Changing raw parsing requires a versioned snapshot identity.
 
 ## Architecture and outputs
 
@@ -57,6 +58,6 @@ Halftime inputs use Q1/Q2 only, with Q3/Q4 labels excluding overtime. NBA archiv
 
 Historical SBR lines lack trustworthy quote-availability timestamps. They are normalized and retained but excluded from strict features and market benchmarks. Present-day ESPN/Action collections preserve collection time and cannot be backdated into old games. P4 and market-conditioned halftime comparisons report unavailable when coverage is inadequate; no synthetic historical quotes are substituted.
 
-Possessions use a box-score approximation; paint/fast-break/second-chance fields are description-derived proxies. RAPM is net-only and regularized. Half win probabilities use training-residual Normal approximations and are not claimed calibrated. H3–H6 comparisons omit missing market priors and explicitly report that limitation. Full shot-quality models, true possessions, sportsbook H2 history and deployment remain in the root future-development document.
+Possessions use a box-score approximation; paint/fast-break/second-chance fields are description-derived proxies. RAPM is net-only and regularized. Rosters use the previous ten team games and the latest eligible team appearance to resolve trades; they are not an authoritative transaction feed. Half win probabilities use training-residual Normal approximations and are not claimed calibrated. H3–H6 comparisons omit missing market priors and explicitly report that limitation. With sufficient market coverage, halftime groups share the same market-covered cohort. Full shot-quality models, true possessions, sportsbook H2 history and deployment remain in the root future-development document.
 
 See [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md) for pinned sources and licensing boundaries, and [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for remaining verification.

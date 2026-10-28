@@ -31,6 +31,19 @@ def status_probabilities(history, cutoff):
             counts[h['status']][1]+=1
     return {s:a/b for s,(a,b) in counts.items()}
 
+
+def roster_as_of(team_history,player_history,team,cutoff):
+    recent=[r for r in team_history if strictly_before(r['completed_at'],cutoff)]
+    dates=sorted({r.get('start_time',r['completed_at']) for r in recent})[-10:]
+    candidates={r['player_id'] for r in recent if r.get('start_time',r['completed_at']) in dates}
+    roster=[]
+    for player in candidates:
+        eligible=[r for r in player_history[player] if strictly_before(r['completed_at'],cutoff)]
+        latest=max(eligible,key=lambda r:r.get('start_time',r['completed_at']))
+        if latest['team_id']==team:
+            roster.append(player)
+    return sorted(roster)
+
 def project(history, roster, cutoff, probabilities=None, statuses=None, h1=None):
     probabilities=probabilities or {}
     statuses=statuses or {}

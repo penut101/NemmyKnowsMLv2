@@ -7,7 +7,7 @@ from sklearn.linear_model import Ridge
 from sqlalchemy import select,delete
 from . import db
 from .rotations import reconstruct,validate_minutes,seconds,RotationError,rapm
-from .minutes import project,status_probabilities
+from .minutes import project,status_probabilities,roster_as_of
 from .injuries import eligible_snapshots
 from .markets import consensus
 from .pit import strictly_before
@@ -222,9 +222,7 @@ def build_features():
                 selected=[h for h in history if (window!='season' or h['season']==g['season']) and (window!='venue' or h['home']==(label=='home'))][-n:]
                 for key in ('ortg','drtg','pace','efg','tov_rate','orb_rate','ftr','fg3_attempt_rate','paint','fastbreak','secondchance','fg3_rate'):
                     pre[f'{label}_{window}_{key}']=float(np.mean([h[key] for h in selected])) if selected else None
-            recent_players=[p for p in team_players[t] if strictly_before(p['completed_at'],cutoff)]
-            dates=sorted({p['completed_at'] for p in recent_players})[-10:]
-            roster=sorted({p['player_id'] for p in recent_players if p['completed_at'] in dates})
+            roster=roster_as_of(team_players[t],player_history,t,cutoff)
             status={r['player_id']:r['status'] for r in eligible_snapshots(injury,cutoff) if r['game_id']==gid and r['team_id']==t}
             empirical=status_probabilities(availability_history,cutoff)
             try:
@@ -290,10 +288,10 @@ def build_features():
                     'uncertain_status_probability_basis':'Categorical Beta(1,1) posterior from prior validated outcomes',
                     'status_probabilities':status_probabilities(availability_history,cutoff)},game_id=gid,team_id=t,as_of_date=cutoff)
                 for p,m in minutes.items():
-                    db.derived(conn,'projected_minutes',gid+':'+p,{'regulation_minutes':m,'basis':'prior median with bounded replacement allocation'},game_id=gid,team_id=t,player_id=p,as_of_date=cutoff)
+                    db.derived(conn,'projected_minutes',gid+':'+t+':'+p,{'regulation_minutes':m,'basis':'prior median with bounded replacement allocation'},game_id=gid,team_id=t,player_id=p,as_of_date=cutoff)
             for t,minutes in remaining.items():
                 for p,m in minutes.items():
-                    db.derived(conn,'projected_minutes',gid+':h2:'+p,{'remaining_regulation_minutes':m,'stage':'halftime',
+                    db.derived(conn,'projected_minutes',gid+':h2:'+t+':'+p,{'remaining_regulation_minutes':m,'stage':'halftime',
                         'strict_eligible':row['halftime_eligible']},game_id=gid,team_id=t,player_id=p,as_of_date=row['halftime_cutoff'])
             if month not in persisted_months:
                 for t,rating in team_ratings.items():
@@ -328,7 +326,7 @@ def build_features():
                     availability_history.append(dict(status=report['status'],played=report['player_id'] in played,completed_at=g['completed_at']))
         for b in boxgame[gid]:
             if b['payload'].get('regulation_minutes') is not None:
-                item=dict(player_id=b['player_id'],team_id=b['team_id'],completed_at=g['completed_at'],
+                item=dict(player_id=b['player_id'],team_id=b['team_id'],completed_at=g['completed_at'],start_time=cutoff,
                     regulation_minutes=b['payload']['regulation_minutes'],starter=b['payload'].get('starter',False))
                 player_history[b['player_id']].append(item);team_players[b['team_id']].append(item)
         # The chronological index must not retain millions of event dictionaries.

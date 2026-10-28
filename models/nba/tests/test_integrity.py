@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 from src.features import period_state,targets,team_strength
 from src.markets import devig,expected_home_margin,consensus
-from src.minutes import allocate,project,status_probabilities
+from src.minutes import allocate,project,status_probabilities,roster_as_of
 from src.rotations import reconstruct,validate_minutes,RotationError,rapm
 from src.injuries import eligible_snapshots,normalize_status
 from src.storage import RawStore
@@ -80,3 +80,12 @@ def test_empirical_status_probabilities_use_only_past_outcomes():
     history=[dict(status='QUESTIONABLE',played=True,completed_at='2022-01-01T00:00:00Z'),
              dict(status='QUESTIONABLE',played=False,completed_at='2024-01-01T00:00:00Z')]
     assert status_probabilities(history,'2023-01-01T00:00:00Z')['QUESTIONABLE']==pytest.approx(2/3)
+
+
+def test_trade_rosters_use_only_latest_known_team():
+    old=dict(player_id='p',team_id='A',completed_at='2023-01-01T00:00:00Z')
+    new=dict(player_id='p',team_id='B',completed_at='2023-01-03T00:00:00Z')
+    history={'p':[old,new]}
+    assert roster_as_of([old],history,'A','2023-01-02T00:00:00Z')==['p']
+    assert roster_as_of([old],history,'A','2023-01-04T00:00:00Z')==[]
+    assert roster_as_of([new],history,'B','2023-01-04T00:00:00Z')==['p']
