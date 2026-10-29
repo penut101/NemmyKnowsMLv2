@@ -21,6 +21,11 @@ See [SETUP.md](SETUP.md) for database, model, and deployment setup, [UPSTREAM.md
 
 ## Verification
 
+All five production sport schemas are installed. [DATABASE_SETUP.md](DATABASE_SETUP.md)
+contains the guarded migration sequence and access contracts;
+[DATABASE_STATUS.md](DATABASE_STATUS.md) records verified counts, tests, bootstrap data,
+and external blockers.
+
 ```sh
 npm run lint
 npx tsc --noEmit

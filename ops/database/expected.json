@@ -1,0 +1,152 @@
+{
+  "mlb": {
+    "tables": {
+      "count": 30,
+      "sha256": "51650b558de6a7aa003256f9dcaa17bf49abe9d76bf0db9cc621bdd38a552275"
+    },
+    "columns": {
+      "count": 565,
+      "sha256": "0bec24ac824718024731221accbe2404283ba71072edda40c6cb26486f62487c"
+    },
+    "constraints": {
+      "count": 51,
+      "sha256": "a73c7918a0ac032eb4dd72d6a12b730f21b6c7fbf87d30e8f8cb80d31482acda"
+    },
+    "indexes": {
+      "count": 53,
+      "sha256": "db79bb702f1d298bdd02dd95d892ea845445aabec3ce32988e743eb64a68d6a5"
+    },
+    "functions": {
+      "count": 8,
+      "sha256": "284ab5cdebe7240273217ccdc4fc947f10886be639e4861f8fe039c08c92accb"
+    },
+    "triggers": {
+      "count": 15,
+      "sha256": "b8d18fba35195a1aa64e26f4f76c82da65a6ba91aa867b3a0b2d959e415630f3"
+    },
+    "policies": {
+      "count": 27,
+      "sha256": "f9344979e74cc869cb60d1f438392cf6629d5f8bd40a50ac0707e5d4c98bf186"
+    }
+  },
+  "cfb": {
+    "tables": {
+      "count": 20,
+      "sha256": "a208b103609035f9cba13813d699a24cefde454aab84a791ef23dfad23006ff5"
+    },
+    "columns": {
+      "count": 506,
+      "sha256": "34aee753ee4afcc1aff418d93b011c894e869ffb9b45ddc73ca7f0c76ac89326"
+    },
+    "constraints": {
+      "count": 52,
+      "sha256": "e526096f700609b0619ad84df81132ea193c691a73bac4b99772710415d841ad"
+    },
+    "indexes": {
+      "count": 31,
+      "sha256": "8dd662d17ad8794ec42afd339c9226e4a00ef7bf0a1a016f82c3171557b74cd6"
+    },
+    "functions": {
+      "count": 2,
+      "sha256": "38eb5fdf8f05be054986c1433bd0a0b94a65818be3802b48711c370758a46312"
+    },
+    "triggers": {
+      "count": 18,
+      "sha256": "d12d211971e5735e2a5a2ce6d9cbd1ad1b265488dbea6175c4139c613befcdcf"
+    },
+    "policies": {
+      "count": 20,
+      "sha256": "55df773184958893d3a67c20753d0314922d6a9a1cb309899074ef147ca8ec51"
+    }
+  },
+  "nfl": {
+    "tables": {
+      "count": 22,
+      "sha256": "ed967a600c72490d53c9c2e8aaedc5fa8f9010164326beb3ca04d90bbb96fb3b"
+    },
+    "columns": {
+      "count": 437,
+      "sha256": "f1afcf472a80e9cc8530c1128eadf6b78e70f4ef088910c8d68cbb6c44be141b"
+    },
+    "constraints": {
+      "count": 60,
+      "sha256": "dc59b1101c4e7bdc78833a1a6b1003f2c8156b62fd47a2a73c9c165e503337e5"
+    },
+    "indexes": {
+      "count": 31,
+      "sha256": "d1139845946b90013e2043e43f1fa25800a838c04a36f8209908d54051a8d7a1"
+    },
+    "functions": {
+      "count": 14,
+      "sha256": "8dcd9fdf1b0abeba81c6b34eec44becd6347a1b1f583dff772c388a4b86029b9"
+    },
+    "triggers": {
+      "count": 27,
+      "sha256": "b1a4ef1d7267099becfaf77e8c499f52333e3bccb6b32d33c644c125860109ed"
+    },
+    "policies": {
+      "count": 18,
+      "sha256": "333473272a9d8e881f1c55b5b63f3aad6086e2f85c617011e203d306040585f9"
+    }
+  },
+  "nhl": {
+    "tables": {
+      "count": 10,
+      "sha256": "340728fb849259beb733f1ed49d1af4841a1fb058694c8c9a4411c3d84c9f93c"
+    },
+    "columns": {
+      "count": 225,
+      "sha256": "11eece2f3bd3404a0825bc5c3c138420c91ebc043497bb0686b915d3882a17b7"
+    },
+    "constraints": {
+      "count": 30,
+      "sha256": "c549997e6e42e326cf254310f9560c2040023f8631f80480b8418a054afba2e5"
+    },
+    "indexes": {
+      "count": 12,
+      "sha256": "778d5ed2523a2e670f6697daaa0644897f628ea4f9fe115e41b4eb49eebe314d"
+    },
+    "functions": {
+      "count": 12,
+      "sha256": "1ad16a765cb3100e70d24c2e23cbea05ec35b29ae069192e3928f685f8a1388e"
+    },
+    "triggers": {
+      "count": 15,
+      "sha256": "c9657fbd266290affb3d0d418bbda9a66e706a3e525955520f3038cc049cd6d8"
+    },
+    "policies": {
+      "count": 9,
+      "sha256": "93d885893d26ae55c3e5131f4790865a44943a1f2148cee026fb00a73388413c"
+    }
+  },
+  "nba": {
+    "tables": {
+      "count": 24,
+      "sha256": "4acd15b6ea55795800a7b18a6148ff728b8c4fecff3def458c857a10ff84f757"
+    },
+    "columns": {
+      "count": 141,
+      "sha256": "13847a2f8f9e239a1842cd5e9e685c5165f8ae029a8ad50207ecf40aa1437e87"
+    },
+    "constraints": {
+      "count": 41,
+      "sha256": "596685d0a81d92e2b34e966118f83929f048961aecde3487849af8460f9e979f"
+    },
+    "indexes": {
+      "count": 109,
+      "sha256": "d4239730bb93a17d8b8a3a64d99b86430b24be9f979c193c66285cfe64f1397e"
+    },
+    "functions": {
+      "count": 1,
+      "sha256": "8a13f48523161d513fcc4eec07b72df3bcfa02c6df9de0f6196355c0048bae22"
+    },
+    "triggers": {
+      "count": 6,
+      "sha256": "d4c3b4e3e38de0e91a9da3ea5cba8dc24fcf910b96fb65cff88d4e7acd48d720"
+    },
+    "policies": {
+      "count": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    }
+  }
+}

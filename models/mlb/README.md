@@ -203,6 +203,10 @@ No historical accuracy improvement is implied by passing the regression tests.
 
 ## Database recovery and release contract
 
+For this repository's current production installation, use the root
+[DATABASE_SETUP.md](../../DATABASE_SETUP.md) and explicit migration manifest.
+They include later player/prospect and evaluation releases beyond the original recovery list below.
+
 The secret-free schema snapshot in `backend/sql/baseline/2026_10_05.sql` restores the deployed schema as inspected on October 5, 2026, without production rows.
 On an empty Supabase project, install `momentumweb/sql/001_site_revalidate.sql` first, restore this baseline with `psql -X -v ON_ERROR_STOP=1`, then apply `interval_coverage_population.sql`, `live_evaluation_reconciliation.sql`, and `history_record_bounds.sql` from `backend/sql`.
 The baseline includes the earlier migrations; do not replay those on top of it.

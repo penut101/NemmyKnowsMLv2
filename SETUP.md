@@ -3,17 +3,17 @@
 ## Website and database
 
 1. Install Node.js 22+, run `npm ci`, and copy `.env.example` to `.env.local`.
-2. Create your own Supabase project. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`; set `NEXT_PUBLIC_SITE_URL` to the website origin when deployed.
+2. Use the existing Supabase project `gebpwcieiaguxxbpmybh` (NemmyKnowsMLv2, us-east-2, PostgreSQL 17). Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`; set `NEXT_PUBLIC_SITE_URL` to the website origin when deployed. Do not operate on the older Supabase project.
 3. Install `sql/001_site_revalidate.sql` before sport schemas. It requires Vault and pg_net. Provision Vault's `site_revalidate_secret` to match the website's `REVALIDATE_SECRET`, and `site_revalidate_url` to your full `https://<your-domain>/api/revalidate` endpoint. Without the URL the trigger performs no callback.
-4. Restore sport schemas using each model README's migration order. CFB includes `models/cfb/sql/baseline/2026_10_05.sql` plus subsequent migrations; NFL and NHL have numbered `sql/` migrations. MLB includes `models/mlb/backend/sql/baseline/2026_10_05.sql` plus later migrations. Do not blindly apply every historical SQL file on top of a baseline.
-5. Expose `mlb`, `cfb`, `nfl`, and `nhl` through the Supabase Data API with the supplied read-only grants and row policies. Publish model outputs into matching schemas.
+4. All five sport schemas are installed. Use [DATABASE_SETUP.md](DATABASE_SETUP.md) and `ops/database/manifest.json` for the complete migration chains, explicit permissions, and fresh PostgreSQL setup. Older sport README lists omit newer releases. Do not replay baselines over existing schemas.
+5. `mlb`, `cfb`, `nfl`, and `nhl` are exposed through the Data API with verified read-only browser access. NBA is private. Publish reviewed model outputs into matching schemas; schema installation does not generate forecasts.
 6. Run `npm run dev`, or `npm run build` followed by `npm start`.
 
 Use your own database credentials. The frontend service-role key enables writes during MLB live grading. Historical performance requires importing or generating historical rows; the code does not copy them from the original site.
 
 ## Python models
 
-Run each model in its own directory and environment. All four use a module named `backend`, so do not combine their environments or invoke them from the repository root.
+Run each model in its own directory and environment. MLB, CFB, NFL and NHL use a module named `backend`; NBA uses `src`. Do not combine model environments or invoke their modules from the repository root. On Windows set `PYTHONUTF8=1` when running cross-platform tests.
 
 ### MLB
 
@@ -49,7 +49,7 @@ Deploy the root as a Next.js project and configure its environment variables. De
 
 Root `model-*-ci.yml` workflows adapt upstream verification only. They use disposable PostgreSQL without production secrets. Frontend CI verifies the callback contract and production build.
 
-API subscriptions, database setup, model artifact training/import, production schedules, and hosting are separate from source copying. None are provisioned by creating the repository.
+API subscriptions, model artifact training/import, production schedules, and hosting are separate from schema setup. Database installation is complete; see [DATABASE_STATUS.md](DATABASE_STATUS.md) for verified data and remaining external dependencies.
 
 ## Independent setup progress (2026-10-26)
 
@@ -59,7 +59,7 @@ The manual **NHL data bootstrap** GitHub Actions workflow downloads public input
 
 The first run succeeded: https://github.com/penut101/NemmyKnowsMLv2/actions/runs/40419868880. Its 32 teams, 32 ratings, and 46 game forecasts were imported into the new NHL schema after checking the replay receipt hash. Betting recommendations were not imported from this delayed bootstrap. The NHL schema is exposed through the Data API. Apply `sql/002_nhl_function_hardening.sql` after NHL migrations to pin trigger function search paths; the shared callback also explicitly revokes execution from visitor roles. All ten NHL tables have RLS enabled and visitors have no insert privilege. Supabase reports an informational deny-by-default policy notice for the internal recommendation schedule and a warning about the non-relocatable pg_net extension's public installation.
 
-Provider key entry: `.env.providers.local` is a local, Git-ignored staging file. Set `ODDS_API_KEY` to your existing key. Request your own `CFBD_API_KEY` at https://collegefootballdata.com/key. These values still need to be configured in each applicable model environment and GitHub Actions secrets before credentialed jobs run. Do not commit this file or paste keys into chat. MLB and CFB schema setup, production scheduling, website connection, and hosting remain pending.
+Provider key entry: `.env.providers.local` is a local, Git-ignored staging file. Set `ODDS_API_KEY` to your existing key. Request your own `CFBD_API_KEY` at https://collegefootballdata.com/key. Both placeholders were empty during the database audit. Configure them in each applicable model environment and GitHub Actions secrets before credentialed jobs run. Do not commit this file or paste keys into chat. MLB and CFB schemas are installed; credentialed ingestion, production scheduling, website configuration and hosting remain separate work.
 
 ### NFL bootstrap completed
 
@@ -71,4 +71,14 @@ All 21 NFL SQL files have been installed in the new project in filename order, p
 
 Validated output: 32 teams, 32 team ratings, 32 unit ratings, 32 season-win estimates, and 14 weekly projections. Every present file in the forecast replay archive passed its SHA-256 check. Only the one game still upcoming at import time was inserted into `game_projections`; its pregame snapshot was created by the database. Completed-game projections were excluded, not backfilled into prospective performance. Read-back checks and public Data API requests confirmed the serving rows. The retrospective calibration artifact contains 2,761 games; its historical benchmarks are not prospective betting results.
 
-The first run's output is also saved locally under `output/nfl-bootstrap/`. Remote artifacts expire after seven days. Subsequent workflow runs save outputs for review; database publication is not yet automated. Remaining NFL work: configure your Odds API key and available bookmakers when ready, set up a dedicated publisher and refresh/grading schedule, connect and deploy the website, and separately run optional awards/player-trait/playoff models. MLB and CFB setup remains pending.
+The first run's output is also saved locally under `output/nfl-bootstrap/`. Remote artifacts expire after seven days. Subsequent workflow runs save outputs for review; database publication is not yet automated. Remaining NFL work: configure your Odds API key and available bookmakers when ready, set up a dedicated publisher and refresh/grading schedule, connect and deploy the website, and separately run optional awards/player-trait/playoff models.
+
+## Database completion (audited 2026-10-29)
+
+Installed base-table counts: MLB 30, CFB 20, NFL 22, NHL 10, NBA 23 application tables plus one Alembic ledger. All 106 tables have RLS. Catalog signatures match a clean PostgreSQL 17 installation. NFL/NHL row counts and fingerprints are unchanged. The public MLB schedule bootstrap imported 2,472 unique 2026 fixtures/results; CFB has no fabricated provider rows. NBA research data remains local.
+
+NBA uses SQLite by default. Set `NBA_DATABASE_URL` only for deliberate PostgreSQL use, then run `python -m src.cli migrate` from `models/nba`. PostgreSQL objects and Alembic state live in the private `nba` schema; current revision is `0005`. Browser roles have no NBA schema access. Raw and snapshot data remain immutable.
+
+Verification: `python ops/database/validate.py --project-ref gebpwcieiaguxxbpmybh`, `python ops/database/api_probe.py`, and the per-sport commands in [DATABASE_SETUP.md](DATABASE_SETUP.md). The new database-platform CI installs all sports from zero, verifies permissions, and repeats setup. NFL/NHL CI now use PostgreSQL 17.
+
+The shared callback is installed and hardened but inactive until `site_revalidate_url` and `site_revalidate_secret` are provisioned in Vault. No cron jobs or production schedules were added. Provider credentials, MLB trained artifacts, NBA historical market timestamps, and deployment configuration remain external prerequisites; see [DATABASE_STATUS.md](DATABASE_STATUS.md).

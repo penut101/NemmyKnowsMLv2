@@ -59,7 +59,9 @@ def prepare(args):
         ]
     files = {}
     for path in sorted(set(paths)):
-        name = str(path.relative_to(REPO_ROOT))
+        # Manifest keys are a portable contract, including replay's required
+        # source checks. Windows separators must not produce different keys.
+        name = path.relative_to(REPO_ROOT).as_posix()
         if not path.is_file():
             files[name] = {
                 "present": False,

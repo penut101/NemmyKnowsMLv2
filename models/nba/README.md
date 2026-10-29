@@ -17,6 +17,16 @@ On Linux/macOS use `.venv/bin/python`. SQLite is the local default. For PostgreS
 
 ## Reproduce
 
+PostgreSQL uses the private `nba` schema for every table, index, trigger function,
+and the Alembic version ledger. SQLite continues using ordinary unqualified local
+tables. Run migrations before ingestion. Revisions `0004` and `0005` secure the
+catalog and cover foreign keys with indexes. NBA is not exposed through the
+production Data API; local research archives are not uploaded automatically.
+Legacy PostgreSQL tables in `public` require a separately reviewed schema move;
+migration refuses to silently strand them. See the root
+[database setup guide](../../DATABASE_SETUP.md). On Windows, set `PYTHONUTF8=1`
+when running cross-platform model tests.
+
 Run each command from `models/nba`, using the virtual environment Python:
 
 ```text

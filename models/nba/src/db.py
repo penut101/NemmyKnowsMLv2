@@ -16,10 +16,10 @@ table('teams', Column('team_id', String, primary_key=True), Column('payload', JS
 table('players', Column('player_id', String, primary_key=True), Column('payload', JSON, nullable=False))
 table('games', Column('game_id', String, primary_key=True), Column('season', Integer, index=True),
       Column('start_time', String, index=True), Column('completed_at', String),
-      Column('home_team_id', String, ForeignKey('teams.team_id')), Column('away_team_id', String, ForeignKey('teams.team_id')),
+      Column('home_team_id', String, ForeignKey('teams.team_id'), index=True), Column('away_team_id', String, ForeignKey('teams.team_id'), index=True),
       Column('status', String), Column('payload', JSON, nullable=False))
 table('source_game_mappings', Column('source', String, primary_key=True), Column('external_id', String, primary_key=True),
-      Column('game_id', String, ForeignKey('games.game_id')), Column('payload', JSON, nullable=False))
+      Column('game_id', String, ForeignKey('games.game_id'), index=True), Column('payload', JSON, nullable=False))
 for name in ('raw_nba_payloads','raw_injury_reports','raw_market_payloads'):
     table(name, Column('id', String, primary_key=True), Column('payload_hash', String, index=True),
           Column('source', String), Column('endpoint', String), Column('requested_at', String, index=True),
@@ -37,6 +37,19 @@ for name in ('player_ratings','team_ratings'):
 
 def engine(url=DATABASE_URL):
     e = create_engine(url)
+    if e.dialect.name == 'postgresql':
+        # Qualify Core SQL, and pin legacy textual SQL/migrations to the same
+        # private namespace. Never fall back to public when nba is absent.
+        e = e.execution_options(schema_translate_map={None: 'nba'})
+        @event.listens_for(e, 'connect')
+        def postgres_namespace(conn, _):
+            previous = conn.autocommit
+            conn.autocommit = True
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute('SET search_path TO nba, pg_catalog')
+            finally:
+                conn.autocommit = previous
     if e.dialect.name == 'sqlite':
         @event.listens_for(e, 'connect')
         def foreign_keys(conn, _):

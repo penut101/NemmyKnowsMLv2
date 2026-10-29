@@ -171,6 +171,10 @@ The weekly runner requires that reviewed bundle, validates the prior before paid
 
 ## Database recovery and release contract
 
+For this repository's current production installation, use the root
+[DATABASE_SETUP.md](../../DATABASE_SETUP.md) and explicit migration manifest.
+They include later draft, player-trait, playoff and current-decision releases beyond the original recovery list below.
+
 The secret-free schema snapshot in `sql/baseline/2026_10_05.sql` restores the deployed schema as inspected on October 5, 2026, without production rows.
 On an empty Supabase project, install `momentumweb/sql/001_site_revalidate.sql` first, restore this baseline with `psql -X -v ON_ERROR_STOP=1`, then apply `020_decision_forecast.sql`, `021_site_revalidate.sql`, `20261012190441_moneyline_pricing_context.sql`, and `20261012224346_player_opponent_prior_meta.sql` from `sql`.
 The baseline includes the earlier migrations; do not replay those on top of it.
